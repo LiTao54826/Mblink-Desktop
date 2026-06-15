@@ -108,6 +108,20 @@ std::string RecoverKnownCSSKeyword(const std::string& value,
     return "";
 }
 
+void NormalizeFlexUsedAlignment(ComputedStyle& style) {
+    if (style.display != RenderObjectType::FLEX &&
+        style.display != RenderObjectType::INLINE_FLEX) {
+        return;
+    }
+
+    if (style.align_items.empty() || style.align_items == "normal") {
+        style.align_items = "stretch";
+    }
+    if (style.align_content.empty() || style.align_content == "normal") {
+        style.align_content = "stretch";
+    }
+}
+
 std::string NormalizeFontFamilyValue(const std::string& value) {
     std::vector<std::string> families;
     std::string current;
@@ -257,6 +271,8 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 放在内联样式之后，确保交互状态能够覆盖静态样式
     // 这符合用户对交互反馈的预期：hover 应该有视觉变化
     ApplyPseudoClassStyles(style, element);
+
+    NormalizeFlexUsedAlignment(style);
 
     return style;
 }

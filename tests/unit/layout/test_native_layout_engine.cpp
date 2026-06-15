@@ -15,6 +15,7 @@
 #include "render/objects/render_object.h"
 #include "render/text/font_manager.h"
 #include "render/text/text_renderer.h"
+#include "lexbor/style_manager.h"
 #include "dom/document.h"
 #include "dom/element.h"
 #include <fstream>
@@ -280,7 +281,416 @@ TEST_F(NativeLayoutEngineTest, FlexWrap) {
     body->AppendChild(container);
 }
 
+TEST_F(NativeLayoutEngineTest, ColumnFlexUsesFinalNestedWrapHeightForFollowingSiblings) {
+    auto body = doc_->GetBody();
+    auto stack = doc_->CreateElement("div");
+    auto wrap = doc_->CreateElement("div");
+    auto button_row = doc_->CreateElement("div");
+    auto button = doc_->CreateElement("button");
+
+    body->SetStyle("margin", "0");
+    stack->SetStyle("display", "flex");
+    stack->SetStyle("flex-direction", "column");
+    stack->SetStyle("gap", "12px");
+    stack->SetStyle("width", "520px");
+
+    wrap->SetStyle("display", "flex");
+    wrap->SetStyle("flex-wrap", "wrap");
+    wrap->SetStyle("gap", "10px");
+    wrap->SetStyle("width", "520px");
+
+    for (int i = 0; i < 5; ++i) {
+        auto field = doc_->CreateElement("div");
+        auto label = doc_->CreateElement("label");
+        auto control = doc_->CreateElement(i == 1 ? "input" : "select");
+        label->AppendChild(doc_->CreateTextNode("Field"));
+        field->SetStyle("display", "flex");
+        field->SetStyle("flex-direction", "column");
+        field->SetStyle("gap", "6px");
+        field->SetStyle("flex", i == 4 ? "1 1 520px" : "1 1 220px");
+        field->SetStyle("min-width", i == 4 ? "0" : "220px");
+        control->SetStyle("height", "38px");
+        field->AppendChild(label);
+        field->AppendChild(control);
+        wrap->AppendChild(field);
+    }
+
+    button->SetStyle("height", "34px");
+    button->AppendChild(doc_->CreateTextNode("Save"));
+    button_row->AppendChild(button);
+    stack->AppendChild(wrap);
+    stack->AppendChild(button_row);
+    body->AppendChild(stack);
+
+    BuildAndLayout(640.0f, 480.0f);
+
+    ASSERT_NE(wrap->GetRenderObject(), nullptr);
+    ASSERT_NE(button_row->GetRenderObject(), nullptr);
+
+    const auto& wrap_info = wrap->GetRenderObject()->GetLayoutInfo();
+    const auto& button_row_info = button_row->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_GT(wrap_info.height, 160.0f);
+    EXPECT_GE(button_row_info.y, wrap_info.y + wrap_info.height + 11.5f);
+}
+
 // ========== Position 测试 ==========
+
+TEST_F(NativeLayoutEngineTest, ColumnFlexStretchItemKeepsCrossSizeInsideParent) {
+    auto body = doc_->GetBody();
+    auto panel = doc_->CreateElement("section");
+    auto header = doc_->CreateElement("div");
+    auto scroller = doc_->CreateElement("div");
+    auto content = doc_->CreateElement("div");
+
+    body->SetStyle("margin", "0");
+    panel->SetStyle("display", "flex");
+    panel->SetStyle("flex-direction", "column");
+    panel->SetStyle("width", "523px");
+    panel->SetStyle("height", "687px");
+    panel->SetStyle("overflow", "hidden");
+
+    header->SetStyle("height", "57px");
+
+    scroller->SetStyle("flex", "1 1 auto");
+    scroller->SetStyle("min-width", "0");
+    scroller->SetStyle("min-height", "0");
+    scroller->SetStyle("overflow-y", "auto");
+    scroller->SetStyle("padding", "12px");
+
+    content->SetStyle("height", "900px");
+    content->SetStyle("width", "100%");
+
+    scroller->AppendChild(content);
+    panel->AppendChild(header);
+    panel->AppendChild(scroller);
+    body->AppendChild(panel);
+
+    BuildAndLayout(640.0f, 760.0f);
+
+    ASSERT_NE(panel->GetRenderObject(), nullptr);
+    ASSERT_NE(scroller->GetRenderObject(), nullptr);
+
+    const auto& panel_info = panel->GetRenderObject()->GetLayoutInfo();
+    const auto& scroller_info = scroller->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_LE(scroller_info.x + scroller_info.width, panel_info.x + panel_info.width + 0.5f);
+    EXPECT_LE(scroller_info.width, panel_info.width + 0.5f);
+}
+
+TEST_F(NativeLayoutEngineTest, ColumnFlexStretchScrollerStaysInsideParentAfterIncrementalLayout) {
+    auto body = doc_->GetBody();
+    auto panel = doc_->CreateElement("section");
+    auto header = doc_->CreateElement("div");
+    auto scroller = doc_->CreateElement("div");
+    auto content = doc_->CreateElement("div");
+    auto text = doc_->CreateTextNode("initial");
+
+    body->SetStyle("margin", "0");
+
+    panel->SetStyle("display", "flex");
+    panel->SetStyle("flex-direction", "column");
+    panel->SetStyle("width", "523px");
+    panel->SetStyle("height", "687px");
+    panel->SetStyle("border", "1px solid #d8dee8");
+    panel->SetStyle("overflow", "hidden");
+
+    header->SetStyle("height", "57px");
+    header->SetStyle("flex-shrink", "0");
+
+    scroller->SetStyle("display", "flex");
+    scroller->SetStyle("flex-direction", "column");
+    scroller->SetStyle("gap", "12px");
+    scroller->SetStyle("flex", "1 1 auto");
+    scroller->SetStyle("min-width", "0");
+    scroller->SetStyle("min-height", "0");
+    scroller->SetStyle("overflow-x", "hidden");
+    scroller->SetStyle("overflow-y", "auto");
+    scroller->SetStyle("padding", "12px");
+
+    content->SetStyle("height", "900px");
+    content->SetStyle("width", "100%");
+    content->AppendChild(text);
+
+    scroller->AppendChild(content);
+    panel->AppendChild(header);
+    panel->AppendChild(scroller);
+    body->AppendChild(panel);
+
+    BuildAndLayout(640.0f, 760.0f);
+
+    ASSERT_NE(panel->GetRenderObject(), nullptr);
+    ASSERT_NE(scroller->GetRenderObject(), nullptr);
+    ASSERT_NE(text->GetRenderObject(), nullptr);
+
+    const auto initial_panel_info = panel->GetRenderObject()->GetLayoutInfo();
+    const auto initial_scroller_info = scroller->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_LE(initial_scroller_info.x + initial_scroller_info.width,
+              initial_panel_info.x + initial_panel_info.width + 0.5f);
+    EXPECT_LE(initial_scroller_info.width, initial_panel_info.width + 0.5f);
+
+    auto text_render = std::dynamic_pointer_cast<RenderText>(text->GetRenderObject());
+    ASSERT_NE(text_render, nullptr);
+    text_render->SetText("updated after event");
+    layout_engine_->UpdateContentVersion(text_render.get());
+    layout_engine_->MarkNeedsLayout(text_render.get());
+
+    EXPECT_TRUE(layout_engine_->ComputeIncrementalLayout(640.0f, 760.0f));
+    layout_engine_->GetLayoutInfo(render_root_);
+
+    const auto& panel_info = panel->GetRenderObject()->GetLayoutInfo();
+    const auto& scroller_info = scroller->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_LE(scroller_info.x + scroller_info.width, panel_info.x + panel_info.width + 0.5f);
+    EXPECT_LE(scroller_info.width, panel_info.width + 0.5f);
+}
+
+TEST_F(NativeLayoutEngineTest, AppLikeRowFlexColumnScrollerStaysInsideCard) {
+    auto body = doc_->GetBody();
+    auto app = doc_->CreateElement("main");
+    auto titlebar = doc_->CreateElement("div");
+    auto content = doc_->CreateElement("section");
+    auto panel_form = doc_->CreateElement("section");
+    auto panel_history = doc_->CreateElement("section");
+    auto form_head = doc_->CreateElement("div");
+    auto history_head = doc_->CreateElement("div");
+    auto form_body = doc_->CreateElement("div");
+    auto history_body = doc_->CreateElement("div");
+    auto tall_content = doc_->CreateElement("div");
+    auto text = doc_->CreateTextNode("initial");
+
+    body->SetStyle("margin", "0");
+    body->SetStyle("width", "100%");
+    body->SetStyle("height", "100%");
+    body->SetStyle("overflow", "hidden");
+
+    app->SetStyle("display", "flex");
+    app->SetStyle("flex-direction", "column");
+    app->SetStyle("width", "100%");
+    app->SetStyle("height", "100%");
+    app->SetStyle("min-width", "0");
+    app->SetStyle("min-height", "0");
+    app->SetStyle("overflow", "hidden");
+
+    titlebar->SetStyle("height", "44px");
+    titlebar->SetStyle("min-height", "44px");
+    titlebar->SetStyle("flex", "0 0 44px");
+
+    content->SetStyle("display", "flex");
+    content->SetStyle("align-items", "stretch");
+    content->SetStyle("gap", "14px");
+    content->SetStyle("padding", "14px");
+    content->SetStyle("flex", "1 1 auto");
+    content->SetStyle("min-width", "0");
+    content->SetStyle("min-height", "0");
+    content->SetStyle("overflow", "hidden");
+
+    auto apply_panel_style = [](const std::shared_ptr<Element>& panel) {
+        panel->SetStyle("display", "flex");
+        panel->SetStyle("flex-direction", "column");
+        panel->SetStyle("flex", "1 1 0");
+        panel->SetStyle("border", "1px solid #d8dee8");
+        panel->SetStyle("min-width", "0");
+        panel->SetStyle("min-height", "0");
+        panel->SetStyle("overflow", "hidden");
+    };
+    apply_panel_style(panel_form);
+    apply_panel_style(panel_history);
+    panel_form->SetStyle("flex-basis", "46%");
+    panel_form->SetStyle("min-width", "360px");
+    panel_history->SetStyle("flex-basis", "54%");
+    panel_history->SetStyle("min-width", "430px");
+
+    form_head->SetStyle("height", "57px");
+    form_head->SetStyle("flex", "0 0 auto");
+    history_head->SetStyle("height", "80px");
+    history_head->SetStyle("flex", "0 0 auto");
+
+    form_body->SetStyle("display", "flex");
+    form_body->SetStyle("flex-direction", "column");
+    form_body->SetStyle("gap", "12px");
+    form_body->SetStyle("flex", "1 1 auto");
+    form_body->SetStyle("min-width", "0");
+    form_body->SetStyle("min-height", "0");
+    form_body->SetStyle("overflow-x", "hidden");
+    form_body->SetStyle("overflow-y", "auto");
+    form_body->SetStyle("padding", "12px");
+
+    history_body->SetStyle("flex", "1 1 auto");
+    history_body->SetStyle("min-width", "0");
+    history_body->SetStyle("min-height", "0");
+    history_body->SetStyle("overflow-y", "auto");
+    history_body->SetStyle("padding", "12px");
+
+    tall_content->SetStyle("height", "900px");
+    tall_content->SetStyle("width", "100%");
+    tall_content->AppendChild(text);
+
+    form_body->AppendChild(tall_content);
+    panel_form->AppendChild(form_head);
+    panel_form->AppendChild(form_body);
+    panel_history->AppendChild(history_head);
+    panel_history->AppendChild(history_body);
+    content->AppendChild(panel_form);
+    content->AppendChild(panel_history);
+    app->AppendChild(titlebar);
+    app->AppendChild(content);
+    body->AppendChild(app);
+
+    BuildAndLayoutFrom(body, 1180.0f, 760.0f);
+
+    ASSERT_NE(panel_form->GetRenderObject(), nullptr);
+    ASSERT_NE(form_body->GetRenderObject(), nullptr);
+
+    const auto initial_panel_info = panel_form->GetRenderObject()->GetLayoutInfo();
+    const auto initial_body_info = form_body->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_LE(initial_body_info.x + initial_body_info.width,
+              initial_panel_info.x + initial_panel_info.width + 0.5f);
+    EXPECT_LE(initial_body_info.width, initial_panel_info.width + 0.5f);
+
+    auto text_render = std::dynamic_pointer_cast<RenderText>(text->GetRenderObject());
+    ASSERT_NE(text_render, nullptr);
+    text_render->SetText("updated after event");
+    layout_engine_->UpdateContentVersion(text_render.get());
+    layout_engine_->MarkNeedsLayout(text_render.get());
+
+    EXPECT_TRUE(layout_engine_->ComputeIncrementalLayout(1180.0f, 760.0f));
+    layout_engine_->GetLayoutInfo(render_root_);
+
+    const auto& panel_info = panel_form->GetRenderObject()->GetLayoutInfo();
+    const auto& body_info = form_body->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_LE(body_info.x + body_info.width, panel_info.x + panel_info.width + 0.5f);
+    EXPECT_LE(body_info.width, panel_info.width + 0.5f);
+}
+
+TEST_F(NativeLayoutEngineTest, AppLikeCssRowFlexColumnScrollerStaysInsideCard) {
+    auto body = doc_->GetBody();
+    auto app = doc_->CreateElement("main");
+    auto titlebar = doc_->CreateElement("div");
+    auto content = doc_->CreateElement("section");
+    auto panel_form = doc_->CreateElement("section");
+    auto panel_history = doc_->CreateElement("section");
+    auto form_head = doc_->CreateElement("div");
+    auto history_head = doc_->CreateElement("div");
+    auto form_body = doc_->CreateElement("div");
+    auto history_body = doc_->CreateElement("div");
+    auto tall_content = doc_->CreateElement("div");
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        .app {
+            width: 100%;
+            height: 100%;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .titlebar {
+            flex: 0 0 44px;
+            min-height: 44px;
+        }
+        .content {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            align-items: stretch;
+            gap: 14px;
+            padding: 14px;
+            overflow: hidden;
+        }
+        .panel {
+            flex: 1 1 0;
+            border: 1px solid #d8dee8;
+            min-width: 0;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .panel-form { flex-basis: 46%; min-width: 360px; }
+        .panel-history { flex-basis: 54%; min-width: 430px; }
+        .panel-head {
+            padding: 13px 14px;
+            border-bottom: 1px solid #d8dee8;
+            display: flex;
+            min-width: 0;
+            flex: 0 0 auto;
+            flex-wrap: wrap;
+        }
+        .panel-body {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        .stack {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
+            min-width: 0;
+        }
+        .tall-content {
+            height: 900px;
+            width: 100%;
+        }
+    )"));
+
+    app->SetAttribute("class", "app");
+    titlebar->SetAttribute("class", "titlebar");
+    content->SetAttribute("class", "content");
+    panel_form->SetAttribute("class", "panel panel-form");
+    panel_history->SetAttribute("class", "panel panel-history");
+    form_head->SetAttribute("class", "panel-head");
+    history_head->SetAttribute("class", "panel-head");
+    form_body->SetAttribute("class", "panel-body stack");
+    history_body->SetAttribute("class", "panel-body");
+    tall_content->SetAttribute("class", "tall-content");
+
+    tall_content->AppendChild(doc_->CreateTextNode("content"));
+    form_body->AppendChild(tall_content);
+    panel_form->AppendChild(form_head);
+    panel_form->AppendChild(form_body);
+    panel_history->AppendChild(history_head);
+    panel_history->AppendChild(history_body);
+    content->AppendChild(panel_form);
+    content->AppendChild(panel_history);
+    app->AppendChild(titlebar);
+    app->AppendChild(content);
+    body->AppendChild(app);
+
+    BuildAndLayoutFrom(body, 1180.0f, 760.0f);
+
+    ASSERT_NE(panel_form->GetRenderObject(), nullptr);
+    ASSERT_NE(form_head->GetRenderObject(), nullptr);
+    ASSERT_NE(form_body->GetRenderObject(), nullptr);
+
+    const auto& panel_info = panel_form->GetRenderObject()->GetLayoutInfo();
+    const auto& head_info = form_head->GetRenderObject()->GetLayoutInfo();
+    const auto& body_info = form_body->GetRenderObject()->GetLayoutInfo();
+    const float panel_content_width = panel_info.width - 2.0f;
+
+    EXPECT_LE(head_info.x + head_info.width, panel_info.x + panel_info.width + 0.5f);
+    EXPECT_LE(body_info.x + body_info.width, panel_info.x + panel_info.width + 0.5f);
+    EXPECT_LE(head_info.width, panel_info.width + 0.5f);
+    EXPECT_LE(body_info.width, panel_info.width + 0.5f);
+    EXPECT_NEAR(head_info.width, panel_content_width, 0.5f);
+    EXPECT_NEAR(body_info.width, panel_content_width, 0.5f);
+}
 
 TEST_F(NativeLayoutEngineTest, PositionRelative) {
     auto body = doc_->GetBody();

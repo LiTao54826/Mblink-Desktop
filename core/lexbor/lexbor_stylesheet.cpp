@@ -38,6 +38,69 @@ bool IsNameChar(char ch) {
     return std::isalnum(uch) || ch == '_' || ch == '-';
 }
 
+bool StartsWithAtRule(const std::string& value, const std::string& name) {
+    std::string trimmed = TrimASCIIWhitespace(value);
+    if (trimmed.size() < name.size()) {
+        return false;
+    }
+
+    std::string prefix = trimmed.substr(0, name.size());
+    std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return prefix == name;
+}
+
+bool ContainsTopLevelPseudoElement(const std::string& selector) {
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (size_t i = 0; i + 1 < selector.size(); ++i) {
+        char ch = selector[i];
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '(') {
+            ++paren_depth;
+            continue;
+        }
+        if (ch == ')' && paren_depth > 0) {
+            --paren_depth;
+            continue;
+        }
+        if (ch == '[') {
+            ++bracket_depth;
+            continue;
+        }
+        if (ch == ']' && bracket_depth > 0) {
+            --bracket_depth;
+            continue;
+        }
+        if (paren_depth == 0 && bracket_depth == 0 && ch == ':' && selector[i + 1] == ':') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 std::vector<std::string> SplitSelectorList(const std::string& selector_list) {
     std::vector<std::string> selectors;
     std::string current;
@@ -105,6 +168,181 @@ std::vector<std::string> SplitSelectorList(const std::string& selector_list) {
         selectors.push_back(trimmed);
     }
     return selectors;
+}
+
+std::string JoinSelectorList(const std::vector<std::string>& selectors) {
+    std::string result;
+    for (const auto& selector : selectors) {
+        if (!result.empty()) {
+            result += ", ";
+        }
+        result += selector;
+    }
+    return result;
+}
+
+std::string SanitizeSelectorListForSupportedElements(const std::string& selector_list) {
+    std::vector<std::string> supported_selectors;
+    for (const auto& selector : SplitSelectorList(selector_list)) {
+        if (!ContainsTopLevelPseudoElement(selector)) {
+            supported_selectors.push_back(selector);
+        }
+    }
+    return JoinSelectorList(supported_selectors);
+}
+
+size_t FindNextOpenBrace(const std::string& css, size_t start) {
+    char quote = '\0';
+    bool escape_next = false;
+    bool in_comment = false;
+
+    for (size_t i = start; i < css.size(); ++i) {
+        char ch = css[i];
+        if (in_comment) {
+            if (ch == '*' && i + 1 < css.size() && css[i + 1] == '/') {
+                in_comment = false;
+                ++i;
+            }
+            continue;
+        }
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '/' && i + 1 < css.size() && css[i + 1] == '*') {
+            in_comment = true;
+            ++i;
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '{') {
+            return i;
+        }
+    }
+
+    return std::string::npos;
+}
+
+size_t FindMatchingCloseBrace(const std::string& css, size_t open_brace) {
+    int depth = 1;
+    char quote = '\0';
+    bool escape_next = false;
+    bool in_comment = false;
+
+    for (size_t i = open_brace + 1; i < css.size(); ++i) {
+        char ch = css[i];
+        if (in_comment) {
+            if (ch == '*' && i + 1 < css.size() && css[i + 1] == '/') {
+                in_comment = false;
+                ++i;
+            }
+            continue;
+        }
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '/' && i + 1 < css.size() && css[i + 1] == '*') {
+            in_comment = true;
+            ++i;
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '{') {
+            ++depth;
+            continue;
+        }
+        if (ch == '}') {
+            --depth;
+            if (depth == 0) {
+                return i;
+            }
+        }
+    }
+
+    return std::string::npos;
+}
+
+bool ShouldSanitizeNestedAtRule(const std::string& prelude) {
+    return StartsWithAtRule(prelude, "@media") ||
+           StartsWithAtRule(prelude, "@supports") ||
+           StartsWithAtRule(prelude, "@container") ||
+           StartsWithAtRule(prelude, "@layer") ||
+           StartsWithAtRule(prelude, "@scope");
+}
+
+std::string SanitizeUnsupportedPseudoElementRules(const std::string& css) {
+    std::string output;
+    size_t cursor = 0;
+
+    while (cursor < css.size()) {
+        size_t open = FindNextOpenBrace(css, cursor);
+        if (open == std::string::npos) {
+            output += css.substr(cursor);
+            break;
+        }
+
+        size_t close = FindMatchingCloseBrace(css, open);
+        if (close == std::string::npos) {
+            output += css.substr(cursor);
+            break;
+        }
+
+        std::string prelude = css.substr(cursor, open - cursor);
+        std::string block = css.substr(open + 1, close - open - 1);
+        std::string trimmed_prelude = TrimASCIIWhitespace(prelude);
+
+        if (trimmed_prelude.empty()) {
+            output += css.substr(cursor, close - cursor + 1);
+        } else if (!trimmed_prelude.empty() && trimmed_prelude[0] == '@') {
+            output += prelude;
+            output += "{";
+            output += ShouldSanitizeNestedAtRule(trimmed_prelude)
+                ? SanitizeUnsupportedPseudoElementRules(block)
+                : block;
+            output += "}";
+        } else if (ContainsTopLevelPseudoElement(trimmed_prelude)) {
+            std::string sanitized_selector = SanitizeSelectorListForSupportedElements(prelude);
+            if (!TrimASCIIWhitespace(sanitized_selector).empty()) {
+                output += sanitized_selector;
+                output += "{";
+                output += block;
+                output += "}";
+            }
+        } else {
+            output += css.substr(cursor, close - cursor + 1);
+        }
+
+        cursor = close + 1;
+    }
+
+    return output;
 }
 
 int CalculateSingleSelectorSpecificity(const std::string& selector) {
@@ -297,9 +535,10 @@ bool LexborStyleSheet::ParseCSS(const std::string& css) {
     }
     
     // 解析 CSS
+    std::string parse_css = SanitizeUnsupportedPseudoElementRules(css);
     stylesheet_ = lxb_css_stylesheet_parse(parser_,
-                                           reinterpret_cast<const lxb_char_t*>(css.c_str()),
-                                           css.length());
+                                           reinterpret_cast<const lxb_char_t*>(parse_css.c_str()),
+                                           parse_css.length());
     
     if (!stylesheet_) {
         errors_.push_back("Failed to parse CSS");

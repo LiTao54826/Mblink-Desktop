@@ -5,6 +5,7 @@
 
 #include "text.h"
 #include "document.h"
+#include "elements/html_style_element.h"
 #include <iostream>
 
 namespace mbink {
@@ -27,6 +28,12 @@ void Text::SetData(const std::string& data) {
         
         // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyTextChanged(this, old_data, data);
+    }
+
+    auto parent = GetParentNode();
+    auto style = std::dynamic_pointer_cast<HTMLStyleElement>(parent);
+    if (style) {
+        style->NotifyStyleUpdate();
     }
 }
 

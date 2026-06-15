@@ -7,6 +7,7 @@
 #include "text.h"
 #include "document.h"
 #include "element.h"
+#include "elements/html_style_element.h"
 #include "elements/html_select_element.h"
 #include "elements/html_option_element.h"
 #include "observers/dom_observer.h"
@@ -63,6 +64,13 @@ void NotifySelectOptionsChanged(const std::shared_ptr<Node>& parent,
     auto select = std::dynamic_pointer_cast<HTMLSelectElement>(select_parent);
     if (select) {
         select->OnOptionsChanged();
+    }
+}
+
+void NotifyStyleElementTextChanged(const std::shared_ptr<Node>& node) {
+    auto style = std::dynamic_pointer_cast<HTMLStyleElement>(node);
+    if (style) {
+        style->NotifyStyleUpdate();
     }
 }
 
@@ -300,6 +308,7 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
     }
 
     NotifySelectOptionsChanged(shared_from_this(), child);
+    NotifyStyleElementTextChanged(shared_from_this());
     return child;
 }
 
@@ -390,6 +399,7 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     }
 
     NotifySelectOptionsChanged(shared_from_this(), new_child);
+    NotifyStyleElementTextChanged(shared_from_this());
     return new_child;
 }
 
@@ -437,6 +447,7 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
     }
 
     NotifySelectOptionsChanged(shared_from_this(), child);
+    NotifyStyleElementTextChanged(shared_from_this());
     return child;
 }
 
@@ -519,6 +530,7 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
 
     NotifySelectOptionsChanged(shared_from_this(), old_child);
     NotifySelectOptionsChanged(shared_from_this(), new_child);
+    NotifyStyleElementTextChanged(shared_from_this());
     return old_child;
 }
 

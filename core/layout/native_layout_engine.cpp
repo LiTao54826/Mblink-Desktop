@@ -624,7 +624,7 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     // This allows margins of child elements to collapse with their container
     inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
-    ComputeNodeLayout(root_node_, inputs);
+    LayoutOutput root_output = ComputeNodeLayout(root_node_, inputs);
 
     // Set root element position based on its margin
     // In CSS, the root element's margin offsets it from the viewport edge
@@ -632,6 +632,7 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
         root_node->x = root_margin.left;
         root_node->y = root_margin.top;
         root_node->layout.location = Point<float>{root_margin.left, root_margin.top};
+        root_node->layout.size = root_output.size;
     }
 
     PositionChildren(root_node_);
@@ -1960,7 +1961,9 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.justify_content = JustifyContent::SpaceEvenly;
     }
 
-    if (computed.align_items == "flex-start") {
+    if (computed.align_items == "normal" && style.display == Display::Flex) {
+        style.align_items = AlignItems::Stretch;
+    } else if (computed.align_items == "flex-start") {
         style.align_items = AlignItems::FlexStart;
     } else if (computed.align_items == "start") {
         style.align_items = AlignItems::Start;
@@ -1976,7 +1979,9 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.align_items = AlignItems::Stretch;
     }
 
-    if (computed.align_content == "flex-start") {
+    if (computed.align_content == "normal" && style.display == Display::Flex) {
+        style.align_content = AlignContent::Stretch;
+    } else if (computed.align_content == "flex-start") {
         style.align_content = AlignContent::FlexStart;
     } else if (computed.align_content == "start") {
         style.align_content = AlignContent::Start;
@@ -1994,7 +1999,9 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.align_content = AlignContent::SpaceAround;
     }
 
-    if (computed.align_self == "flex-start" || computed.align_self == "start") {
+    if (computed.align_self == "normal") {
+        style.align_self = AlignSelf::Stretch;
+    } else if (computed.align_self == "flex-start" || computed.align_self == "start") {
         style.align_self = AlignSelf::Start;
     } else if (computed.align_self == "flex-end" || computed.align_self == "end") {
         style.align_self = AlignSelf::End;
@@ -4642,7 +4649,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         // `is_laid_out` only means the node has valid layout info; it must not freeze the
         // render object on an older size after content or style changes.
         bool position_changed = (info.x != node->layout.location.x || info.y != node->layout.location.y);
-        bool size_changed = (info.width != node->output.size.width || info.height != node->output.size.height);
+        bool size_changed = (info.width != node->layout.size.width || info.height != node->layout.size.height);
 
         if (position_changed || size_changed) {
             render_obj->MarkNeedsPaint();
@@ -4655,8 +4662,8 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         info.x = node->layout.location.x;
         info.y = node->layout.location.y;
 
-        info.width = node->output.size.width;
-        info.height = node->output.size.height;
+        info.width = node->layout.size.width;
+        info.height = node->layout.size.height;
     }
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions

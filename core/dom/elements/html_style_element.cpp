@@ -78,6 +78,13 @@ void HTMLStyleElement::NotifyStyleUpdate() {
         if (style_manager) {
             // 重新解析此 style 元素
             style_manager->ParseStyleElement(this);
+            if (auto document_element = doc->GetDocumentElement()) {
+                document_element->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
+                document_element->SetNeedsLayout();
+            } else if (auto body = doc->GetBody()) {
+                body->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
+                body->SetNeedsLayout();
+            }
         }
     }
 }
