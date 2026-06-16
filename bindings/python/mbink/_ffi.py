@@ -36,6 +36,7 @@ MBinkVoidCallback = ctypes.CFUNCTYPE(None, c_void_p)
 MBinkBoolCallback = ctypes.CFUNCTYPE(c_bool, c_void_p)
 # void (*MBinkUpdateCallback)(float delta_time, void* user_data)
 MBinkUpdateCallback = ctypes.CFUNCTYPE(None, c_float, c_void_p)
+MBinkObserveCallback = ctypes.CFUNCTYPE(None, c_int, c_char_p, c_void_p)
 
 
 # ========== MBinkConfig 结构体 ==========
@@ -54,6 +55,26 @@ class MBinkConfig(ctypes.Structure):
         ("resize_border_width", c_int),
         ("min_width", c_int), ("min_height", c_int),
         ("max_width", c_int), ("max_height", c_int),
+    ]
+
+
+class MBinkRuntimeOptions(ctypes.Structure):
+    _fields_ = [
+        ("runtime_epoch", c_char_p),
+        ("load_embedded_runtime", c_bool),
+        ("load_official_preact", c_bool),
+    ]
+
+
+class MBinkUiDevSnapshotOptions(ctypes.Structure):
+    _fields_ = [
+        ("runtime_epoch", c_char_p),
+        ("max_nodes", c_size_t),
+        ("max_depth", c_int),
+        ("root_selector", c_char_p),
+        ("include_screenshot", c_bool),
+        ("inline_screenshot", c_bool),
+        ("screenshot_file", c_char_p),
     ]
 
 
@@ -143,6 +164,24 @@ def _bind_functions(lib):
     lib.mbink_stop.argtypes = [H]
     lib.mbink_poll_events.restype = c_bool
     lib.mbink_poll_events.argtypes = [H]
+    lib.mbink_default_runtime_options.restype = MBinkRuntimeOptions
+    lib.mbink_default_runtime_options.argtypes = []
+    lib.mbink_configure_runtime.restype = c_int
+    lib.mbink_configure_runtime.argtypes = [H, POINTER(MBinkRuntimeOptions)]
+    lib.mbink_load_embedded_runtime.restype = c_int
+    lib.mbink_load_embedded_runtime.argtypes = [H, c_bool]
+    lib.mbink_load_entry_file.restype = c_int
+    lib.mbink_load_entry_file.argtypes = [H, c_char_p, c_bool]
+    lib.mbink_load_module_file.restype = c_int
+    lib.mbink_load_module_file.argtypes = [H, c_char_p]
+    lib.mbink_render_frame.restype = c_int
+    lib.mbink_render_frame.argtypes = [H, c_int]
+    lib.mbink_runtime_epoch.restype = c_int
+    lib.mbink_runtime_epoch.argtypes = [H, POINTER(c_void_p)]
+    lib.mbink_lifecycle_state.restype = c_int
+    lib.mbink_lifecycle_state.argtypes = [H]
+    lib.mbink_lifecycle_reason.restype = c_int
+    lib.mbink_lifecycle_reason.argtypes = [H, POINTER(c_void_p)]
 
     # 函数绑定
     lib.mbink_bind.restype = c_int
@@ -250,6 +289,24 @@ def _bind_functions(lib):
     lib.mbink_devtools_open.argtypes = [H]
     lib.mbink_devtools_close.restype = c_int
     lib.mbink_devtools_close.argtypes = [H]
+    lib.mbink_observe_set_callback.restype = c_int
+    lib.mbink_observe_set_callback.argtypes = [H, MBinkObserveCallback, c_void_p]
+    lib.mbink_observe_console_json.restype = c_int
+    lib.mbink_observe_console_json.argtypes = [H, POINTER(c_void_p)]
+    lib.mbink_observe_errors_json.restype = c_int
+    lib.mbink_observe_errors_json.argtypes = [H, POINTER(c_void_p)]
+    lib.mbink_observe_lifecycle_json.restype = c_int
+    lib.mbink_observe_lifecycle_json.argtypes = [H, POINTER(c_void_p)]
+    lib.mbink_observe_clear.restype = c_int
+    lib.mbink_observe_clear.argtypes = [H, c_int]
+    lib.mbink_ui_dev_default_snapshot_options.restype = MBinkUiDevSnapshotOptions
+    lib.mbink_ui_dev_default_snapshot_options.argtypes = []
+    lib.mbink_ui_dev_snapshot_json.restype = c_int
+    lib.mbink_ui_dev_snapshot_json.argtypes = [H, POINTER(MBinkUiDevSnapshotOptions), POINTER(c_void_p)]
+    lib.mbink_ui_dev_snapshot_file.restype = c_int
+    lib.mbink_ui_dev_snapshot_file.argtypes = [H, c_char_p, POINTER(MBinkUiDevSnapshotOptions)]
+    lib.mbink_ui_dev_command_json.restype = c_int
+    lib.mbink_ui_dev_command_json.argtypes = [H, c_char_p, POINTER(c_void_p)]
 
     # 状态创建
     lib.mbink_state_create_null.restype = c_int

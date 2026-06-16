@@ -8,13 +8,52 @@ mod shared;
 mod state;
 mod util;
 
-pub use app::{App, AppHandle};
+pub use app::{App, AppHandle, RuntimeOptions, UiDevSnapshotOptions};
 pub use config::AppBuilder;
 pub use controls::{LogView, Terminal};
 pub use error::{Error, Result};
 pub use resources::{compile_resources, load_resource_file, ResourceFile, RESOURCE_FLAG_BYTECODE};
 pub use shared::{Shared, SharedBatch};
 pub use state::{State, StateBatch};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleState {
+    Created,
+    Loaded,
+    Running,
+    CloseRequested,
+    Stopped,
+    Destroyed,
+    Unknown(i32),
+}
+
+impl LifecycleState {
+    pub(crate) fn from_raw(value: mbink_sys::MBinkLifecycleState) -> Self {
+        match value {
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_CREATED => Self::Created,
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_LOADED => Self::Loaded,
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_RUNNING => Self::Running,
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_CLOSE_REQUESTED => Self::CloseRequested,
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_STOPPED => Self::Stopped,
+            mbink_sys::MBinkLifecycleState::MBINK_LIFECYCLE_DESTROYED => Self::Destroyed,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObserveKind {
+    Console,
+    Error,
+}
+
+impl ObserveKind {
+    pub(crate) fn to_raw(self) -> mbink_sys::MBinkObserveKind {
+        match self {
+            Self::Console => mbink_sys::MBinkObserveKind::MBINK_OBSERVE_CONSOLE,
+            Self::Error => mbink_sys::MBinkObserveKind::MBINK_OBSERVE_ERROR,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {

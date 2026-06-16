@@ -59,6 +59,20 @@ typedef enum {
     MBINK_TYPE_OBJECT = 6
 } MBinkType;
 
+typedef enum {
+    MBINK_LIFECYCLE_CREATED = 0,
+    MBINK_LIFECYCLE_LOADED = 1,
+    MBINK_LIFECYCLE_RUNNING = 2,
+    MBINK_LIFECYCLE_CLOSE_REQUESTED = 3,
+    MBINK_LIFECYCLE_STOPPED = 4,
+    MBINK_LIFECYCLE_DESTROYED = 5
+} MBinkLifecycleState;
+
+typedef enum {
+    MBINK_OBSERVE_CONSOLE = 1,
+    MBINK_OBSERVE_ERROR = 2
+} MBinkObserveKind;
+
 // ========== 窗口配置 ==========
 
 typedef struct {
@@ -77,6 +91,22 @@ typedef struct {
     int max_width, max_height;
 } MBinkConfig;
 
+typedef struct {
+    const char* runtime_epoch;
+    bool load_embedded_runtime;
+    bool load_official_preact;
+} MBinkRuntimeOptions;
+
+typedef struct {
+    const char* runtime_epoch;
+    size_t max_nodes;
+    int max_depth;
+    const char* root_selector;
+    bool include_screenshot;
+    bool inline_screenshot;
+    const char* screenshot_file;
+} MBinkUiDevSnapshotOptions;
+
 // ========== 回调类型 ==========
 
 // 函数绑定回调: JS 调用 backend.xxx() 时触发，返回 JSON 字符串。
@@ -94,6 +124,9 @@ typedef void (*MBinkResizeCallback)(int width, int height, void* user_data);
 typedef void (*MBinkVoidCallback)(void* user_data);
 typedef bool (*MBinkBoolCallback)(void* user_data);
 typedef void (*MBinkUpdateCallback)(float delta_time, void* user_data);
+typedef void (*MBinkObserveCallback)(MBinkObserveKind kind,
+                                     const char* entry_json,
+                                     void* user_data);
 
 // ========== 生命周期 ==========
 
@@ -121,6 +154,19 @@ MBINK_API void mbink_stop(MBinkHandle handle);
 
 /** 单次事件循环迭代（高级用法） */
 MBINK_API bool mbink_poll_events(MBinkHandle handle);
+MBINK_API MBinkRuntimeOptions mbink_default_runtime_options(void);
+MBINK_API int mbink_configure_runtime(MBinkHandle handle,
+                                      const MBinkRuntimeOptions* options);
+MBINK_API int mbink_load_embedded_runtime(MBinkHandle handle,
+                                          bool include_official_preact);
+MBINK_API int mbink_load_entry_file(MBinkHandle handle, const char* entry_path,
+                                    bool execute_html_scripts);
+MBINK_API int mbink_load_module_file(MBinkHandle handle,
+                                     const char* entry_path);
+MBINK_API int mbink_render_frame(MBinkHandle handle, int passes);
+MBINK_API int mbink_runtime_epoch(MBinkHandle handle, char** out_epoch);
+MBINK_API MBinkLifecycleState mbink_lifecycle_state(MBinkHandle handle);
+MBINK_API int mbink_lifecycle_reason(MBinkHandle handle, char** out_reason);
 
 // ========== 窗口属性 ==========
 
@@ -221,6 +267,29 @@ MBINK_API int mbink_emit(MBinkHandle handle, const char* event_name,
 
 MBINK_API int mbink_devtools_open(MBinkHandle handle);
 MBINK_API int mbink_devtools_close(MBinkHandle handle);
+
+// ========== Observability ==========
+
+MBINK_API int mbink_observe_set_callback(MBinkHandle handle,
+                                         MBinkObserveCallback callback,
+                                         void* user_data);
+MBINK_API int mbink_observe_console_json(MBinkHandle handle, char** out_json);
+MBINK_API int mbink_observe_errors_json(MBinkHandle handle, char** out_json);
+MBINK_API int mbink_observe_lifecycle_json(MBinkHandle handle, char** out_json);
+MBINK_API int mbink_observe_clear(MBinkHandle handle, MBinkObserveKind kind);
+
+// ========== UI Dev / Control ==========
+
+MBINK_API MBinkUiDevSnapshotOptions mbink_ui_dev_default_snapshot_options(void);
+MBINK_API int mbink_ui_dev_snapshot_json(MBinkHandle handle,
+                                         const MBinkUiDevSnapshotOptions* options,
+                                         char** out_json);
+MBINK_API int mbink_ui_dev_snapshot_file(MBinkHandle handle,
+                                         const char* output_path,
+                                         const MBinkUiDevSnapshotOptions* options);
+MBINK_API int mbink_ui_dev_command_json(MBinkHandle handle,
+                                        const char* command_json,
+                                        char** out_response_json);
 
 
 // ========== 状态创建 ==========

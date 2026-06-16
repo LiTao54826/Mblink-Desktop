@@ -14,6 +14,24 @@ const (
 
 const RESOURCE_FLAG_BYTECODE uint32 = 1
 
+type LifecycleState int
+
+const (
+	LifecycleCreated LifecycleState = iota
+	LifecycleLoaded
+	LifecycleRunning
+	LifecycleCloseRequested
+	LifecycleStopped
+	LifecycleDestroyed
+)
+
+type ObserveKind int
+
+const (
+	ObserveConsole ObserveKind = 1
+	ObserveError   ObserveKind = 2
+)
+
 type Config struct {
 	Title             string
 	Width             int
@@ -30,6 +48,22 @@ type Config struct {
 	MinHeight         int
 	MaxWidth          int
 	MaxHeight         int
+}
+
+type RuntimeOptions struct {
+	RuntimeEpoch        string
+	LoadEmbeddedRuntime bool
+	LoadOfficialPreact  bool
+}
+
+type UiDevSnapshotOptions struct {
+	RuntimeEpoch      string
+	MaxNodes          uint
+	MaxDepth          int
+	RootSelector      string
+	IncludeScreenshot bool
+	InlineScreenshot  bool
+	ScreenshotFile     string
 }
 
 type ResourceFile struct {

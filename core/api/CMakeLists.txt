@@ -4,6 +4,8 @@ set(API_SOURCES
     mbink.cpp
     resource_package.cpp
     ${CMAKE_SOURCE_DIR}/tools/esm_loader/embedded_js.cpp
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_snapshot.cpp
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_control.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/module_resolver.cpp
 )

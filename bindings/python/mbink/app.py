@@ -54,6 +54,15 @@ class App:
             msg = err.decode("utf-8", "ignore") if err else "unknown create error"
             raise RuntimeError(f"mbink_create_ex 返回 NULL，创建窗口失败: {msg}")
 
+        runtime_options = self._lib.mbink_default_runtime_options()
+        ret = self._lib.mbink_configure_runtime(self._handle, ctypes.byref(runtime_options))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8", "ignore") if err else "unknown runtime error"
+            self._lib.mbink_destroy(self._handle)
+            self._handle = None
+            raise RuntimeError(f"mbink_configure_runtime failed: {msg}")
+
         self._callbacks = []  # prevent GC
         self._tray_callbacks = []
         self._tray_action_handlers = {}
@@ -100,6 +109,21 @@ class App:
         if resolved_path != raw_path:
             ret = loader(self._handle, resolved_path.encode("utf-8"))
         return ret
+
+    def _owned_json(self, producer):
+        self._ensure_alive()
+        out = c_void_p()
+        ret = producer(self._handle, ctypes.byref(out))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown json error"
+            raise RuntimeError(msg)
+        try:
+            raw = ctypes.cast(out, c_char_p).value.decode("utf-8") if out.value else "{}"
+            return json.loads(raw)
+        finally:
+            if out.value:
+                self._lib.mbink_free(out)
 
     def run(self):
         """启动事件循环（阻塞）"""
@@ -162,6 +186,19 @@ class App:
             print(f"[JS Error] {msg}", flush=True)
         return self
 
+    def load_entry_file(self, filepath: str, execute_html_scripts: bool = True):
+        self._ensure_alive()
+
+        def _loader(handle, encoded_path):
+            return self._lib.mbink_load_entry_file(handle, encoded_path, execute_html_scripts)
+
+        ret = self._call_file_loader(_loader, filepath)
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown load error"
+            raise RuntimeError(msg)
+        return self
+
     def eval_js(self, code: str):
         self._ensure_alive()
         ret = self._lib.mbink_eval_js(self._handle, code.encode("utf-8"))
@@ -189,6 +226,15 @@ class App:
             err = self._lib.mbink_last_error()
             msg = err.decode("utf-8") if err else "unknown JS error"
             print(f"[JS Error] {msg}", flush=True)
+        return self
+
+    def load_module_file(self, filepath: str):
+        self._ensure_alive()
+        ret = self._call_file_loader(self._lib.mbink_load_module_file, filepath)
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown module load error"
+            raise RuntimeError(msg)
         return self
 
     def load_bytecode(self, data: bytes):
@@ -230,6 +276,130 @@ class App:
 
 
     # ========== 共享 C 对象 ==========
+
+    def runtime_epoch(self) -> str:
+        self._ensure_alive()
+        out = c_void_p()
+        ret = self._lib.mbink_runtime_epoch(self._handle, ctypes.byref(out))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown runtime error"
+            raise RuntimeError(msg)
+        try:
+            return ctypes.cast(out, c_char_p).value.decode("utf-8") if out.value else ""
+        finally:
+            if out.value:
+                self._lib.mbink_free(out)
+
+    def lifecycle_state(self) -> int:
+        self._ensure_alive()
+        return int(self._lib.mbink_lifecycle_state(self._handle))
+
+    def lifecycle_reason(self) -> str:
+        self._ensure_alive()
+        out = c_void_p()
+        ret = self._lib.mbink_lifecycle_reason(self._handle, ctypes.byref(out))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown lifecycle error"
+            raise RuntimeError(msg)
+        try:
+            return ctypes.cast(out, c_char_p).value.decode("utf-8") if out.value else ""
+        finally:
+            if out.value:
+                self._lib.mbink_free(out)
+
+    def observe_console(self):
+        return self._owned_json(self._lib.mbink_observe_console_json)
+
+    def observe_errors(self):
+        return self._owned_json(self._lib.mbink_observe_errors_json)
+
+    def observe_lifecycle(self):
+        return self._owned_json(self._lib.mbink_observe_lifecycle_json)
+
+    def clear_observation(self, kind: int):
+        self._ensure_alive()
+        ret = self._lib.mbink_observe_clear(self._handle, kind)
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown observation error"
+            raise RuntimeError(msg)
+        return self
+
+    def ui_dev_snapshot(self, **options):
+        self._ensure_alive()
+        snapshot_options = self._lib.mbink_ui_dev_default_snapshot_options()
+        keepalive = []
+        for key, value in options.items():
+            if value is None:
+                continue
+            if key in {"runtime_epoch", "root_selector", "screenshot_file"}:
+                encoded = str(value).encode("utf-8")
+                keepalive.append(encoded)
+                setattr(snapshot_options, key, encoded)
+            elif hasattr(snapshot_options, key):
+                setattr(snapshot_options, key, value)
+            else:
+                raise TypeError(f"unknown snapshot option: {key}")
+        out = c_void_p()
+        ret = self._lib.mbink_ui_dev_snapshot_json(
+            self._handle, ctypes.byref(snapshot_options), ctypes.byref(out)
+        )
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown snapshot error"
+            raise RuntimeError(msg)
+        try:
+            raw = ctypes.cast(out, c_char_p).value.decode("utf-8") if out.value else "{}"
+            return json.loads(raw)
+        finally:
+            if out.value:
+                self._lib.mbink_free(out)
+            keepalive.clear()
+
+    def ui_dev_snapshot_file(self, output_path: str, **options):
+        self._ensure_alive()
+        snapshot_options = self._lib.mbink_ui_dev_default_snapshot_options()
+        keepalive = []
+        for key, value in options.items():
+            if value is None:
+                continue
+            if key in {"runtime_epoch", "root_selector", "screenshot_file"}:
+                encoded = str(value).encode("utf-8")
+                keepalive.append(encoded)
+                setattr(snapshot_options, key, encoded)
+            elif hasattr(snapshot_options, key):
+                setattr(snapshot_options, key, value)
+            else:
+                raise TypeError(f"unknown snapshot option: {key}")
+        ret = self._lib.mbink_ui_dev_snapshot_file(
+            self._handle, output_path.encode("utf-8"), ctypes.byref(snapshot_options)
+        )
+        keepalive.clear()
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown snapshot error"
+            raise RuntimeError(msg)
+        return self
+
+    def ui_dev_command(self, command):
+        self._ensure_alive()
+        payload = command if isinstance(command, str) else json.dumps(command, ensure_ascii=False)
+        out = c_void_p()
+        ret = self._lib.mbink_ui_dev_command_json(
+            self._handle, payload.encode("utf-8"), ctypes.byref(out)
+        )
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown command error"
+            raise RuntimeError(msg)
+        try:
+            raw = ctypes.cast(out, c_char_p).value.decode("utf-8") if out.value else "{}"
+            return json.loads(raw)
+        finally:
+            if out.value:
+                self._lib.mbink_free(out)
 
     def shared(self, name: str = "data"):
         """创建/获取共享 C 对象，注册为 JS globalThis.<name>

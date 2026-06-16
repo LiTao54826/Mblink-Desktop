@@ -13,7 +13,7 @@ use crate::config::AppBuilder;
 use crate::controls::{logview_from_handle, terminal_from_handle, ControlHandle, LogView, Terminal};
 use crate::shared::Shared;
 use crate::state::State;
-use crate::util::{string_from_const_ptr, to_cstring};
+use crate::util::{string_from_const_ptr, string_from_owned_ptr, to_cstring};
 use crate::{Error, Result};
 
 static INIT: Once = Once::new();
@@ -21,6 +21,48 @@ static INIT: Once = Once::new();
 #[derive(Debug, Clone, Copy)]
 pub struct AppHandle {
     handle: mbink_sys::MBinkHandle,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeOptions {
+    pub runtime_epoch: Option<String>,
+    pub load_embedded_runtime: bool,
+    pub load_official_preact: bool,
+}
+
+impl Default for RuntimeOptions {
+    fn default() -> Self {
+        Self {
+            runtime_epoch: None,
+            load_embedded_runtime: true,
+            load_official_preact: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UiDevSnapshotOptions {
+    pub runtime_epoch: Option<String>,
+    pub max_nodes: usize,
+    pub max_depth: i32,
+    pub root_selector: Option<String>,
+    pub include_screenshot: bool,
+    pub inline_screenshot: bool,
+    pub screenshot_file: Option<String>,
+}
+
+impl Default for UiDevSnapshotOptions {
+    fn default() -> Self {
+        Self {
+            runtime_epoch: None,
+            max_nodes: 2000,
+            max_depth: 64,
+            root_selector: None,
+            include_screenshot: false,
+            inline_screenshot: false,
+            screenshot_file: None,
+        }
+    }
 }
 
 impl AppHandle {
@@ -87,6 +129,12 @@ impl App {
         let handle = unsafe { mbink_sys::mbink_create_ex(&cfg) };
         if handle.is_null() {
             return Err(Error::NullHandle);
+        }
+        let runtime_options = unsafe { mbink_sys::mbink_default_runtime_options() };
+        let rc = unsafe { mbink_sys::mbink_configure_runtime(handle, &runtime_options) };
+        if rc != 0 {
+            unsafe { mbink_sys::mbink_destroy(handle) };
+            check_rc_raw(rc)?;
         }
 
         let mut app = Self {
@@ -206,6 +254,14 @@ impl App {
         Ok(self)
     }
 
+    pub fn load_entry_file(&self, path: &str, execute_html_scripts: bool) -> Result<&Self> {
+        let path = to_cstring(path)?;
+        self.check_rc(unsafe {
+            mbink_sys::mbink_load_entry_file(self.handle, path.as_ptr(), execute_html_scripts)
+        })?;
+        Ok(self)
+    }
+
     pub fn eval_js(&self, code: &str) -> Result<&Self> {
         let code = to_cstring(code)?;
         self.check_rc(unsafe { mbink_sys::mbink_eval_js(self.handle, code.as_ptr()) })?;
@@ -224,6 +280,12 @@ impl App {
     pub fn load_js_file(&self, path: &str) -> Result<&Self> {
         let path = to_cstring(path)?;
         self.check_rc(unsafe { mbink_sys::mbink_load_js_file(self.handle, path.as_ptr()) })?;
+        Ok(self)
+    }
+
+    pub fn load_module_file(&self, path: &str) -> Result<&Self> {
+        let path = to_cstring(path)?;
+        self.check_rc(unsafe { mbink_sys::mbink_load_module_file(self.handle, path.as_ptr()) })?;
         Ok(self)
     }
 
@@ -252,6 +314,163 @@ impl App {
             )
         })?;
         Ok(self)
+    }
+
+    pub fn configure_runtime(&self, options: RuntimeOptions) -> Result<&Self> {
+        let epoch = options
+            .runtime_epoch
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let mut raw = unsafe { mbink_sys::mbink_default_runtime_options() };
+        raw.runtime_epoch = epoch.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.load_embedded_runtime = options.load_embedded_runtime;
+        raw.load_official_preact = options.load_official_preact;
+        self.check_rc(unsafe { mbink_sys::mbink_configure_runtime(self.handle, &raw) })?;
+        Ok(self)
+    }
+
+    pub fn load_embedded_runtime(&self, include_official_preact: bool) -> Result<&Self> {
+        self.check_rc(unsafe {
+            mbink_sys::mbink_load_embedded_runtime(self.handle, include_official_preact)
+        })?;
+        Ok(self)
+    }
+
+    pub fn render_frame(&self, passes: i32) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_render_frame(self.handle, passes) })?;
+        Ok(self)
+    }
+
+    pub fn runtime_epoch(&self) -> Result<String> {
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe { mbink_sys::mbink_runtime_epoch(self.handle, &mut out) })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn lifecycle_state(&self) -> crate::LifecycleState {
+        crate::LifecycleState::from_raw(unsafe { mbink_sys::mbink_lifecycle_state(self.handle) })
+    }
+
+    pub fn lifecycle_reason(&self) -> Result<String> {
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe { mbink_sys::mbink_lifecycle_reason(self.handle, &mut out) })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn observe_console_json(&self) -> Result<String> {
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe { mbink_sys::mbink_observe_console_json(self.handle, &mut out) })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn observe_errors_json(&self) -> Result<String> {
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe { mbink_sys::mbink_observe_errors_json(self.handle, &mut out) })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn observe_lifecycle_json(&self) -> Result<String> {
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe { mbink_sys::mbink_observe_lifecycle_json(self.handle, &mut out) })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn observe_console(&self) -> Result<Value> {
+        Ok(serde_json::from_str(&self.observe_console_json()?)?)
+    }
+
+    pub fn observe_errors(&self) -> Result<Value> {
+        Ok(serde_json::from_str(&self.observe_errors_json()?)?)
+    }
+
+    pub fn observe_lifecycle(&self) -> Result<Value> {
+        Ok(serde_json::from_str(&self.observe_lifecycle_json()?)?)
+    }
+
+    pub fn observe_clear(&self, kind: crate::ObserveKind) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_observe_clear(self.handle, kind.to_raw()) })?;
+        Ok(self)
+    }
+
+    pub fn ui_dev_snapshot_json(&self, options: UiDevSnapshotOptions) -> Result<String> {
+        let runtime_epoch = options
+            .runtime_epoch
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let root_selector = options
+            .root_selector
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let screenshot_file = options
+            .screenshot_file
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let mut raw = unsafe { mbink_sys::mbink_ui_dev_default_snapshot_options() };
+        raw.runtime_epoch = runtime_epoch.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.max_nodes = options.max_nodes;
+        raw.max_depth = options.max_depth;
+        raw.root_selector = root_selector.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.include_screenshot = options.include_screenshot;
+        raw.inline_screenshot = options.inline_screenshot;
+        raw.screenshot_file = screenshot_file.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe {
+            mbink_sys::mbink_ui_dev_snapshot_json(self.handle, &raw, &mut out)
+        })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn ui_dev_snapshot(&self, options: UiDevSnapshotOptions) -> Result<Value> {
+        Ok(serde_json::from_str(&self.ui_dev_snapshot_json(options)?)?)
+    }
+
+    pub fn ui_dev_snapshot_file(&self, output_path: &str, options: UiDevSnapshotOptions) -> Result<&Self> {
+        let output_path = to_cstring(output_path)?;
+        let runtime_epoch = options
+            .runtime_epoch
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let root_selector = options
+            .root_selector
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let screenshot_file = options
+            .screenshot_file
+            .as_deref()
+            .map(to_cstring)
+            .transpose()?;
+        let mut raw = unsafe { mbink_sys::mbink_ui_dev_default_snapshot_options() };
+        raw.runtime_epoch = runtime_epoch.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.max_nodes = options.max_nodes;
+        raw.max_depth = options.max_depth;
+        raw.root_selector = root_selector.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.include_screenshot = options.include_screenshot;
+        raw.inline_screenshot = options.inline_screenshot;
+        raw.screenshot_file = screenshot_file.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        self.check_rc(unsafe {
+            mbink_sys::mbink_ui_dev_snapshot_file(self.handle, output_path.as_ptr(), &raw)
+        })?;
+        Ok(self)
+    }
+
+    pub fn ui_dev_command_json(&self, command_json: &str) -> Result<String> {
+        let command_json = to_cstring(command_json)?;
+        let mut out = std::ptr::null_mut();
+        self.check_rc(unsafe {
+            mbink_sys::mbink_ui_dev_command_json(self.handle, command_json.as_ptr(), &mut out)
+        })?;
+        unsafe { string_from_owned_ptr(out) }
+    }
+
+    pub fn ui_dev_command<T: serde::Serialize>(&self, command: &T) -> Result<Value> {
+        let command_json = serde_json::to_string(command)?;
+        Ok(serde_json::from_str(&self.ui_dev_command_json(&command_json)?)?)
     }
 
     pub fn set_title(&self, title: &str) -> Result<&Self> {

@@ -48,6 +48,24 @@ pub enum MBinkType {
 }
 
 #[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MBinkLifecycleState {
+    MBINK_LIFECYCLE_CREATED = 0,
+    MBINK_LIFECYCLE_LOADED = 1,
+    MBINK_LIFECYCLE_RUNNING = 2,
+    MBINK_LIFECYCLE_CLOSE_REQUESTED = 3,
+    MBINK_LIFECYCLE_STOPPED = 4,
+    MBINK_LIFECYCLE_DESTROYED = 5,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MBinkObserveKind {
+    MBINK_OBSERVE_CONSOLE = 1,
+    MBINK_OBSERVE_ERROR = 2,
+}
+
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MBinkConfig {
     pub title: *const c_char,
@@ -67,6 +85,26 @@ pub struct MBinkConfig {
     pub max_height: c_int,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MBinkRuntimeOptions {
+    pub runtime_epoch: *const c_char,
+    pub load_embedded_runtime: bool,
+    pub load_official_preact: bool,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MBinkUiDevSnapshotOptions {
+    pub runtime_epoch: *const c_char,
+    pub max_nodes: usize,
+    pub max_depth: c_int,
+    pub root_selector: *const c_char,
+    pub include_screenshot: bool,
+    pub inline_screenshot: bool,
+    pub screenshot_file: *const c_char,
+}
+
 pub type MBinkCallback = Option<unsafe extern "C" fn(*const c_char, *mut c_void) -> *mut c_char>;
 pub type MBinkAsyncCallback = Option<unsafe extern "C" fn(*const c_char, *mut c_void) -> *mut c_char>;
 pub type MBinkStateCallback = Option<unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void)>;
@@ -74,6 +112,7 @@ pub type MBinkResizeCallback = Option<unsafe extern "C" fn(c_int, c_int, *mut c_
 pub type MBinkVoidCallback = Option<unsafe extern "C" fn(*mut c_void)>;
 pub type MBinkBoolCallback = Option<unsafe extern "C" fn(*mut c_void) -> bool>;
 pub type MBinkUpdateCallback = Option<unsafe extern "C" fn(f32, *mut c_void)>;
+pub type MBinkObserveCallback = Option<unsafe extern "C" fn(MBinkObserveKind, *const c_char, *mut c_void)>;
 
 #[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
 extern "C" {
@@ -89,6 +128,15 @@ extern "C" {
     pub fn mbink_run(handle: MBinkHandle);
     pub fn mbink_stop(handle: MBinkHandle);
     pub fn mbink_poll_events(handle: MBinkHandle) -> bool;
+    pub fn mbink_default_runtime_options() -> MBinkRuntimeOptions;
+    pub fn mbink_configure_runtime(handle: MBinkHandle, options: *const MBinkRuntimeOptions) -> c_int;
+    pub fn mbink_load_embedded_runtime(handle: MBinkHandle, include_official_preact: bool) -> c_int;
+    pub fn mbink_load_entry_file(handle: MBinkHandle, entry_path: *const c_char, execute_html_scripts: bool) -> c_int;
+    pub fn mbink_load_module_file(handle: MBinkHandle, entry_path: *const c_char) -> c_int;
+    pub fn mbink_render_frame(handle: MBinkHandle, passes: c_int) -> c_int;
+    pub fn mbink_runtime_epoch(handle: MBinkHandle, out_epoch: *mut *mut c_char) -> c_int;
+    pub fn mbink_lifecycle_state(handle: MBinkHandle) -> MBinkLifecycleState;
+    pub fn mbink_lifecycle_reason(handle: MBinkHandle, out_reason: *mut *mut c_char) -> c_int;
 
     pub fn mbink_set_title(handle: MBinkHandle, title: *const c_char) -> c_int;
     pub fn mbink_tray_create(handle: MBinkHandle, tooltip: *const c_char) -> c_int;
@@ -125,6 +173,15 @@ extern "C" {
     pub fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int;
     pub fn mbink_devtools_open(handle: MBinkHandle) -> c_int;
     pub fn mbink_devtools_close(handle: MBinkHandle) -> c_int;
+    pub fn mbink_observe_set_callback(handle: MBinkHandle, callback: MBinkObserveCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_observe_console_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
+    pub fn mbink_observe_errors_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
+    pub fn mbink_observe_lifecycle_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
+    pub fn mbink_observe_clear(handle: MBinkHandle, kind: MBinkObserveKind) -> c_int;
+    pub fn mbink_ui_dev_default_snapshot_options() -> MBinkUiDevSnapshotOptions;
+    pub fn mbink_ui_dev_snapshot_json(handle: MBinkHandle, options: *const MBinkUiDevSnapshotOptions, out_json: *mut *mut c_char) -> c_int;
+    pub fn mbink_ui_dev_snapshot_file(handle: MBinkHandle, output_path: *const c_char, options: *const MBinkUiDevSnapshotOptions) -> c_int;
+    pub fn mbink_ui_dev_command_json(handle: MBinkHandle, command_json: *const c_char, out_response_json: *mut *mut c_char) -> c_int;
 
     pub fn mbink_state_create_null(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_create_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int;

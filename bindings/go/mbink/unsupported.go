@@ -22,6 +22,7 @@ func unsupported() error { return newError(0, "mbink Go bindings currently suppo
 
 func Version() string                               { return "" }
 func DefaultConfig() Config                         { return Config{} }
+func DefaultRuntimeOptions() RuntimeOptions         { return RuntimeOptions{} }
 func New(string, int, int) (*App, error)            { return nil, unsupported() }
 func NewWithConfig(Config) (*App, error)            { return nil, unsupported() }
 func CompileResources(string, string, string) error { return unsupported() }

@@ -5,6 +5,8 @@ Rust bindings for MBink live under this workspace:
 - `mbink-sys`: raw FFI bindings to `mbink.h`
 - `mbink`: safe Rust wrapper with RAII, `Result`, JSON helpers, callbacks, and resource package helpers
 
+Runtime behavior follows the shared C API contract documented in `docs/C_API_RUNTIME_PARITY.md`.
+
 ## Layout
 
 ```text

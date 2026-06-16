@@ -8,8 +8,10 @@ use std::sync::OnceLock;
 
 use super::{
     MBinkAsyncCallback, MBinkBoolCallback, MBinkCallback, MBinkConfig, MBinkHandle,
-    MBinkLogViewHandle, MBinkResizeCallback, MBinkSharedHandle, MBinkStateCallback,
-    MBinkTerminalHandle, MBinkType, MBinkUpdateCallback, MBinkVoidCallback,
+    MBinkLifecycleState, MBinkLogViewHandle, MBinkObserveCallback, MBinkObserveKind,
+    MBinkResizeCallback, MBinkRuntimeOptions, MBinkSharedHandle, MBinkStateCallback,
+    MBinkTerminalHandle, MBinkType, MBinkUiDevSnapshotOptions, MBinkUpdateCallback,
+    MBinkVoidCallback,
 };
 
 type MBinkLoadResourceFileFn = unsafe extern "C" fn(
@@ -34,6 +36,15 @@ struct Api {
     mbink_run: unsafe extern "C" fn(MBinkHandle),
     mbink_stop: unsafe extern "C" fn(MBinkHandle),
     mbink_poll_events: unsafe extern "C" fn(MBinkHandle) -> bool,
+    mbink_default_runtime_options: unsafe extern "C" fn() -> MBinkRuntimeOptions,
+    mbink_configure_runtime: unsafe extern "C" fn(MBinkHandle, *const MBinkRuntimeOptions) -> c_int,
+    mbink_load_embedded_runtime: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
+    mbink_load_entry_file: unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int,
+    mbink_load_module_file: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_render_frame: unsafe extern "C" fn(MBinkHandle, c_int) -> c_int,
+    mbink_runtime_epoch: unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int,
+    mbink_lifecycle_state: unsafe extern "C" fn(MBinkHandle) -> MBinkLifecycleState,
+    mbink_lifecycle_reason: unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int,
     mbink_set_title: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_tray_create: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_tray_destroy: unsafe extern "C" fn(MBinkHandle) -> c_int,
@@ -68,6 +79,15 @@ struct Api {
     mbink_emit: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
     mbink_devtools_open: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_devtools_close: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_observe_set_callback: unsafe extern "C" fn(MBinkHandle, MBinkObserveCallback, *mut c_void) -> c_int,
+    mbink_observe_console_json: unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int,
+    mbink_observe_errors_json: unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int,
+    mbink_observe_lifecycle_json: unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int,
+    mbink_observe_clear: unsafe extern "C" fn(MBinkHandle, MBinkObserveKind) -> c_int,
+    mbink_ui_dev_default_snapshot_options: unsafe extern "C" fn() -> MBinkUiDevSnapshotOptions,
+    mbink_ui_dev_snapshot_json: unsafe extern "C" fn(MBinkHandle, *const MBinkUiDevSnapshotOptions, *mut *mut c_char) -> c_int,
+    mbink_ui_dev_snapshot_file: unsafe extern "C" fn(MBinkHandle, *const c_char, *const MBinkUiDevSnapshotOptions) -> c_int,
+    mbink_ui_dev_command_json: unsafe extern "C" fn(MBinkHandle, *const c_char, *mut *mut c_char) -> c_int,
     mbink_state_create_null: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_state_create_bool: unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int,
     mbink_state_create_int: unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int,
@@ -205,6 +225,15 @@ unsafe fn load_api() -> Api {
     let mbink_run = load!(b"mbink_run\0", unsafe extern "C" fn(MBinkHandle));
     let mbink_stop = load!(b"mbink_stop\0", unsafe extern "C" fn(MBinkHandle));
     let mbink_poll_events = load!(b"mbink_poll_events\0", unsafe extern "C" fn(MBinkHandle) -> bool);
+    let mbink_default_runtime_options = load!(b"mbink_default_runtime_options\0", unsafe extern "C" fn() -> MBinkRuntimeOptions);
+    let mbink_configure_runtime = load!(b"mbink_configure_runtime\0", unsafe extern "C" fn(MBinkHandle, *const MBinkRuntimeOptions) -> c_int);
+    let mbink_load_embedded_runtime = load!(b"mbink_load_embedded_runtime\0", unsafe extern "C" fn(MBinkHandle, bool) -> c_int);
+    let mbink_load_entry_file = load!(b"mbink_load_entry_file\0", unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int);
+    let mbink_load_module_file = load!(b"mbink_load_module_file\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_render_frame = load!(b"mbink_render_frame\0", unsafe extern "C" fn(MBinkHandle, c_int) -> c_int);
+    let mbink_runtime_epoch = load!(b"mbink_runtime_epoch\0", unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int);
+    let mbink_lifecycle_state = load!(b"mbink_lifecycle_state\0", unsafe extern "C" fn(MBinkHandle) -> MBinkLifecycleState);
+    let mbink_lifecycle_reason = load!(b"mbink_lifecycle_reason\0", unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int);
     let mbink_set_title = load!(b"mbink_set_title\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_tray_create = load!(b"mbink_tray_create\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_tray_destroy = load!(b"mbink_tray_destroy\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
@@ -239,6 +268,15 @@ unsafe fn load_api() -> Api {
     let mbink_emit = load!(b"mbink_emit\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
     let mbink_devtools_open = load!(b"mbink_devtools_open\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_devtools_close = load!(b"mbink_devtools_close\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_observe_set_callback = load!(b"mbink_observe_set_callback\0", unsafe extern "C" fn(MBinkHandle, MBinkObserveCallback, *mut c_void) -> c_int);
+    let mbink_observe_console_json = load!(b"mbink_observe_console_json\0", unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int);
+    let mbink_observe_errors_json = load!(b"mbink_observe_errors_json\0", unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int);
+    let mbink_observe_lifecycle_json = load!(b"mbink_observe_lifecycle_json\0", unsafe extern "C" fn(MBinkHandle, *mut *mut c_char) -> c_int);
+    let mbink_observe_clear = load!(b"mbink_observe_clear\0", unsafe extern "C" fn(MBinkHandle, MBinkObserveKind) -> c_int);
+    let mbink_ui_dev_default_snapshot_options = load!(b"mbink_ui_dev_default_snapshot_options\0", unsafe extern "C" fn() -> MBinkUiDevSnapshotOptions);
+    let mbink_ui_dev_snapshot_json = load!(b"mbink_ui_dev_snapshot_json\0", unsafe extern "C" fn(MBinkHandle, *const MBinkUiDevSnapshotOptions, *mut *mut c_char) -> c_int);
+    let mbink_ui_dev_snapshot_file = load!(b"mbink_ui_dev_snapshot_file\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const MBinkUiDevSnapshotOptions) -> c_int);
+    let mbink_ui_dev_command_json = load!(b"mbink_ui_dev_command_json\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *mut *mut c_char) -> c_int);
     let mbink_state_create_null = load!(b"mbink_state_create_null\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_state_create_bool = load!(b"mbink_state_create_bool\0", unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int);
     let mbink_state_create_int = load!(b"mbink_state_create_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int);
@@ -353,6 +391,15 @@ unsafe fn load_api() -> Api {
         mbink_run,
         mbink_stop,
         mbink_poll_events,
+        mbink_default_runtime_options,
+        mbink_configure_runtime,
+        mbink_load_embedded_runtime,
+        mbink_load_entry_file,
+        mbink_load_module_file,
+        mbink_render_frame,
+        mbink_runtime_epoch,
+        mbink_lifecycle_state,
+        mbink_lifecycle_reason,
         mbink_set_title,
         mbink_tray_create,
         mbink_tray_destroy,
@@ -387,6 +434,15 @@ unsafe fn load_api() -> Api {
         mbink_emit,
         mbink_devtools_open,
         mbink_devtools_close,
+        mbink_observe_set_callback,
+        mbink_observe_console_json,
+        mbink_observe_errors_json,
+        mbink_observe_lifecycle_json,
+        mbink_observe_clear,
+        mbink_ui_dev_default_snapshot_options,
+        mbink_ui_dev_snapshot_json,
+        mbink_ui_dev_snapshot_file,
+        mbink_ui_dev_command_json,
         mbink_state_create_null,
         mbink_state_create_bool,
         mbink_state_create_int,
@@ -526,6 +582,15 @@ pub unsafe fn mbink_destroy(handle: MBinkHandle) { (api().mbink_destroy)(handle)
 pub unsafe fn mbink_run(handle: MBinkHandle) { (api().mbink_run)(handle) }
 pub unsafe fn mbink_stop(handle: MBinkHandle) { (api().mbink_stop)(handle) }
 pub unsafe fn mbink_poll_events(handle: MBinkHandle) -> bool { (api().mbink_poll_events)(handle) }
+pub unsafe fn mbink_default_runtime_options() -> MBinkRuntimeOptions { (api().mbink_default_runtime_options)() }
+pub unsafe fn mbink_configure_runtime(handle: MBinkHandle, options: *const MBinkRuntimeOptions) -> c_int { (api().mbink_configure_runtime)(handle, options) }
+pub unsafe fn mbink_load_embedded_runtime(handle: MBinkHandle, include_official_preact: bool) -> c_int { (api().mbink_load_embedded_runtime)(handle, include_official_preact) }
+pub unsafe fn mbink_load_entry_file(handle: MBinkHandle, entry_path: *const c_char, execute_html_scripts: bool) -> c_int { (api().mbink_load_entry_file)(handle, entry_path, execute_html_scripts) }
+pub unsafe fn mbink_load_module_file(handle: MBinkHandle, entry_path: *const c_char) -> c_int { (api().mbink_load_module_file)(handle, entry_path) }
+pub unsafe fn mbink_render_frame(handle: MBinkHandle, passes: c_int) -> c_int { (api().mbink_render_frame)(handle, passes) }
+pub unsafe fn mbink_runtime_epoch(handle: MBinkHandle, out_epoch: *mut *mut c_char) -> c_int { (api().mbink_runtime_epoch)(handle, out_epoch) }
+pub unsafe fn mbink_lifecycle_state(handle: MBinkHandle) -> MBinkLifecycleState { (api().mbink_lifecycle_state)(handle) }
+pub unsafe fn mbink_lifecycle_reason(handle: MBinkHandle, out_reason: *mut *mut c_char) -> c_int { (api().mbink_lifecycle_reason)(handle, out_reason) }
 pub unsafe fn mbink_set_title(handle: MBinkHandle, title: *const c_char) -> c_int { (api().mbink_set_title)(handle, title) }
 pub unsafe fn mbink_tray_create(handle: MBinkHandle, tooltip: *const c_char) -> c_int { (api().mbink_tray_create)(handle, tooltip) }
 pub unsafe fn mbink_tray_destroy(handle: MBinkHandle) -> c_int { (api().mbink_tray_destroy)(handle) }
@@ -560,6 +625,15 @@ pub unsafe fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *c
 pub unsafe fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int { (api().mbink_emit)(handle, event_name, data_json) }
 pub unsafe fn mbink_devtools_open(handle: MBinkHandle) -> c_int { (api().mbink_devtools_open)(handle) }
 pub unsafe fn mbink_devtools_close(handle: MBinkHandle) -> c_int { (api().mbink_devtools_close)(handle) }
+pub unsafe fn mbink_observe_set_callback(handle: MBinkHandle, callback: MBinkObserveCallback, user_data: *mut c_void) -> c_int { (api().mbink_observe_set_callback)(handle, callback, user_data) }
+pub unsafe fn mbink_observe_console_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int { (api().mbink_observe_console_json)(handle, out_json) }
+pub unsafe fn mbink_observe_errors_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int { (api().mbink_observe_errors_json)(handle, out_json) }
+pub unsafe fn mbink_observe_lifecycle_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int { (api().mbink_observe_lifecycle_json)(handle, out_json) }
+pub unsafe fn mbink_observe_clear(handle: MBinkHandle, kind: MBinkObserveKind) -> c_int { (api().mbink_observe_clear)(handle, kind) }
+pub unsafe fn mbink_ui_dev_default_snapshot_options() -> MBinkUiDevSnapshotOptions { (api().mbink_ui_dev_default_snapshot_options)() }
+pub unsafe fn mbink_ui_dev_snapshot_json(handle: MBinkHandle, options: *const MBinkUiDevSnapshotOptions, out_json: *mut *mut c_char) -> c_int { (api().mbink_ui_dev_snapshot_json)(handle, options, out_json) }
+pub unsafe fn mbink_ui_dev_snapshot_file(handle: MBinkHandle, output_path: *const c_char, options: *const MBinkUiDevSnapshotOptions) -> c_int { (api().mbink_ui_dev_snapshot_file)(handle, output_path, options) }
+pub unsafe fn mbink_ui_dev_command_json(handle: MBinkHandle, command_json: *const c_char, out_response_json: *mut *mut c_char) -> c_int { (api().mbink_ui_dev_command_json)(handle, command_json, out_response_json) }
 pub unsafe fn mbink_state_create_null(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_create_null)(handle, name) }
 pub unsafe fn mbink_state_create_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int { (api().mbink_state_create_bool)(handle, name, value) }
 pub unsafe fn mbink_state_create_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int { (api().mbink_state_create_int)(handle, name, value) }

@@ -49,8 +49,8 @@ func Version() string {
 }
 
 func DefaultConfig() Config {
-	ensureInit()
-	raw := C.mbink_default_config()
+    ensureInit()
+    raw := C.mbink_default_config()
 	return Config{
 		Title:             C.GoString(raw.title),
 		Width:             int(raw.width),
@@ -67,6 +67,20 @@ func DefaultConfig() Config {
 		MinHeight:         int(raw.min_height),
 		MaxWidth:          int(raw.max_width),
 		MaxHeight:         int(raw.max_height),
+	}
+}
+
+func DefaultRuntimeOptions() RuntimeOptions {
+	ensureInit()
+	raw := C.mbink_default_runtime_options()
+	runtimeEpoch := ""
+	if raw.runtime_epoch != nil {
+		runtimeEpoch = C.GoString(raw.runtime_epoch)
+	}
+	return RuntimeOptions{
+		RuntimeEpoch:        runtimeEpoch,
+		LoadEmbeddedRuntime: bool(raw.load_embedded_runtime),
+		LoadOfficialPreact:  bool(raw.load_official_preact),
 	}
 }
 
@@ -95,6 +109,12 @@ func NewWithConfig(cfg Config) (*App, error) {
 	if h == nil {
 		runtime.UnlockOSThread()
 		return nil, newError(-1, lastErrorMessage())
+	}
+	runtimeOptions := C.mbink_default_runtime_options()
+	if err := checkRC(C.mbink_configure_runtime(h, &runtimeOptions)); err != nil {
+		C.mbink_destroy(h)
+		runtime.UnlockOSThread()
+		return nil, err
 	}
 	app := &App{
 		handle:        h,

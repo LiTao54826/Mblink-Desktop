@@ -8,7 +8,10 @@ package mbink
 */
 import "C"
 
-import "unsafe"
+import (
+	"encoding/json"
+	"unsafe"
+)
 
 func cString(value string) (*C.char, func()) {
 	ptr := C.CString(value)
@@ -24,6 +27,11 @@ func (a *App) LoadHTMLFile(path string) error {
 	v, done := cString(path)
 	defer done()
 	return checkRC(C.mbink_load_html_file(a.handle, v))
+}
+func (a *App) LoadEntryFile(path string, executeHTMLScripts bool) error {
+	v, done := cString(path)
+	defer done()
+	return checkRC(C.mbink_load_entry_file(a.handle, v, boolToC(executeHTMLScripts)))
 }
 func (a *App) EvalJS(code string) error {
 	v, done := cString(code)
@@ -42,6 +50,11 @@ func (a *App) LoadJSFile(path string) error {
 	defer done()
 	return checkRC(C.mbink_load_js_file(a.handle, v))
 }
+func (a *App) LoadModuleFile(path string) error {
+	v, done := cString(path)
+	defer done()
+	return checkRC(C.mbink_load_module_file(a.handle, v))
+}
 func (a *App) LoadBytecode(data []byte) error {
 	if len(data) == 0 {
 		return checkRC(C.mbink_load_bytecode(a.handle, nil, 0))
@@ -56,6 +69,189 @@ func (a *App) MountResourcePackage(file, key, mount string) error {
 	mv, md := cString(mount)
 	defer md()
 	return checkRC(C.mbink_mount_resource_package(a.handle, fv, kv, mv))
+}
+func (a *App) ConfigureRuntime(options RuntimeOptions) error {
+	raw := C.mbink_default_runtime_options()
+	var epoch *C.char
+	if options.RuntimeEpoch != "" {
+		epoch, _ = cString(options.RuntimeEpoch)
+		defer C.free(unsafe.Pointer(epoch))
+		raw.runtime_epoch = epoch
+	}
+	raw.load_embedded_runtime = boolToC(options.LoadEmbeddedRuntime)
+	raw.load_official_preact = boolToC(options.LoadOfficialPreact)
+	return checkRC(C.mbink_configure_runtime(a.handle, &raw))
+}
+func (a *App) LoadEmbeddedRuntime(includeOfficialPreact bool) error {
+	return checkRC(C.mbink_load_embedded_runtime(a.handle, boolToC(includeOfficialPreact)))
+}
+func (a *App) RenderFrame(passes int) error {
+	return checkRC(C.mbink_render_frame(a.handle, C.int(passes)))
+}
+func (a *App) RuntimeEpoch() (string, error) {
+	var out *C.char
+	if err := checkRC(C.mbink_runtime_epoch(a.handle, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) LifecycleState() LifecycleState {
+	return LifecycleState(C.mbink_lifecycle_state(a.handle))
+}
+func (a *App) LifecycleReason() (string, error) {
+	var out *C.char
+	if err := checkRC(C.mbink_lifecycle_reason(a.handle, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) ObserveConsoleJSON() (string, error) {
+	var out *C.char
+	if err := checkRC(C.mbink_observe_console_json(a.handle, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) ObserveErrorsJSON() (string, error) {
+	var out *C.char
+	if err := checkRC(C.mbink_observe_errors_json(a.handle, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) ObserveLifecycleJSON() (string, error) {
+	var out *C.char
+	if err := checkRC(C.mbink_observe_lifecycle_json(a.handle, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) ObserveConsole() (any, error) {
+	text, err := a.ObserveConsoleJSON()
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONText(text), nil
+}
+func (a *App) ObserveErrors() (any, error) {
+	text, err := a.ObserveErrorsJSON()
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONText(text), nil
+}
+func (a *App) ObserveLifecycle() (any, error) {
+	text, err := a.ObserveLifecycleJSON()
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONText(text), nil
+}
+func (a *App) ObserveClear(kind ObserveKind) error {
+	return checkRC(C.mbink_observe_clear(a.handle, C.MBinkObserveKind(kind)))
+}
+func (a *App) UiDevSnapshotJSON(options UiDevSnapshotOptions) (string, error) {
+	raw := C.mbink_ui_dev_default_snapshot_options()
+	keepalive := make([]func(), 0, 3)
+	if options.RuntimeEpoch != "" {
+		v, done := cString(options.RuntimeEpoch)
+		keepalive = append(keepalive, done)
+		raw.runtime_epoch = v
+	}
+	if options.MaxNodes != 0 {
+		raw.max_nodes = C.size_t(options.MaxNodes)
+	}
+	if options.MaxDepth != 0 {
+		raw.max_depth = C.int(options.MaxDepth)
+	}
+	if options.RootSelector != "" {
+		v, done := cString(options.RootSelector)
+		keepalive = append(keepalive, done)
+		raw.root_selector = v
+	}
+	raw.include_screenshot = boolToC(options.IncludeScreenshot)
+	raw.inline_screenshot = boolToC(options.InlineScreenshot)
+	if options.ScreenshotFile != "" {
+		v, done := cString(options.ScreenshotFile)
+		keepalive = append(keepalive, done)
+		raw.screenshot_file = v
+	}
+	defer func() {
+		for i := len(keepalive) - 1; i >= 0; i-- {
+			keepalive[i]()
+		}
+	}()
+	var out *C.char
+	if err := checkRC(C.mbink_ui_dev_snapshot_json(a.handle, &raw, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) UiDevSnapshot(options UiDevSnapshotOptions) (any, error) {
+	text, err := a.UiDevSnapshotJSON(options)
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONText(text), nil
+}
+func (a *App) UiDevSnapshotFile(path string, options UiDevSnapshotOptions) error {
+	raw := C.mbink_ui_dev_default_snapshot_options()
+	var runtimeEpoch *C.char
+	if options.RuntimeEpoch != "" {
+		runtimeEpoch, _ = cString(options.RuntimeEpoch)
+		defer C.free(unsafe.Pointer(runtimeEpoch))
+		raw.runtime_epoch = runtimeEpoch
+	}
+	if options.MaxNodes != 0 {
+		raw.max_nodes = C.size_t(options.MaxNodes)
+	}
+	if options.MaxDepth != 0 {
+		raw.max_depth = C.int(options.MaxDepth)
+	}
+	var rootSelector *C.char
+	if options.RootSelector != "" {
+		rootSelector, _ = cString(options.RootSelector)
+		defer C.free(unsafe.Pointer(rootSelector))
+		raw.root_selector = rootSelector
+	}
+	raw.include_screenshot = boolToC(options.IncludeScreenshot)
+	raw.inline_screenshot = boolToC(options.InlineScreenshot)
+	var screenshotFile *C.char
+	if options.ScreenshotFile != "" {
+		screenshotFile, _ = cString(options.ScreenshotFile)
+		defer C.free(unsafe.Pointer(screenshotFile))
+		raw.screenshot_file = screenshotFile
+	}
+	pv, pd := cString(path)
+	defer pd()
+	return checkRC(C.mbink_ui_dev_snapshot_file(a.handle, pv, &raw))
+}
+func (a *App) UiDevCommandJSON(commandJSON string) (string, error) {
+	cmd, done := cString(commandJSON)
+	defer done()
+	var out *C.char
+	if err := checkRC(C.mbink_ui_dev_command_json(a.handle, cmd, &out)); err != nil {
+		return "", err
+	}
+	return takeOwnedString(out), nil
+}
+func (a *App) UiDevCommand(command any) (any, error) {
+	var payload string
+	switch v := command.(type) {
+	case string:
+		payload = v
+	default:
+		data, err := json.Marshal(command)
+		if err != nil {
+			return nil, err
+		}
+		payload = string(data)
+	}
+	text, err := a.UiDevCommandJSON(payload)
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONText(text), nil
 }
 func (a *App) SetTitle(title string) error {
 	v, done := cString(title)

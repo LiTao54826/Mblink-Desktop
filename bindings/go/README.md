@@ -1,6 +1,7 @@
 # MBink Go Binding
 
 Windows-oriented Go binding for MBink, implemented with `cgo + core/api/mbink.h + mbink.lib`.
+Runtime behavior follows the shared C API contract documented in `docs/C_API_RUNTIME_PARITY.md`.
 
 ## Requirements
 
@@ -98,3 +99,4 @@ Current package includes:
 - CMake copies `mbink.dll` and `mbink.lib` directly to `bindings/go/`
 - this lets `go run ./examples/...` started from `bindings/go/` find the DLL from the working directory more directly
 - for other executables, `mbink.dll` still needs to be reachable at run time, typically via the executable directory or `PATH`
+- wrapper runtime, lifecycle, observation, snapshot, and UI-dev command methods should stay aligned with `docs/C_API_RUNTIME_PARITY.md`

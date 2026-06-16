@@ -28,6 +28,20 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
+Runtime parity regression:
+
+```powershell
+cmake --build build --config Release --target mbink_api esm_loader mbink_ui_dev
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_esm_loader_c_api_parity.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mbink_ui_dev_p0_regression.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mbink_ui_dev_responsiveness.ps1
+```
+
+The `test_esm_loader_c_api_parity.ps1` script verifies that `esm_loader.exe`
+stays a thin `mbink.dll` consumer and that snapshot, console, errors,
+lifecycle, UI-dev command handling, and `--no-scripts` behavior flow through
+the C API.
+
 Performance tests | 性能测试：
 
 ```bash

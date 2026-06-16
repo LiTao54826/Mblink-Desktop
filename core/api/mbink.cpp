@@ -25,15 +25,19 @@
 #include "core/event/loop/task_scheduler.h"
 #include "core/network/fetch_bindings.h"
 #include "core/render/image/image_loader.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "tools/esm_loader/embedded_js.h"
+#include "tools/esm_loader/ui_dev_control.h"
+#include "tools/esm_loader/ui_dev_snapshot.h"
 #include "core/devtools/devtools_manager.h"
 
 #include "core/utils/encoding_utils.h"
 
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -41,6 +45,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -48,12 +53,14 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <deque>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <exception>
 #include <filesystem>
 #include <iomanip>
+#include <chrono>
 
 namespace {
 
@@ -112,6 +119,7 @@ void ClearDocumentElementListeners(const std::shared_ptr<mbink::Document>& docum
 // ========== WindowContext ==========
 
 struct WindowContext;
+class StructuredJsonBuffer;
 
 // ========== SharedObject 结构体 ==========
 // Python/JS 共享的 C 对象，内含 QuickJS JSValue
@@ -372,6 +380,17 @@ struct WindowContext {
     std::string mountedResourcePackage;
     std::string mountedResourceKey;
     std::string mountedResourceMountPoint = "/";
+    std::string runtimeEpoch;
+    bool embeddedRuntimeLoaded = false;
+    bool officialPreactLoaded = false;
+    std::string lifecycleReason = "created";
+    MBinkLifecycleState lifecycleState = MBINK_LIFECYCLE_CREATED;
+    std::unique_ptr<StructuredJsonBuffer> consoleBuffer;
+    std::unique_ptr<StructuredJsonBuffer> errorBuffer;
+    MBinkObserveCallback observeCallback = nullptr;
+    void* observeUserData = nullptr;
+    std::shared_ptr<std::atomic<bool>> shutdownRequested =
+        std::make_shared<std::atomic<bool>>(false);
 
     // 共享对象存储
     std::unordered_map<std::string, SharedObjectData*> sharedObjects;
@@ -413,6 +432,58 @@ struct LogViewHandleData {
 struct TerminalHandleData {
     std::shared_ptr<mbink::HTMLTerminalElement> element;
     mbink::MainThreadQueue* mainQueue = nullptr;
+};
+
+class StructuredJsonBuffer {
+public:
+    StructuredJsonBuffer(std::string field_name, size_t max_entries)
+        : field_name_(std::move(field_name)), max_entries_(max_entries) {}
+
+    void Push(nlohmann::json entry) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        entry["timestamp"] = CurrentTimestampIso8601();
+        entry["line"] = ++next_line_;
+        entries_.push_back(std::move(entry));
+        while (entries_.size() > max_entries_) entries_.pop_front();
+    }
+
+    void Clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        entries_.clear();
+        next_line_ = 0;
+    }
+
+    nlohmann::json ToJson() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        nlohmann::json payload;
+        payload[field_name_] = nlohmann::json::array();
+        for (const auto& entry : entries_) payload[field_name_].push_back(entry);
+        return payload;
+    }
+
+private:
+    static std::string CurrentTimestampIso8601() {
+        using namespace std::chrono;
+        const auto now = system_clock::now();
+        const auto t = system_clock::to_time_t(now);
+        std::tm tm{};
+#ifdef _WIN32
+        gmtime_s(&tm, &t);
+#else
+        gmtime_r(&t, &tm);
+#endif
+        char buf[64] = {0};
+        std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                      tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                      tm.tm_hour, tm.tm_min, tm.tm_sec);
+        return std::string(buf);
+    }
+
+    std::string field_name_;
+    size_t max_entries_ = 0;
+    mutable std::mutex mutex_;
+    std::deque<nlohmann::json> entries_;
+    int next_line_ = 0;
 };
 
 // ========== 辅助函数 ==========
@@ -911,6 +982,176 @@ char* duplicateString(const char* str) {
     return result;
 }
 
+std::string CurrentTimestampIso8601() {
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const auto t = system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[64] = {0};
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                  tm.tm_hour, tm.tm_min, tm.tm_sec);
+    return std::string(buf);
+}
+
+std::string readFileContents(const char* filepath);
+
+void setLifecycle(WindowContext* ctx, MBinkLifecycleState state, std::string reason) {
+    if (!ctx) return;
+    ctx->lifecycleState = state;
+    ctx->lifecycleReason = std::move(reason);
+}
+
+std::string newRuntimeEpoch() {
+    const auto tick = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return "rt-" + std::to_string(tick);
+}
+
+bool isHtmlFilePath(const std::string& path) {
+    fs::path p = Utf8PathToFsPath(path);
+    auto ext = FsPathToUtf8String(p.extension());
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == ".html" || ext == ".htm";
+}
+
+const char* lifecycleStateName(MBinkLifecycleState state) {
+    switch (state) {
+        case MBINK_LIFECYCLE_CREATED: return "created";
+        case MBINK_LIFECYCLE_LOADED: return "loaded";
+        case MBINK_LIFECYCLE_RUNNING: return "running";
+        case MBINK_LIFECYCLE_CLOSE_REQUESTED: return "close_requested";
+        case MBINK_LIFECYCLE_STOPPED: return "stopped";
+        case MBINK_LIFECYCLE_DESTROYED: return "destroyed";
+    }
+    return "unknown";
+}
+
+void flushRuntimeWork(WindowContext* ctx) {
+    if (!ctx) return;
+    if (ctx->stateManager) ctx->stateManager->processQueue();
+    if (ctx->hostBridge) {
+        ctx->hostBridge->flushEvents();
+        ctx->hostBridge->flushAsyncResults();
+    }
+    if (ctx->runtime) ctx->runtime->ProcessMicrotasks();
+    ctx->mainThreadQueue.flush();
+    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+        shared->flushPendingNotify();
+    });
+    if (ctx->runtime) ctx->runtime->ProcessMicrotasks();
+}
+
+void forceRenderFrame(WindowContext* ctx, int passes) {
+    if (!ctx || !ctx->window) return;
+    if (passes < 1) passes = 1;
+    for (int i = 0; i < passes; ++i) {
+        if (ctx->runtime) {
+            ctx->runtime->RunEventLoop(1);
+            ctx->runtime->ProcessMicrotasks();
+        }
+        if (auto* pipeline = ctx->window->GetRenderPipeline()) {
+            pipeline->ForceRasterize();
+        }
+        ctx->window->SetNeedsRepaint();
+        ctx->window->Render();
+        ctx->window->SwapBuffers();
+        if (ctx->runtime) {
+            ctx->runtime->RunEventLoop(1);
+            ctx->runtime->ProcessMicrotasks();
+        }
+    }
+}
+
+int loadHtmlContent(WindowContext* ctx,
+                    const std::string& content,
+                    const std::string& base_path,
+                    bool execute_scripts) {
+    if (!ctx || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
+
+    ctx->document->SetBasePath(base_path);
+    mbink::FetchBindings::SetBasePath(base_path);
+    mbink::ImageLoader::SetBasePath(base_path);
+    if (!ctx->document->LoadHTML(content)) {
+        setLastError("Failed to parse HTML");
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+
+    ctx->document->ConsumeLoadErrors();
+    std::string phase_error;
+    try {
+        ctx->document->LoadExternalStylesheets();
+        if (execute_scripts) {
+            ctx->document->ExecuteScripts();
+        }
+    } catch (const std::exception& e) {
+        phase_error = std::string("HTML parsed but resource execution failed: ") + e.what();
+    } catch (...) {
+        phase_error = "HTML parsed but resource execution failed: unknown error";
+    }
+
+    std::string load_errors = ctx->document->ConsumeLoadErrors();
+    if (!phase_error.empty() && !load_errors.empty()) {
+        setLastError(phase_error + "\n" + load_errors);
+    } else if (!phase_error.empty()) {
+        setLastError(phase_error);
+    } else if (!load_errors.empty()) {
+        setLastError(load_errors);
+    }
+
+    if (ctx->window) {
+        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
+    }
+    setLifecycle(ctx, MBINK_LIFECYCLE_LOADED, "loaded");
+    return MBINK_OK;
+}
+
+int loadHtmlString(WindowContext* ctx, const char* html, bool execute_scripts) {
+    if (!html) return MBINK_ERROR_INVALID_PARAM;
+    return loadHtmlContent(ctx, html, "", execute_scripts);
+}
+
+int loadHtmlFile(WindowContext* ctx, const char* filepath, bool execute_scripts) {
+    if (!ctx) return MBINK_ERROR_INVALID_HANDLE;
+    if (!filepath) return MBINK_ERROR_INVALID_PARAM;
+
+    std::string content;
+    std::string base_path;
+
+    const std::string resourcePath = JoinMountedResourcePath(
+        ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+        filepath);
+
+    if (!ctx->mountedResourcePackage.empty() && !resourcePath.empty()) {
+        std::vector<uint8_t> data;
+        std::string error;
+        if (mbink::resourcepkg::LoadResourceFile(
+                ctx->mountedResourcePackage.c_str(),
+                resourcePath.c_str(),
+                ctx->mountedResourceKey.c_str(),
+                data,
+                nullptr,
+                error)) {
+            content.assign(reinterpret_cast<const char*>(data.data()), data.size());
+            fs::path html_dir = fs::path(NormalizeResourcePath(filepath)).parent_path();
+            base_path = NormalizeResourcePath(FsPathToUtf8String(html_dir));
+        }
+    }
+
+    if (content.empty()) {
+        content = readFileContents(filepath);
+        fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
+        base_path = NormalizeFsPath(html_dir);
+    }
+
+    return loadHtmlContent(ctx, content, base_path, execute_scripts);
+}
+
 #ifdef _WIN32
 HWND getOwnerHwnd(WindowContext* ctx) {
     if (!ctx || !ctx->window) return nullptr;
@@ -1078,6 +1319,8 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 5. 创建 QuickJS Runtime
     ctx->runtime = std::make_unique<mbink::QuickJSRuntime>();
+    ctx->consoleBuffer = std::make_unique<StructuredJsonBuffer>("entries", 500);
+    ctx->errorBuffer = std::make_unique<StructuredJsonBuffer>("errors", 200);
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
@@ -1159,8 +1402,31 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     });
 
 
-    loadEmbeddedRuntimeScripts(ctx->runtime.get());
-    registerPreactModules(ctx->runtime.get());
+    ctx->runtimeEpoch = newRuntimeEpoch();
+    ctx->runtime->SetConsoleCallback([ctx](const nlohmann::json& entry) {
+        if (ctx->consoleBuffer) ctx->consoleBuffer->Push(entry);
+        if (ctx->observeCallback) {
+            const auto payload = entry.dump();
+            ctx->observeCallback(MBINK_OBSERVE_CONSOLE, payload.c_str(), ctx->observeUserData);
+        }
+    });
+    ctx->runtime->SetErrorCallback([ctx](const nlohmann::json& entry) {
+        if (ctx->errorBuffer) ctx->errorBuffer->Push(entry);
+        if (ctx->observeCallback) {
+            const auto payload = entry.dump();
+            ctx->observeCallback(MBINK_OBSERVE_ERROR, payload.c_str(), ctx->observeUserData);
+        }
+    });
+    ctx->window->SetOnCloseCallback([ctx]() {
+        ctx->shutdownRequested->store(true);
+        setLifecycle(ctx, MBINK_LIFECYCLE_STOPPED, "user_closed");
+        if (ctx->onCloseCallback) {
+            ctx->onCloseCallback(ctx->onCloseUserData);
+        }
+        if (ctx->eventLoop) {
+            ctx->eventLoop->Stop();
+        }
+    });
 
     return ctx;
 }
@@ -1247,6 +1513,7 @@ MBinkConfig mbink_default_config(void) {
 void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
+    setLifecycle(ctx, MBINK_LIFECYCLE_DESTROYED, "destroyed");
 
     SAFE_CLEANUP("shutdown_devtools", {
         auto& devtools = mbink::DevToolsManager::GetInstance();
@@ -1397,6 +1664,7 @@ void mbink_run(MBinkHandle handle) {
     if (ctx->running) return;
 
     ctx->running = true;
+    setLifecycle(ctx, MBINK_LIFECYCLE_RUNNING, "running");
 
     // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + MainThreadQueue + SharedObject 延迟通知 + 用户回调
     ctx->eventLoop->SetUpdateCallback([ctx](float dt) {
@@ -1440,11 +1708,17 @@ void mbink_run(MBinkHandle handle) {
     ctx->eventLoop->Run();
 #endif
     ctx->running = false;
+    if (ctx->lifecycleState == MBINK_LIFECYCLE_RUNNING) {
+        setLifecycle(ctx, MBINK_LIFECYCLE_STOPPED, "event_loop_stopped");
+    }
 }
 
 void mbink_stop(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
+    ctx->shutdownRequested->store(true);
+    ctx->running = false;
+    setLifecycle(ctx, MBINK_LIFECYCLE_STOPPED, "stop_requested");
     if (ctx->eventLoop) {
         ctx->eventLoop->Stop();
     }
@@ -1454,31 +1728,109 @@ bool mbink_poll_events(MBinkHandle handle) {
     if (!handle) return false;
     auto ctx = getContext(handle);
     if (!ctx->eventLoop) return false;
+    if (!ctx->running && ctx->lifecycleState != MBINK_LIFECYCLE_STOPPED) {
+        ctx->running = true;
+        setLifecycle(ctx, MBINK_LIFECYCLE_RUNNING, "running");
+    }
 
-    if (ctx->stateManager) {
-        ctx->stateManager->processQueue();
-    }
-    if (ctx->hostBridge) {
-        ctx->hostBridge->flushEvents();
-        ctx->hostBridge->flushAsyncResults();
-    }
-    if (ctx->runtime) {
-        ctx->runtime->ProcessMicrotasks();
-    }
-    ctx->mainThreadQueue.flush();
-    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
-        shared->flushPendingNotify();
-    });
-    if (ctx->runtime) {
-        ctx->runtime->ProcessMicrotasks();
-    }
+    flushRuntimeWork(ctx);
 
     ctx->eventLoop->RunOnce();
 
-    return !ctx->eventLoop->ShouldQuit();
+    const bool alive = !ctx->eventLoop->ShouldQuit();
+    if (!alive && ctx->lifecycleState == MBINK_LIFECYCLE_RUNNING) {
+        ctx->running = false;
+        setLifecycle(ctx, MBINK_LIFECYCLE_STOPPED, "event_loop_stopped");
+    }
+    return alive;
 }
 
 // ========== 窗口属性 ==========
+
+MBinkRuntimeOptions mbink_default_runtime_options(void) {
+    MBinkRuntimeOptions options = {};
+    options.runtime_epoch = nullptr;
+    options.load_embedded_runtime = true;
+    options.load_official_preact = true;
+    return options;
+}
+
+int mbink_configure_runtime(MBinkHandle handle, const MBinkRuntimeOptions* options) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!options) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    ctx->runtimeEpoch = options->runtime_epoch && *options->runtime_epoch
+                            ? options->runtime_epoch
+                            : newRuntimeEpoch();
+    if (options->load_embedded_runtime) {
+        return mbink_load_embedded_runtime(handle, options->load_official_preact);
+    }
+    return MBINK_OK;
+}
+
+int mbink_load_embedded_runtime(MBinkHandle handle, bool include_official_preact) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
+    try {
+        if (!ctx->embeddedRuntimeLoaded) {
+            loadEmbeddedRuntimeScripts(ctx->runtime.get());
+            ctx->embeddedRuntimeLoaded = true;
+        }
+        if (include_official_preact && !ctx->officialPreactLoaded) {
+            registerPreactModules(ctx->runtime.get());
+            ctx->officialPreactLoaded = true;
+        }
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_JS_ERROR;
+    }
+}
+
+int mbink_load_module_file(MBinkHandle handle, const char* entry_path) {
+    return mbink_load_js_file(handle, entry_path);
+}
+
+int mbink_load_entry_file(MBinkHandle handle, const char* entry_path,
+                          bool execute_html_scripts) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!entry_path) return MBINK_ERROR_INVALID_PARAM;
+    const int rc = isHtmlFilePath(entry_path)
+                       ? loadHtmlFile(getContext(handle), entry_path, execute_html_scripts)
+                       : mbink_load_js_file(handle, entry_path);
+    if (rc == MBINK_OK) {
+        setLifecycle(getContext(handle), MBINK_LIFECYCLE_LOADED, "loaded");
+    }
+    return rc;
+}
+
+int mbink_render_frame(MBinkHandle handle, int passes) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    forceRenderFrame(getContext(handle), passes);
+    return MBINK_OK;
+}
+
+int mbink_runtime_epoch(MBinkHandle handle, char** out_epoch) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_epoch) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    *out_epoch = duplicateString(ctx->runtimeEpoch);
+    return *out_epoch ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
+
+MBinkLifecycleState mbink_lifecycle_state(MBinkHandle handle) {
+    if (!handle) return MBINK_LIFECYCLE_DESTROYED;
+    return getContext(handle)->lifecycleState;
+}
+
+int mbink_lifecycle_reason(MBinkHandle handle, char** out_reason) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_reason) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    *out_reason = duplicateString(ctx->lifecycleReason);
+    return *out_reason ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
 
 int mbink_set_title(MBinkHandle handle, const char* title) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
@@ -1725,37 +2077,7 @@ int mbink_load_html(MBinkHandle handle, const char* html) {
     if (!html) return MBINK_ERROR_INVALID_PARAM;
 
     try {
-        auto ctx = getContext(handle);
-        if (ctx->document) {
-            ctx->document->SetBasePath("");
-            mbink::FetchBindings::SetBasePath("");
-            mbink::ImageLoader::SetBasePath("");
-            if (!ctx->document->LoadHTML(html)) {
-                setLastError("Failed to parse HTML");
-                return MBINK_ERROR_INVALID_PARAM;
-            }
-
-            ctx->document->ConsumeLoadErrors();
-            std::string phase_error;
-            try {
-                ctx->document->LoadExternalStylesheets();
-                ctx->document->ExecuteScripts();
-            } catch (const std::exception& e) {
-                phase_error = std::string("HTML parsed but resource execution failed: ") + e.what();
-            } catch (...) {
-                phase_error = "HTML parsed but resource execution failed: unknown error";
-            }
-
-            std::string load_errors = ctx->document->ConsumeLoadErrors();
-            if (!phase_error.empty() && !load_errors.empty()) {
-                setLastError(phase_error + "\n" + load_errors);
-            } else if (!phase_error.empty()) {
-                setLastError(phase_error);
-            } else if (!load_errors.empty()) {
-                setLastError(load_errors);
-            }
-        }
-        return MBINK_OK;
+        return loadHtmlString(getContext(handle), html, true);
     } catch (const std::exception& e) {
         setLastError(e.what());
         return MBINK_ERROR_INVALID_PARAM;
@@ -1766,66 +2088,7 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     if (!filepath) return MBINK_ERROR_INVALID_PARAM;
     try {
-        auto ctx = getContext(handle);
-        if (ctx->document) {
-            std::string content;
-            std::string base_path;
-
-            const std::string resourcePath = JoinMountedResourcePath(
-                ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
-                filepath);
-
-            if (!ctx->mountedResourcePackage.empty() && !resourcePath.empty()) {
-                std::vector<uint8_t> data;
-                std::string error;
-                if (mbink::resourcepkg::LoadResourceFile(
-                        ctx->mountedResourcePackage.c_str(),
-                        resourcePath.c_str(),
-                        ctx->mountedResourceKey.c_str(),
-                        data,
-                        nullptr,
-                        error)) {
-                    content.assign(reinterpret_cast<const char*>(data.data()), data.size());
-                    fs::path html_dir = fs::path(NormalizeResourcePath(filepath)).parent_path();
-                    base_path = NormalizeResourcePath(FsPathToUtf8String(html_dir));
-                }
-            }
-
-            if (content.empty()) {
-                content = readFileContents(filepath);
-                fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
-                base_path = NormalizeFsPath(html_dir);
-            }
-
-            ctx->document->SetBasePath(base_path);
-            mbink::FetchBindings::SetBasePath(base_path);
-            mbink::ImageLoader::SetBasePath(base_path);
-            if (!ctx->document->LoadHTML(content)) {
-                setLastError("Failed to parse HTML");
-                return MBINK_ERROR_INVALID_PARAM;
-            }
-
-            ctx->document->ConsumeLoadErrors();
-            std::string phase_error;
-            try {
-                ctx->document->LoadExternalStylesheets();
-                ctx->document->ExecuteScripts();
-            } catch (const std::exception& e) {
-                phase_error = std::string("HTML parsed but resource execution failed: ") + e.what();
-            } catch (...) {
-                phase_error = "HTML parsed but resource execution failed: unknown error";
-            }
-
-            std::string load_errors = ctx->document->ConsumeLoadErrors();
-            if (!phase_error.empty() && !load_errors.empty()) {
-                setLastError(phase_error + "\n" + load_errors);
-            } else if (!phase_error.empty()) {
-                setLastError(phase_error);
-            } else if (!load_errors.empty()) {
-                setLastError(load_errors);
-            }
-        }
-        return MBINK_OK;
+        return loadHtmlFile(getContext(handle), filepath, true);
     } catch (const std::exception& e) {
         setLastError(e.what());
         return MBINK_ERROR_INVALID_PARAM;
@@ -1895,6 +2158,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                         if (ctx->window) {
                             ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
                         }
+                        setLifecycle(ctx, MBINK_LIFECYCLE_LOADED, "loaded");
                         return MBINK_OK;
                     }
                     path = NormalizeResourcePath(filepath);
@@ -1905,6 +2169,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
         if (ctx->window) {
             ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
         }
+        setLifecycle(ctx, MBINK_LIFECYCLE_LOADED, "loaded");
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -1925,6 +2190,7 @@ int mbink_load_bytecode(MBinkHandle handle, const void* data, size_t size) {
             setLastError(error.empty() ? "Failed to eval bytecode" : error);
             return MBINK_ERROR_JS_ERROR;
         }
+        setLifecycle(ctx, MBINK_LIFECYCLE_LOADED, "loaded");
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -2108,6 +2374,188 @@ int mbink_devtools_close(MBinkHandle handle) {
 }
 
 // ========== 状态创建 ==========
+
+int mbink_observe_set_callback(MBinkHandle handle,
+                               MBinkObserveCallback callback,
+                               void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    ctx->observeCallback = callback;
+    ctx->observeUserData = user_data;
+    return MBINK_OK;
+}
+
+int mbink_observe_console_json(MBinkHandle handle, char** out_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_json) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    auto payload = (ctx->consoleBuffer ? ctx->consoleBuffer->ToJson()
+                                       : nlohmann::json{{"entries", nlohmann::json::array()}}).dump();
+    *out_json = duplicateString(payload);
+    return *out_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
+
+int mbink_observe_errors_json(MBinkHandle handle, char** out_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_json) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    auto payload = (ctx->errorBuffer ? ctx->errorBuffer->ToJson()
+                                     : nlohmann::json{{"errors", nlohmann::json::array()}}).dump();
+    *out_json = duplicateString(payload);
+    return *out_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
+
+int mbink_observe_lifecycle_json(MBinkHandle handle, char** out_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_json) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    nlohmann::json payload{{"ok", true},
+                           {"status", lifecycleStateName(ctx->lifecycleState)},
+                           {"reason", ctx->lifecycleReason},
+                           {"runtime_epoch", ctx->runtimeEpoch},
+                           {"timestamp", CurrentTimestampIso8601()}};
+    *out_json = duplicateString(payload.dump());
+    return *out_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
+
+int mbink_observe_clear(MBinkHandle handle, MBinkObserveKind kind) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    if (kind == MBINK_OBSERVE_CONSOLE) {
+        if (ctx->consoleBuffer) ctx->consoleBuffer->Clear();
+    } else if (kind == MBINK_OBSERVE_ERROR) {
+        if (ctx->errorBuffer) ctx->errorBuffer->Clear();
+    } else {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+    return MBINK_OK;
+}
+
+MBinkUiDevSnapshotOptions mbink_ui_dev_default_snapshot_options(void) {
+    MBinkUiDevSnapshotOptions options = {};
+    options.runtime_epoch = nullptr;
+    options.max_nodes = 2000;
+    options.max_depth = 64;
+    options.root_selector = nullptr;
+    options.include_screenshot = false;
+    options.inline_screenshot = false;
+    options.screenshot_file = nullptr;
+    return options;
+}
+
+mbink::ui_dev::SnapshotExportOptions toSnapshotOptions(
+    WindowContext* ctx,
+    const MBinkUiDevSnapshotOptions* options) {
+    mbink::ui_dev::SnapshotExportOptions out;
+    out.runtime_epoch = options && options->runtime_epoch
+                            ? options->runtime_epoch
+                            : (ctx ? ctx->runtimeEpoch : std::string{});
+    out.max_nodes = options && options->max_nodes > 0 ? options->max_nodes : 2000;
+    out.max_depth = options && options->max_depth > 0 ? options->max_depth : 64;
+    out.root_selector = options && options->root_selector ? options->root_selector : "";
+    out.include_screenshot = options && options->include_screenshot;
+    out.inline_screenshot = options && options->inline_screenshot;
+    out.screenshot_path = options && options->screenshot_file ? options->screenshot_file : "";
+    out.shutdown_requested = ctx ? ctx->shutdownRequested : nullptr;
+    return out;
+}
+
+int mbink_ui_dev_snapshot_file(MBinkHandle handle,
+                               const char* output_path,
+                               const MBinkUiDevSnapshotOptions* options) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!output_path) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    if (!ctx->window || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
+
+    forceRenderFrame(ctx, 1);
+    std::string error;
+    if (!mbink::ui_dev::ExportUiDevSnapshot(ctx->window,
+                                            ctx->document,
+                                            output_path,
+                                            toSnapshotOptions(ctx, options),
+                                            &error)) {
+        setLastError(error.empty() ? "snapshot export failed" : error);
+        return MBINK_ERROR_UNKNOWN;
+    }
+    return MBINK_OK;
+}
+
+int mbink_ui_dev_snapshot_json(MBinkHandle handle,
+                               const MBinkUiDevSnapshotOptions* options,
+                               char** out_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!out_json) return MBINK_ERROR_INVALID_PARAM;
+    const fs::path tmp_path = fs::temp_directory_path() /
+        ("mbink-ui-dev-snapshot-" + newRuntimeEpoch() + ".json");
+    const int rc = mbink_ui_dev_snapshot_file(handle,
+                                              tmp_path.string().c_str(),
+                                              options);
+    if (rc != MBINK_OK) return rc;
+    try {
+        auto content = readFileContents(tmp_path.string().c_str());
+        std::error_code ec;
+        fs::remove(tmp_path, ec);
+        *out_json = duplicateString(content);
+        return *out_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
+
+int mbink_ui_dev_command_json(MBinkHandle handle,
+                              const char* command_json,
+                              char** out_response_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!command_json || !out_response_json) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    if (!ctx->runtime || !ctx->window || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
+    if (ctx->shutdownRequested && ctx->shutdownRequested->load()) {
+        setLastError("shutdown_in_progress");
+        return MBINK_ERROR_INVALID_HANDLE;
+    }
+
+    const auto id = newRuntimeEpoch();
+    const fs::path base = fs::temp_directory_path();
+    const fs::path command_path = base / ("mbink-ui-dev-command-" + id + ".json");
+    const fs::path response_path = base / ("mbink-ui-dev-response-" + id + ".json");
+    try {
+        {
+            std::ofstream ofs(command_path, std::ios::binary | std::ios::trunc);
+            if (!ofs) {
+                setLastError("write ui-dev command failed");
+                return MBINK_ERROR_UNKNOWN;
+            }
+            ofs << command_json;
+        }
+        bool handled = false;
+        std::string error;
+        std::string last_command_id;
+        std::string runtime_epoch = ctx->runtimeEpoch;
+        if (!mbink::ui_dev::TryHandleUiDevCommand(ctx->runtime.get(),
+                                                  ctx->window.get(),
+                                                  ctx->document.get(),
+                                                  command_path.string(),
+                                                  response_path.string(),
+                                                  &last_command_id,
+                                                  &runtime_epoch,
+                                                  ctx->shutdownRequested,
+                                                  &handled,
+                                                  &error) ||
+            !handled) {
+            setLastError(error.empty() ? "ui-dev command not handled" : error);
+            return MBINK_ERROR_UNKNOWN;
+        }
+        ctx->runtimeEpoch = runtime_epoch;
+        auto content = readFileContents(response_path.string().c_str());
+        *out_response_json = duplicateString(content);
+        return *out_response_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
 
 int mbink_state_create_null(MBinkHandle handle, const char* name) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
