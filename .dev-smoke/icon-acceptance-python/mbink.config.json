@@ -1,0 +1,27 @@
+{
+  "build": {
+    "builder": "esbuild",
+    "external": [
+      "preact",
+      "preact/hooks"
+    ],
+    "hide_console": true,
+    "icon": "assets/app.ico",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "minify": false,
+    "sourcemap": true
+  },
+  "entry": "ui/app.js",
+  "name": "icon-acceptance-python",
+  "out_dir": ".dist",
+  "purpose": "minimal",
+  "runtime": "python",
+  "src_dir": "ui",
+  "template": "minimal/python",
+  "window": {
+    "height": 640,
+    "title": "icon-acceptance-python",
+    "width": 900
+  }
+}

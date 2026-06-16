@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <random>
 #include <sstream>
 #include <cstddef>
@@ -288,6 +290,25 @@ std::string ApplyEmbeddedTemplateVariables(std::string content,
     return content;
 }
 
+bool ShouldApplyEmbeddedTemplateVariables(const std::string& rel_path) {
+    const auto ext = std::filesystem::path(rel_path).extension().string();
+    std::string lower_ext;
+    lower_ext.reserve(ext.size());
+    std::transform(ext.begin(), ext.end(), std::back_inserter(lower_ext), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return lower_ext != ".ico" && lower_ext != ".lib" && lower_ext != ".mbrp";
+}
+
+std::string EmbeddedTemplateContent(const EmbeddedTemplateEntry& entry,
+                                    const std::string& rel_path,
+                                    const std::filesystem::path& project_root,
+                                    const std::string& project_name) {
+    auto content = EmbeddedTemplateText(entry);
+    if (!ShouldApplyEmbeddedTemplateVariables(rel_path)) return content;
+    return ApplyEmbeddedTemplateVariables(std::move(content), project_root, project_name);
+}
+
 struct TemplateResolution {
     std::string purpose = "minimal";
     std::string runtime = "tool";
@@ -458,7 +479,7 @@ bool TryInitProjectFromEmbeddedTemplates(const std::filesystem::path& root,
             if (error) *error = "写入模板文件失败: " + output_path.string();
             return false;
         }
-        const auto content = ApplyEmbeddedTemplateVariables(EmbeddedTemplateText(*entry), root, project_name);
+        const auto content = EmbeddedTemplateContent(*entry, rel_path, root, project_name);
         ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
         if (!ofs.good()) {
             if (error) *error = "写入模板文件失败: " + output_path.string();
@@ -523,7 +544,7 @@ bool TryInitProjectFromEmbeddedTemplateLayers(const std::filesystem::path& root,
                 if (error) *error = "failed to write template file: " + output_path.string();
                 return false;
             }
-            const auto content = ApplyEmbeddedTemplateVariables(EmbeddedTemplateText(*entry), root, project_name);
+            const auto content = EmbeddedTemplateContent(*entry, rel_path, root, project_name);
             ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
             if (!ofs.good()) {
                 if (error) *error = "failed to write template file: " + output_path.string();
@@ -652,7 +673,8 @@ static void ToJson(nlohmann::json& j, const ProjectConfig& p) {
                    {"external", p.build_external},
                    {"sourcemap", p.build_sourcemap},
                    {"minify", p.build_minify},
-                   {"hide_console", p.build_hide_console}}},
+                   {"hide_console", p.build_hide_console},
+                   {"icon", p.build_icon}}},
         {"window", {{"width", p.width},
                     {"height", p.height},
                     {"title", p.title},
@@ -674,6 +696,7 @@ static void FromJson(const nlohmann::json& j, ProjectConfig& p) {
         p.build_builder = b.value("builder", p.build_builder);
         p.build_jsx_factory = b.value("jsx_factory", p.build_jsx_factory);
         p.build_jsx_fragment = b.value("jsx_fragment", p.build_jsx_fragment);
+        p.build_icon = b.value("icon", p.build_icon);
         p.build_sourcemap = b.value("sourcemap", p.build_sourcemap);
         p.build_minify = b.value("minify", p.build_minify);
         p.build_hide_console = b.value("hide_console", p.build_hide_console);
@@ -911,6 +934,7 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
             cfg.build_builder = b.value("builder", cfg.build_builder);
             cfg.build_jsx_factory = b.value("jsx_factory", cfg.build_jsx_factory);
             cfg.build_jsx_fragment = b.value("jsx_fragment", cfg.build_jsx_fragment);
+            cfg.build_icon = normalize_rel(b.value("icon", cfg.build_icon));
             cfg.build_sourcemap = b.value("sourcemap", cfg.build_sourcemap);
             cfg.build_minify = b.value("minify", cfg.build_minify);
             cfg.build_hide_console = b.value("hide_console", cfg.build_hide_console);

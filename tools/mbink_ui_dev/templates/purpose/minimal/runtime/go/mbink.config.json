@@ -17,6 +17,7 @@
     "external": ["preact", "preact/hooks"],
     "sourcemap": true,
     "minify": false,
-    "hide_console": true
+    "hide_console": true,
+    "icon": "assets/app.ico"
   }
 }

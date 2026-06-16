@@ -101,6 +101,7 @@ JSValue WrapFile(JSContext* ctx, const FileInfo& file) {
     DefineReadOnlyProperty(ctx, obj, "lastModified", JS_NewInt64(ctx, file.last_modified));
     DefineReadOnlyProperty(ctx, obj, "webkitRelativePath",
                            JS_NewString(ctx, file.webkit_relative_path.c_str()));
+    DefineReadOnlyProperty(ctx, obj, "normalizedPath", JS_NewString(ctx, file.path.c_str()));
     DefineToStringTag(ctx, obj, "File");
     return obj;
 }

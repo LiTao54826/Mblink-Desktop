@@ -10,7 +10,9 @@
 #include <nlohmann/json.hpp>
 
 #include "core/dom/document.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/render/objects/select_dropdown.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/utils/encoding_utils.h"
 #include "core/window/window.h"
@@ -172,6 +174,51 @@ const pickStyle = (el) => { const s = getComputedStyle(el); return { display: s.
     return js.str();
 }
 
+std::shared_ptr<Element> QueryUiDevElement(Document* document, const std::string& selector) {
+    if (!document || selector.empty()) return nullptr;
+    if (selector == "body") return document->GetBody();
+    if (selector == "html") return document->GetDocumentElement();
+    auto body = document->GetBody();
+    return body ? body->QuerySelector(selector) : nullptr;
+}
+
+nlohmann::json RectToJson(const SkRect& rect) {
+    return nlohmann::json{{"x", rect.x()},
+                          {"y", rect.y()},
+                          {"w", rect.width()},
+                          {"h", rect.height()},
+                          {"top", rect.top()},
+                          {"right", rect.right()},
+                          {"bottom", rect.bottom()},
+                          {"left", rect.left()}};
+}
+
+bool OpenSelectDropdownForUiDev(const std::shared_ptr<Element>& element) {
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(element);
+    if (!select || select->GetDisabled()) return false;
+
+    auto& dropdown_manager = SelectDropdownManager::Instance();
+    if (select->IsDropdownOpen()) {
+        dropdown_manager.CloseDropdown();
+        return true;
+    }
+
+    auto rect = select->GetBoundingClientRect();
+    if (rect.width <= 0.0f || rect.height <= 0.0f) return false;
+
+    select->SetDropdownOpen(true);
+    dropdown_manager.OpenDropdown(select, SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height));
+    return true;
+}
+
+void AddDropdownState(nlohmann::json& result) {
+    auto& dropdown_manager = SelectDropdownManager::Instance();
+    result["dropdown_open"] = dropdown_manager.IsDropdownOpen();
+    if (dropdown_manager.IsDropdownOpen()) {
+        result["dropdown_rect"] = RectToJson(dropdown_manager.GetDropdownRect());
+    }
+}
+
 }  // namespace
 
 bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
@@ -267,11 +314,29 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
         } else if (type == "query_element" || type == "inspect" || type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
             const auto selector = cmd.value("selector", std::string{});
             if (selector.empty()) throw std::runtime_error(type + " missing selector");
+            const auto target_element = QueryUiDevElement(document, selector);
+            const bool native_select_click =
+                type == "click" &&
+                target_element &&
+                target_element->GetTagName() == "select" &&
+                cmd.value("native", true);
+            if (native_select_click) {
+                if (!OpenSelectDropdownForUiDev(target_element)) {
+                    throw std::runtime_error("failed to open select dropdown: " + selector);
+                }
+                resp["result"] = nlohmann::json{{"selector", selector},
+                                                {"clicked", true},
+                                                {"native_select", true},
+                                                {"post_action_found", true}};
+                ForceWindowFrame(runtime, window, 1);
+                AddDropdownState(resp["result"]);
+            } else
             {
                 DocumentBatchScope batch_scope(document);
                 resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mbink-ui-dev dom>");
             }
-            if (type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
+            if (!native_select_click &&
+                (type == "click" || type == "input_text" || type == "scroll" || type == "highlight")) {
                 ForceWindowFrame(runtime, window, 1);
                 auto latest = runtime->Eval(BuildUiDevDomScript(type, cmd, false), "<mbink-ui-dev dom result>");
                 if (resp["result"].is_object() && latest.is_object()) {

@@ -2134,6 +2134,7 @@ TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
     }
 
     const std::string first = FsPathToUtf8String(first_path);
+    const std::string expected_normalized_path = NormalizeModulePath(first_path);
     HTMLInputElement::SetFilePickerForTesting([first](HTMLInputElement& input) {
         input.SetFilesFromPaths({first}, true);
     });
@@ -2167,6 +2168,7 @@ TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
           nameAfterWrite: input.files[0].name,
           originalName: originalName,
           relativePath: input.files[0].webkitRelativePath,
+          normalizedPath: input.files[0].normalizedPath,
           pathIsUndefined: typeof input.files[0].path === 'undefined',
           isDirectoryIsUndefined: typeof input.files[0].isDirectory === 'undefined',
           missing: input.files.item(4),
@@ -2188,6 +2190,7 @@ TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
     EXPECT_EQ(result["nameAfterWrite"], "snapshot.txt");
     EXPECT_EQ(result["originalName"], "snapshot.txt");
     EXPECT_EQ(result["relativePath"], "");
+    EXPECT_EQ(result["normalizedPath"], expected_normalized_path);
     EXPECT_EQ(result["pathIsUndefined"], true);
     EXPECT_EQ(result["isDirectoryIsUndefined"], true);
     EXPECT_TRUE(result["missing"].is_null());
@@ -2307,6 +2310,7 @@ TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
     }
 
     auto transfer = std::make_shared<DataTransfer>();
+    const std::string expected_normalized_path = NormalizeModulePath(file_path);
     transfer->SetData("text/plain", "payload");
     transfer->SetFilesFromPaths({FsPathToUtf8String(file_path)});
 
@@ -2337,6 +2341,7 @@ TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
           length: files.length,
           freshLength: __testTransfer.files.length,
           name: __testTransfer.files[0].name,
+          normalizedPath: __testTransfer.files[0].normalizedPath,
           pathIsUndefined: typeof __testTransfer.files[0].path === 'undefined',
           text: __testTransfer.getData('text/plain'),
           missing: files.item(3)
@@ -2356,6 +2361,7 @@ TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
     EXPECT_EQ(result["length"], 1);
     EXPECT_EQ(result["freshLength"], 1);
     EXPECT_EQ(result["name"], "dragged.txt");
+    EXPECT_EQ(result["normalizedPath"], expected_normalized_path);
     EXPECT_EQ(result["pathIsUndefined"], true);
     EXPECT_EQ(result["text"], "payload");
     EXPECT_TRUE(result["missing"].is_null());

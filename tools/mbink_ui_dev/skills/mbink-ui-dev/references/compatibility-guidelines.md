@@ -119,6 +119,8 @@ Do not replace these with browser or npm widgets such as xterm.js-style terminal
   - Rust and Go produce an exe plus `mbink.dll`.
   - Python uses PyInstaller one-file output and embeds the MBink DLL plus resources.
   - Tool runtime produces the UI resource package and is not a standalone host app.
+- Host-runtime builds read `build.icon` from `mbink.config.json` and apply it only to the final Windows `.exe` resource icon. This does not change window, tray, or in-app icons.
+- Only `.ico` files are accepted for `build.icon`. Missing files, non-`.ico` paths, invalid ICO data, unsupported platforms, or resource-injection failures are reported in build status as skipped icon packaging and must not fail an otherwise successful build.
 
 ## Resource Package Rules
 

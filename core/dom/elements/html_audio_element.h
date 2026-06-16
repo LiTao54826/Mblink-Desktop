@@ -111,6 +111,7 @@ private:
     bool AcceptsSourceAsWav(const std::string& src) const;
     bool DecodeWavFromIO(SDL_IOStream* io, bool close_io);
     bool StartStreamAt(double seconds);
+    void PumpAudioStream();
     void QueueAudioData(SDL_AudioStream* stream, int requested_bytes);
     size_t ByteOffsetForTime(double seconds) const;
     double TimeForByteOffset(size_t byte_offset) const;
@@ -147,6 +148,7 @@ private:
     size_t frame_size_bytes_ = 0;
     SDLStreamPtr stream_;
     Uint64 playback_started_ticks_ = 0;
+    Uint64 last_queue_log_ticks_ = 0;
     double playback_start_time_seconds_ = 0.0;
     size_t playback_byte_offset_ = 0;
     bool stream_end_flushed_ = false;

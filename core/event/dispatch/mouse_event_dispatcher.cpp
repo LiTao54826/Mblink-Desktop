@@ -1772,9 +1772,13 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
             if (select_element->IsDropdownOpen()) {
                 dropdown_manager.CloseDropdown();
             } else {
-                auto render_obj = hit_result.render_object;
-                if (render_obj) {
-                    SkRect trigger_rect = render_obj->GetViewportBoundingRect();
+                auto rect = select_element->GetBoundingClientRect();
+                SkRect trigger_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
+                if ((rect.width <= 0.0f || rect.height <= 0.0f) && hit_result.render_object) {
+                    trigger_rect = hit_result.render_object->GetViewportBoundingRect();
+                }
+
+                if (trigger_rect.width() > 0.0f && trigger_rect.height() > 0.0f) {
 
                     select_element->SetDropdownOpen(true);
                     dropdown_manager.OpenDropdown(select_element, trigger_rect);

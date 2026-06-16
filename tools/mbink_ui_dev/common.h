@@ -21,6 +21,7 @@ struct ProjectConfig {
     std::string build_builder = "esbuild";
     std::string build_jsx_factory = "h";
     std::string build_jsx_fragment = "Fragment";
+    std::string build_icon;
     std::vector<std::string> build_external = {"preact", "preact/hooks"};
     bool build_sourcemap = true;
     bool build_minify = false;

@@ -351,6 +351,7 @@ bool MaterialConfigEquals(const ProjectConfig& a, const ProjectConfig& b) {
            a.build_builder == b.build_builder &&
            a.build_jsx_factory == b.build_jsx_factory &&
            a.build_jsx_fragment == b.build_jsx_fragment &&
+           a.build_icon == b.build_icon &&
            a.build_external == b.build_external &&
            a.build_sourcemap == b.build_sourcemap &&
            a.build_minify == b.build_minify &&
@@ -923,6 +924,184 @@ bool SetWindowsGuiSubsystem(const std::filesystem::path& exe_path, bool hide_con
     std::memcpy(bytes + subsystem_offset, &subsystem, sizeof(subsystem));
     if (!WriteFileBytes(exe_path, data, error)) return false;
     return true;
+}
+
+#pragma pack(push, 1)
+struct IconDirFile {
+    uint16_t reserved;
+    uint16_t type;
+    uint16_t count;
+};
+
+struct IconDirEntryFile {
+    uint8_t width;
+    uint8_t height;
+    uint8_t color_count;
+    uint8_t reserved;
+    uint16_t planes;
+    uint16_t bit_count;
+    uint32_t bytes_in_res;
+    uint32_t image_offset;
+};
+
+struct GroupIconDirEntry {
+    uint8_t width;
+    uint8_t height;
+    uint8_t color_count;
+    uint8_t reserved;
+    uint16_t planes;
+    uint16_t bit_count;
+    uint32_t bytes_in_res;
+    uint16_t id;
+};
+#pragma pack(pop)
+
+bool ValidateIcoFile(const std::filesystem::path& ico_path, std::string* ico_data, std::string* error) {
+    if (!ReadFileBytes(ico_path, ico_data, error)) return false;
+    if (ico_data->size() < sizeof(IconDirFile)) {
+        if (error) *error = "invalid ICO file: too small";
+        return false;
+    }
+    const auto* header = reinterpret_cast<const IconDirFile*>(ico_data->data());
+    if (header->reserved != 0 || header->type != 1 || header->count == 0) {
+        if (error) *error = "invalid ICO file format";
+        return false;
+    }
+    const size_t entries_end = sizeof(IconDirFile) +
+        static_cast<size_t>(header->count) * sizeof(IconDirEntryFile);
+    if (entries_end > ico_data->size()) {
+        if (error) *error = "invalid ICO file: truncated directory";
+        return false;
+    }
+
+    const auto* entries = reinterpret_cast<const IconDirEntryFile*>(ico_data->data() + sizeof(IconDirFile));
+    for (uint16_t i = 0; i < header->count; ++i) {
+        const auto& entry = entries[i];
+        if (entry.bytes_in_res == 0 ||
+            static_cast<size_t>(entry.image_offset) > ico_data->size() ||
+            static_cast<size_t>(entry.bytes_in_res) > ico_data->size() - static_cast<size_t>(entry.image_offset)) {
+            if (error) *error = "invalid ICO file: image data out of bounds";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool InjectExeIconResource(const std::filesystem::path& exe_path,
+                           const std::string& ico_data,
+                           std::string* error) {
+#ifdef _WIN32
+    const auto* header = reinterpret_cast<const IconDirFile*>(ico_data.data());
+    const auto* entries = reinterpret_cast<const IconDirEntryFile*>(ico_data.data() + sizeof(IconDirFile));
+    const uint16_t image_count = header->count;
+
+    HANDLE update = BeginUpdateResourceW(exe_path.wstring().c_str(), FALSE);
+    if (!update) {
+        if (error) *error = "BeginUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    for (uint16_t i = 0; i < image_count; ++i) {
+        const auto& entry = entries[i];
+        if (!UpdateResourceW(update,
+                             MAKEINTRESOURCEW(3),
+                             MAKEINTRESOURCEW(i + 1),
+                             MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                             const_cast<char*>(ico_data.data() + entry.image_offset),
+                             entry.bytes_in_res)) {
+            EndUpdateResourceW(update, TRUE);
+            if (error) *error = "UpdateResource RT_ICON failed (error " + std::to_string(GetLastError()) + ")";
+            return false;
+        }
+    }
+
+    const size_t group_size = sizeof(IconDirFile) +
+        static_cast<size_t>(image_count) * sizeof(GroupIconDirEntry);
+    std::vector<uint8_t> group_data(group_size);
+    auto* group_header = reinterpret_cast<IconDirFile*>(group_data.data());
+    group_header->reserved = 0;
+    group_header->type = 1;
+    group_header->count = image_count;
+
+    auto* group_entries = reinterpret_cast<GroupIconDirEntry*>(group_data.data() + sizeof(IconDirFile));
+    for (uint16_t i = 0; i < image_count; ++i) {
+        group_entries[i].width = entries[i].width;
+        group_entries[i].height = entries[i].height;
+        group_entries[i].color_count = entries[i].color_count;
+        group_entries[i].reserved = entries[i].reserved;
+        group_entries[i].planes = entries[i].planes;
+        group_entries[i].bit_count = entries[i].bit_count;
+        group_entries[i].bytes_in_res = entries[i].bytes_in_res;
+        group_entries[i].id = i + 1;
+    }
+
+    if (!UpdateResourceW(update,
+                         MAKEINTRESOURCEW(14),
+                         MAKEINTRESOURCEW(1),
+                         MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                         group_data.data(),
+                         static_cast<DWORD>(group_size))) {
+        EndUpdateResourceW(update, TRUE);
+        if (error) *error = "UpdateResource RT_GROUP_ICON failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    if (!EndUpdateResourceW(update, FALSE)) {
+        if (error) *error = "EndUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+    return true;
+#else
+    (void)exe_path;
+    (void)ico_data;
+    if (error) *error = "Icon injection is only supported on Windows";
+    return false;
+#endif
+}
+
+nlohmann::json ApplyBuildIconToExe(const std::filesystem::path& project_root,
+                                   const ProjectConfig& config,
+                                   const std::filesystem::path& exe_path) {
+    const std::string icon_rel = config.build_icon;
+    if (icon_rel.empty()) return nlohmann::json{{"status", "none"}, {"path", ""}};
+
+    auto status = nlohmann::json{{"status", "skipped"}, {"path", icon_rel}};
+    const auto icon_ext = ToLowerAscii(PathFromUtf8(icon_rel).extension().string());
+    if (icon_ext != ".ico") {
+        status["reason"] = "not_ico";
+        return status;
+    }
+
+    const auto icon_path = std::filesystem::absolute(JoinProjectPath(project_root, icon_rel)).lexically_normal();
+    std::error_code ec;
+    if (!std::filesystem::exists(icon_path, ec) || !std::filesystem::is_regular_file(icon_path, ec)) {
+        status["reason"] = "missing";
+        return status;
+    }
+
+    std::string ico_data;
+    std::string icon_error;
+    if (!ValidateIcoFile(icon_path, &ico_data, &icon_error)) {
+        status["reason"] = "invalid_ico";
+        status["message"] = icon_error;
+        return status;
+    }
+
+#ifndef _WIN32
+    (void)exe_path;
+    status["reason"] = "unsupported_platform";
+    status["message"] = "Icon injection is only supported on Windows";
+    return status;
+#else
+    if (!InjectExeIconResource(exe_path, ico_data, &icon_error)) {
+        status["reason"] = "inject_failed";
+        status["message"] = icon_error;
+        return status;
+    }
+    status["status"] = "applied";
+    status.erase("reason");
+    return status;
+#endif
 }
 
 nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project_root,
@@ -2012,6 +2191,7 @@ nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
         status["error"] = error ? *error : "failed to set rust artifact subsystem";
         return status;
     }
+    status["icon"] = ApplyBuildIconToExe(project_root, config, final_exe);
     status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
@@ -2072,6 +2252,7 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
         status["error"] = error ? *error : "failed to set go artifact subsystem";
         return status;
     }
+    status["icon"] = ApplyBuildIconToExe(project_root, config, final_exe);
     status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
@@ -2118,9 +2299,31 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
     }
     const auto python_cmd = BuildPythonCommand(python, python_package_scan.required_python_version);
     const std::string console_mode = config.build_hide_console ? " --windowed" : " --console";
+
+    nlohmann::json icon_status{{"status", "none"}, {"path", ""}};
+    std::string icon_arg;
+    if (!config.build_icon.empty()) {
+        icon_status = nlohmann::json{{"status", "skipped"}, {"path", config.build_icon}};
+        const auto icon_ext = ToLowerAscii(PathFromUtf8(config.build_icon).extension().string());
+        if (icon_ext != ".ico") {
+            icon_status["reason"] = "not_ico";
+        } else {
+            const auto icon_path = std::filesystem::absolute(JoinProjectPath(project_root, config.build_icon)).lexically_normal();
+            std::error_code ec;
+            if (!std::filesystem::exists(icon_path, ec) || !std::filesystem::is_regular_file(icon_path, ec)) {
+                icon_status["reason"] = "missing";
+            } else {
+                icon_arg = " --icon " + QuoteForCmd(PathToUtf8(icon_path));
+                icon_status["status"] = "applied";
+                icon_status.erase("reason");
+            }
+        }
+    }
+
     std::string pyinstaller_args =
         " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
         console_mode +
+        icon_arg +
         " --distpath " + QuoteForCmd(PathToUtf8(final_dir)) +
         " --workpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-work")) +
         " --specpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-spec"));
@@ -2162,6 +2365,7 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
         status["error"] = error ? *error : "failed to set python artifact subsystem";
         return status;
     }
+    status["icon"] = icon_status;
     status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
     status["host_artifact"] = RelativePathToUtf8(final_exe, project_root);
     status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
