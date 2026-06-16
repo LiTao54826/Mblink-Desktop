@@ -212,17 +212,17 @@ inline bool IsRetainedPresentExperimentEnabled() {
 inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
     switch (reason) {
         case RepaintReason::DOMMutation:
+        case RepaintReason::PseudoClass:
+        case RepaintReason::Focus:
         case RepaintReason::KeyboardInput:
+        case RepaintReason::MouseHover:
+        case RepaintReason::MouseButton:
         case RepaintReason::WheelScroll:
         case RepaintReason::Terminal:
             return true;
         case RepaintReason::Unknown:
         case RepaintReason::Initial:
         case RepaintReason::Resize:
-        case RepaintReason::PseudoClass:
-        case RepaintReason::Focus:
-        case RepaintReason::MouseHover:
-        case RepaintReason::MouseButton:
         case RepaintReason::Animation:
         case RepaintReason::DevTools:
         case RepaintReason::API:
@@ -322,6 +322,44 @@ SkIRect ClampPhysicalRect(const SkRect& rect, int width, int height) {
         return SkIRect::MakeEmpty();
     }
     return SkIRect::MakeLTRB(left, top, right, bottom);
+}
+
+struct RetainedDirtyBounds {
+    SkIRect physical = SkIRect::MakeEmpty();
+    SkRect logical = SkRect::MakeEmpty();
+    SkRect present_physical = SkRect::MakeEmpty();
+};
+
+RetainedDirtyBounds ComputeRetainedDirtyBounds(const SkRect& logical_dirty_bounds,
+                                               float dpi_scale,
+                                               float app_x,
+                                               float app_y,
+                                               int width,
+                                               int height) {
+    RetainedDirtyBounds bounds;
+    if (logical_dirty_bounds.isEmpty() || dpi_scale <= 0.0f) {
+        return bounds;
+    }
+
+    SkRect physical_dirty = logical_dirty_bounds;
+    physical_dirty.fLeft *= dpi_scale;
+    physical_dirty.fTop *= dpi_scale;
+    physical_dirty.fRight *= dpi_scale;
+    physical_dirty.fBottom *= dpi_scale;
+
+    bounds.physical = ClampPhysicalRect(physical_dirty, width, height);
+    if (bounds.physical.isEmpty()) {
+        return bounds;
+    }
+
+    bounds.logical = SkRect::MakeLTRB(
+        bounds.physical.left() / dpi_scale,
+        bounds.physical.top() / dpi_scale,
+        bounds.physical.right() / dpi_scale,
+        bounds.physical.bottom() / dpi_scale);
+    bounds.present_physical = SkRect::Make(bounds.physical);
+    bounds.present_physical.offset(app_x * dpi_scale, app_y * dpi_scale);
+    return bounds;
 }
 
 void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_obj) {
@@ -2146,15 +2184,11 @@ void Window::Render() {
             !render_tree_rebuild_required &&
             !needs_layout_update &&
             !dirty_union_too_broad;
-        SkRect dirty_bounds_px = dirty_bounds;
-        dirty_bounds_px.fLeft *= dpi_scale;
-        dirty_bounds_px.fTop *= dpi_scale;
-        dirty_bounds_px.fRight *= dpi_scale;
-        dirty_bounds_px.fBottom *= dpi_scale;
-        SkRect present_dirty_bounds_px = dirty_bounds_px;
-        present_dirty_bounds_px.offset(app_x * dpi_scale, app_y * dpi_scale);
         const int retained_width_px = std::max(0, static_cast<int>(std::lround(app_width * dpi_scale)));
         const int retained_height_px = std::max(0, static_cast<int>(std::lround(app_height * dpi_scale)));
+        const RetainedDirtyBounds retained_dirty_bounds =
+            ComputeRetainedDirtyBounds(
+                dirty_bounds, dpi_scale, app_x, app_y, retained_width_px, retained_height_px);
         const bool pending_scroll_retained_present_blocking_fallback =
             render_pipeline_ && render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback();
         const bool previous_scroll_retained_present_blocking_fallback =
@@ -2230,6 +2264,7 @@ void Window::Render() {
             !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
             has_dirty_bounds &&
+            !retained_dirty_bounds.physical.isEmpty() &&
             retained_dirty_clip_allowed &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
@@ -2242,12 +2277,17 @@ void Window::Render() {
             !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
             has_dirty_bounds &&
+            !retained_dirty_bounds.physical.isEmpty() &&
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
             !needs_layout_update &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
+        const std::vector<SkRect> retained_pipeline_dirty_rects =
+            can_limit_pipeline_raster_to_dirty_rects
+                ? std::vector<SkRect>{retained_dirty_bounds.logical}
+                : std::vector<SkRect>{};
 
         double stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         bool process_ok = true;
@@ -2256,11 +2296,13 @@ void Window::Render() {
         } else {
             if (can_update_retained_dirty_region) {
                 main_canvas->save();
-                main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, true);
+                main_canvas->clipRect(SkRect::Make(retained_dirty_bounds.physical),
+                                      SkClipOp::kIntersect,
+                                      false);
                 SkPaint clear_paint;
                 clear_paint.setBlendMode(SkBlendMode::kSrc);
                 clear_paint.setColor(clear_color);
-                main_canvas->drawRect(dirty_bounds_px, clear_paint);
+                main_canvas->drawRect(SkRect::Make(retained_dirty_bounds.physical), clear_paint);
             } else {
                 main_canvas->clear(clear_color);
             }
@@ -2272,7 +2314,7 @@ void Window::Render() {
             main_canvas->save();
             main_canvas->scale(dpi_scale, dpi_scale);
             if (can_update_retained_dirty_region) {
-                main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, true);
+                main_canvas->clipRect(retained_dirty_bounds.logical, SkClipOp::kIntersect, false);
             }
 
             // 如果 DevTools 打开，裁剪到主应用区域
@@ -2287,8 +2329,8 @@ void Window::Render() {
             stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
             process_ok = render_pipeline_->ProcessFrame(
                 main_canvas,
-                can_update_retained_dirty_region ? &dirty_bounds : nullptr,
-                can_limit_pipeline_raster_to_dirty_rects ? &dirty_rects_ : nullptr);
+                nullptr,
+                can_limit_pipeline_raster_to_dirty_rects ? &retained_pipeline_dirty_rects : nullptr);
             if (baseline_stats_enabled) {
                 pipeline_time_ms = GetBaselineTimeMs() - stage_start_ms;
             }
@@ -2326,7 +2368,7 @@ void Window::Render() {
                 actual_backend_ == RenderBackend::CPU &&
                 can_update_retained_dirty_region &&
                 has_dirty_bounds &&
-                !dirty_bounds_px.isEmpty() &&
+                !retained_dirty_bounds.physical.isEmpty() &&
                 !devtools.IsOpen() &&
                 !SelectDropdownManager::Instance().IsDropdownOpen();
 
@@ -2335,8 +2377,8 @@ void Window::Render() {
             }
             if (sk_sp<SkImage> retained_image = retained_main_surface_->makeImageSnapshot()) {
                 if (can_partial_retained_copy) {
-                    const SkIRect src = ClampPhysicalRect(
-                        dirty_bounds_px, retained_image->width(), retained_image->height());
+                    SkIRect src = retained_dirty_bounds.physical;
+                    src.intersect(SkIRect::MakeWH(retained_image->width(), retained_image->height()));
                     if (!src.isEmpty()) {
                         SkRect dst = SkRect::MakeXYWH(
                             app_x * dpi_scale + src.left(),
@@ -2370,7 +2412,7 @@ void Window::Render() {
         if (retained_present_used &&
             actual_backend_ == RenderBackend::CPU &&
             partial_retained_copy_used) {
-            last_dirty_bounds_ = present_dirty_bounds_px;
+            last_dirty_bounds_ = retained_dirty_bounds.present_physical;
             has_dirty_bounds_ = true;
         } else {
             last_dirty_bounds_ = SkRect::MakeEmpty();

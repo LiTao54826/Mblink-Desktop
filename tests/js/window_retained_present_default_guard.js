@@ -64,10 +64,10 @@ function run() {
     'DOM/style/text batches must force pipeline rasterization even when layout does not rebuild');
   assert(windowSrc.includes('can_update_retained_dirty_region') &&
          windowSrc.includes('UnionDirtyRects') &&
-         windowSrc.includes('dirty_bounds_px') &&
-         windowSrc.includes('can_update_retained_dirty_region ? &dirty_bounds : nullptr') &&
-         windowSrc.includes('main_canvas->clipRect(dirty_bounds'),
-    'Dirty retained-present frames must clip redraw work to the dirty bounds');
+         windowSrc.includes('ComputeRetainedDirtyBounds') &&
+         windowSrc.includes('retained_dirty_bounds.logical') &&
+         windowSrc.includes('retained_dirty_bounds.physical'),
+    'Dirty retained-present frames must derive all dirty bounds from a shared pixel-aligned rectangle');
   const dirtyReasonStart = windowSrc.indexOf('inline bool CanUseRetainedDirtyClipForReason');
   const dirtyReasonEnd = windowSrc.indexOf('inline bool HasExplicitDirtyRectsForUnknownReason', dirtyReasonStart);
   const dirtyReasonBlock = windowSrc.slice(dirtyReasonStart, dirtyReasonEnd);
@@ -83,9 +83,15 @@ function run() {
     const caseIndex = dirtyReasonBlock.indexOf(`case RepaintReason::${reason}:`);
     const nextReturnTrue = dirtyReasonBlock.indexOf('return true;', caseIndex);
     const nextReturnFalse = dirtyReasonBlock.indexOf('return false;', caseIndex);
-    assert(nextReturnFalse >= 0 && (nextReturnTrue < 0 || nextReturnFalse < nextReturnTrue),
-      `${reason} must not use retained dirty clipping because interaction-state clips can expose edge artifacts`);
+    assert(nextReturnTrue >= 0 && (nextReturnFalse < 0 || nextReturnTrue < nextReturnFalse),
+      `${reason} must stay eligible for retained dirty clipping; interaction repaint is too frequent for full redraw fallback`);
   }
+  assert(windowSrc.includes('struct RetainedDirtyBounds') &&
+         windowSrc.includes('ComputeRetainedDirtyBounds') &&
+         windowSrc.includes('ClampPhysicalRect(physical_dirty') &&
+         windowSrc.includes('bounds.logical = SkRect::MakeLTRB(') &&
+         windowSrc.includes('bounds.present_physical = SkRect::Make(bounds.physical)'),
+    'Retained dirty clipping must normalize dirty bounds through one physical pixel-aligned rectangle');
   const dirtyClipStart = windowSrc.indexOf('const bool retained_dirty_clip_allowed =');
   const dirtyClipEnd = windowSrc.indexOf(';', dirtyClipStart);
   const dirtyClipBlock = windowSrc.slice(dirtyClipStart, dirtyClipEnd);
@@ -110,6 +116,14 @@ function run() {
   const rasterLimitBlock = windowSrc.slice(rasterLimitStart, rasterLimitEnd);
   assert(rasterLimitStart >= 0 && rasterLimitBlock.includes('!needs_layout_update'),
     'Pipeline raster dirty-rect limiting must be disabled for layout update frames');
+  assert(windowSrc.includes('std::vector<SkRect>{retained_dirty_bounds.logical}') &&
+         windowSrc.includes('can_limit_pipeline_raster_to_dirty_rects ? &retained_pipeline_dirty_rects : nullptr'),
+    'Pipeline raster dirty-rect limiting must use the same pixel-aligned logical dirty bounds as retained-present clipping');
+  assert(windowSrc.includes('main_canvas->clipRect(SkRect::Make(retained_dirty_bounds.physical)') &&
+         windowSrc.includes('main_canvas->clipRect(retained_dirty_bounds.logical, SkClipOp::kIntersect, false)') &&
+         windowSrc.includes('drawRect(SkRect::Make(retained_dirty_bounds.physical)') &&
+         windowSrc.includes('last_dirty_bounds_ = retained_dirty_bounds.present_physical'),
+    'Retained dirty clear, clip, copy, and present bounds must share the same hard pixel-aligned rectangle');
   assert(windowSrc.includes('RenderDevTools(canvas') &&
          windowSrc.indexOf('RenderDevTools(canvas') > windowSrc.indexOf('retained_main_surface_->makeImageSnapshot()'),
     'DevTools overlay must be painted after retained-main copy');
