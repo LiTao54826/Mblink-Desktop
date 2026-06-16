@@ -212,17 +212,17 @@ inline bool IsRetainedPresentExperimentEnabled() {
 inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
     switch (reason) {
         case RepaintReason::DOMMutation:
-        case RepaintReason::PseudoClass:
-        case RepaintReason::Focus:
         case RepaintReason::KeyboardInput:
-        case RepaintReason::MouseHover:
-        case RepaintReason::MouseButton:
         case RepaintReason::WheelScroll:
         case RepaintReason::Terminal:
             return true;
         case RepaintReason::Unknown:
         case RepaintReason::Initial:
         case RepaintReason::Resize:
+        case RepaintReason::PseudoClass:
+        case RepaintReason::Focus:
+        case RepaintReason::MouseHover:
+        case RepaintReason::MouseButton:
         case RepaintReason::Animation:
         case RepaintReason::DevTools:
         case RepaintReason::API:
@@ -2144,6 +2144,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
+            !needs_layout_update &&
             !dirty_union_too_broad;
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
@@ -2244,6 +2245,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
+            !needs_layout_update &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
 

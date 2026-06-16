@@ -68,6 +68,24 @@ function run() {
          windowSrc.includes('can_update_retained_dirty_region ? &dirty_bounds : nullptr') &&
          windowSrc.includes('main_canvas->clipRect(dirty_bounds'),
     'Dirty retained-present frames must clip redraw work to the dirty bounds');
+  const dirtyReasonStart = windowSrc.indexOf('inline bool CanUseRetainedDirtyClipForReason');
+  const dirtyReasonEnd = windowSrc.indexOf('inline bool HasExplicitDirtyRectsForUnknownReason', dirtyReasonStart);
+  const dirtyReasonBlock = windowSrc.slice(dirtyReasonStart, dirtyReasonEnd);
+  assert(dirtyReasonStart >= 0 &&
+         dirtyReasonBlock.includes('case RepaintReason::DOMMutation:') &&
+         dirtyReasonBlock.includes('case RepaintReason::KeyboardInput:') &&
+         dirtyReasonBlock.includes('case RepaintReason::WheelScroll:') &&
+         dirtyReasonBlock.includes('case RepaintReason::Terminal:'),
+    'Dirty retained-present clipping must keep non-interaction repaint reasons eligible');
+  for (const reason of ['PseudoClass', 'Focus', 'MouseHover', 'MouseButton']) {
+    assert(dirtyReasonBlock.includes(`case RepaintReason::${reason}:`),
+      `${reason} must be handled explicitly in retained dirty-clip allowlist`);
+    const caseIndex = dirtyReasonBlock.indexOf(`case RepaintReason::${reason}:`);
+    const nextReturnTrue = dirtyReasonBlock.indexOf('return true;', caseIndex);
+    const nextReturnFalse = dirtyReasonBlock.indexOf('return false;', caseIndex);
+    assert(nextReturnFalse >= 0 && (nextReturnTrue < 0 || nextReturnFalse < nextReturnTrue),
+      `${reason} must not use retained dirty clipping because interaction-state clips can expose edge artifacts`);
+  }
   const dirtyClipStart = windowSrc.indexOf('const bool retained_dirty_clip_allowed =');
   const dirtyClipEnd = windowSrc.indexOf(';', dirtyClipStart);
   const dirtyClipBlock = windowSrc.slice(dirtyClipStart, dirtyClipEnd);
