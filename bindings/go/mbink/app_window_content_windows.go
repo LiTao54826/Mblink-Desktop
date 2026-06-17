@@ -151,7 +151,10 @@ func (a *App) ObserveClear(kind ObserveKind) error {
 	return checkRC(C.mbink_observe_clear(a.handle, C.MBinkObserveKind(kind)))
 }
 func (a *App) UiDevSnapshotJSON(options UiDevSnapshotOptions) (string, error) {
-	raw := C.mbink_ui_dev_default_snapshot_options()
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return "", err
+	}
+	raw := C.go_mbink_ui_dev_default_snapshot_options_call()
 	keepalive := make([]func(), 0, 3)
 	if options.RuntimeEpoch != "" {
 		v, done := cString(options.RuntimeEpoch)
@@ -182,7 +185,7 @@ func (a *App) UiDevSnapshotJSON(options UiDevSnapshotOptions) (string, error) {
 		}
 	}()
 	var out *C.char
-	if err := checkRC(C.mbink_ui_dev_snapshot_json(a.handle, &raw, &out)); err != nil {
+	if err := checkRC(C.go_mbink_ui_dev_snapshot_json_call(a.handle, &raw, &out)); err != nil {
 		return "", err
 	}
 	return takeOwnedString(out), nil
@@ -195,7 +198,10 @@ func (a *App) UiDevSnapshot(options UiDevSnapshotOptions) (any, error) {
 	return parseJSONText(text), nil
 }
 func (a *App) UiDevSnapshotFile(path string, options UiDevSnapshotOptions) error {
-	raw := C.mbink_ui_dev_default_snapshot_options()
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return err
+	}
+	raw := C.go_mbink_ui_dev_default_snapshot_options_call()
 	var runtimeEpoch *C.char
 	if options.RuntimeEpoch != "" {
 		runtimeEpoch, _ = cString(options.RuntimeEpoch)
@@ -224,13 +230,16 @@ func (a *App) UiDevSnapshotFile(path string, options UiDevSnapshotOptions) error
 	}
 	pv, pd := cString(path)
 	defer pd()
-	return checkRC(C.mbink_ui_dev_snapshot_file(a.handle, pv, &raw))
+	return checkRC(C.go_mbink_ui_dev_snapshot_file_call(a.handle, pv, &raw))
 }
 func (a *App) UiDevCommandJSON(commandJSON string) (string, error) {
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return "", err
+	}
 	cmd, done := cString(commandJSON)
 	defer done()
 	var out *C.char
-	if err := checkRC(C.mbink_ui_dev_command_json(a.handle, cmd, &out)); err != nil {
+	if err := checkRC(C.go_mbink_ui_dev_command_json_call(a.handle, cmd, &out)); err != nil {
 		return "", err
 	}
 	return takeOwnedString(out), nil

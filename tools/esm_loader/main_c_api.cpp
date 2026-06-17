@@ -1,4 +1,5 @@
 #include "core/api/mbink.h"
+#include "core/devtools/mbink_devtools.h"
 
 #include <chrono>
 #include <filesystem>

@@ -38,7 +38,7 @@ On Windows runtime dynamic loading looks for the DLL in this order:
 2. `bindings/rust/mbink-sys/runtime/mbink.dll`
 3. `mbink.dll` from the process working directory / system search path
 
-`mbink_devtools.dll` is development-only and is not vendored by the Rust binding package. When `App::enable_devtools_http` or `App::devtools_http_session` is used, the shared C API resolves it from `MBINK_DEVTOOLS_PATH` first, then from the loaded `mbink.dll` directory.
+`mbink_devtools.dll` is development-only and is not vendored by the Rust binding package. When `App::enable_devtools_http`, `App::devtools_http_session`, or UI-dev snapshot/control helpers are used, the Rust devtools runtime loader resolves it from `MBINK_DEVTOOLS_PATH`, then from the loaded `mbink.dll` directory, then from the process/runtime search path.
 
 ## Build
 

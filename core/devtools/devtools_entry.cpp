@@ -1,3 +1,4 @@
+#include "core/devtools/mbink_devtools.h"
 #include "devtools_bridge.h"
 
 #include "core/devtools/devtools_manager.h"
@@ -166,11 +167,87 @@ std::string JsonTextResult(const nlohmann::json& value) {
     return text_value.dump(2);
 }
 
+const nlohmann::json* JsonObjectMember(const nlohmann::json& object, const char* name) {
+    if (!object.is_object()) {
+        return nullptr;
+    }
+    const auto it = object.find(name);
+    return it == object.end() ? nullptr : &(*it);
+}
+
+bool JsonBoolOr(const nlohmann::json& object, const char* name, bool fallback) {
+    const auto* value = JsonObjectMember(object, name);
+    return value && value->is_boolean() ? value->get<bool>() : fallback;
+}
+
+bool JsonString(const nlohmann::json& object, const char* name, std::string* out) {
+    const auto* value = JsonObjectMember(object, name);
+    if (!value || !value->is_string() || !out) {
+        return false;
+    }
+    *out = value->get<std::string>();
+    return true;
+}
+
+std::string JsonStringOr(const nlohmann::json& object,
+                         const char* name,
+                         const std::string& fallback = {}) {
+    std::string value;
+    return JsonString(object, name, &value) ? value : fallback;
+}
+
+bool JsonSizeOr(const nlohmann::json& object,
+                const char* name,
+                size_t fallback,
+                size_t* out) {
+    if (!out) {
+        return false;
+    }
+    const auto* value = JsonObjectMember(object, name);
+    if (!value) {
+        *out = fallback;
+        return true;
+    }
+    if (value->is_number_unsigned()) {
+        *out = value->get<size_t>();
+        return true;
+    }
+    if (!value->is_number_integer() || value->get<int64_t>() < 0) {
+        return false;
+    }
+    *out = value->get<size_t>();
+    return true;
+}
+
+bool JsonIntOr(const nlohmann::json& object,
+               const char* name,
+               int fallback,
+               int* out) {
+    if (!out) {
+        return false;
+    }
+    const auto* value = JsonObjectMember(object, name);
+    if (!value) {
+        *out = fallback;
+        return true;
+    }
+    if (!value->is_number_integer()) {
+        return false;
+    }
+    *out = value->get<int>();
+    return true;
+}
+
+nlohmann::json InvalidArgs(const std::string& message) {
+    return nlohmann::json{{"ok", false},
+                          {"error", {{"code", "invalid_args"}, {"message", message}}}};
+}
+
 nlohmann::json McpToolContent(const nlohmann::json& value) {
     return nlohmann::json{{"content", nlohmann::json::array({{{"type", "text"},
                                                               {"text", JsonTextResult(value)}}})},
                           {"structuredContent", value},
-                          {"isError", !value.value("ok", false)}};
+                          {"isError", !JsonBoolOr(value, "ok", false)}};
 }
 
 nlohmann::json BuildMcpToolsJson() {
@@ -255,28 +332,24 @@ nlohmann::json DevToolsCommandToJson(const DevToolsHostContext* context,
 
 nlohmann::json SnapshotToJson(const DevToolsHostContext* context,
                               const nlohmann::json& arguments) {
-    const size_t requested_max_nodes =
-        arguments.value("max_nodes", kDefaultSnapshotMaxNodes);
-    const int requested_max_depth =
-        arguments.value("max_depth", kDefaultSnapshotMaxDepth);
+    size_t requested_max_nodes = kDefaultSnapshotMaxNodes;
+    if (!JsonSizeOr(arguments, "max_nodes", kDefaultSnapshotMaxNodes, &requested_max_nodes)) {
+        return InvalidArgs("max_nodes must be an unsigned integer");
+    }
+    int requested_max_depth = kDefaultSnapshotMaxDepth;
+    if (!JsonIntOr(arguments, "max_depth", kDefaultSnapshotMaxDepth, &requested_max_depth)) {
+        return InvalidArgs("max_depth must be an integer");
+    }
     if (requested_max_nodes == 0 || requested_max_nodes > kHttpSnapshotMaxNodes) {
-        return nlohmann::json{{"ok", false},
-                              {"error",
-                               {{"code", "invalid_args"},
-                                {"message", "max_nodes must be between 1 and 10000"}}}};
+        return InvalidArgs("max_nodes must be between 1 and 10000");
     }
     if (requested_max_depth <= 0 || requested_max_depth > kHttpSnapshotMaxDepth) {
-        return nlohmann::json{{"ok", false},
-                              {"error",
-                               {{"code", "invalid_args"},
-                                {"message", "max_depth must be between 1 and 256"}}}};
+        return InvalidArgs("max_depth must be between 1 and 256");
     }
-    if (arguments.value("include_screenshot", false) &&
-        arguments.value("inline_screenshot", false)) {
-        return nlohmann::json{{"ok", false},
-                              {"error",
-                               {{"code", "invalid_args"},
-                                {"message", "inline screenshots are not supported over HTTP MCP"}}}};
+    const bool include_screenshot = JsonBoolOr(arguments, "include_screenshot", false);
+    const bool inline_screenshot = JsonBoolOr(arguments, "inline_screenshot", false);
+    if (include_screenshot && inline_screenshot) {
+        return InvalidArgs("inline screenshots are not supported over HTTP MCP");
     }
 
     const auto token = NewCommandToken();
@@ -289,11 +362,11 @@ nlohmann::json SnapshotToJson(const DevToolsHostContext* context,
     options.runtime_epoch = context && context->runtime_epoch ? context->runtime_epoch : nullptr;
     options.max_nodes = requested_max_nodes;
     options.max_depth = requested_max_depth;
-    const auto root_selector = arguments.value("root_selector", std::string{});
+    const auto root_selector = JsonStringOr(arguments, "root_selector");
     options.root_selector = root_selector.empty() ? nullptr : root_selector.c_str();
-    options.include_screenshot = arguments.value("include_screenshot", false);
-    options.inline_screenshot = arguments.value("inline_screenshot", false);
-    const auto screenshot_file = arguments.value("screenshot_file", std::string{});
+    options.include_screenshot = include_screenshot;
+    options.inline_screenshot = inline_screenshot;
+    const auto screenshot_file = JsonStringOr(arguments, "screenshot_file");
     const auto actual_screenshot = screenshot_file.empty() ? screenshot_path.string() : screenshot_file;
     options.screenshot_file = options.include_screenshot ? actual_screenshot.c_str() : nullptr;
     options.shutdown_requested = context && context->shutdown_requested;
@@ -332,11 +405,9 @@ nlohmann::json CallDevToolsMcpTool(const DevToolsHostContext* context,
 
     if (tool_name == "query_element" || tool_name == "inspect" || tool_name == "click" ||
         tool_name == "input_text" || tool_name == "scroll" || tool_name == "highlight") {
-        const auto selector = arguments.value("selector", std::string{});
+        const auto selector = JsonStringOr(arguments, "selector");
         if (selector.empty()) {
-            return McpToolContent(nlohmann::json{{"ok", false},
-                                                {"error", {{"code", "invalid_args"},
-                                                            {"message", "selector is required"}}}});
+            return McpToolContent(InvalidArgs("selector is required"));
         }
         nlohmann::json command = arguments;
         command["type"] = tool_name;
@@ -350,39 +421,54 @@ nlohmann::json CallDevToolsMcpTool(const DevToolsHostContext* context,
 
 nlohmann::json HandleMcpJsonRpc(const DevToolsHostContext* context,
                                 const nlohmann::json& request) {
-    if (!request.is_object()) {
-        return MakeJsonRpcError(nullptr, -32600, "invalid request");
-    }
-
-    const auto id = request.contains("id") ? request.at("id") : nlohmann::json(nullptr);
-    const auto method = request.value("method", std::string{});
-    const auto params = request.value("params", nlohmann::json::object());
-
-    if (method == "initialize") {
-        return MakeJsonRpcResult(id,
-                                 nlohmann::json{{"protocolVersion", "2025-03-26"},
-                                                {"capabilities", {{"tools", nlohmann::json::object()}}},
-                                                {"serverInfo", {{"name", "mbink-devtools"},
-                                                                {"version", "0.1.0"}}}});
-    }
-    if (method == "tools/list") {
-        return MakeJsonRpcResult(id, nlohmann::json{{"tools", BuildMcpToolsJson()}});
-    }
-    if (method == "tools/call") {
-        if (!params.is_object()) {
-            return MakeJsonRpcError(id, -32602, "params must be an object");
+    try {
+        if (!request.is_object()) {
+            return MakeJsonRpcError(nullptr, -32600, "invalid request");
         }
-        const auto tool_name = params.value("name", std::string{});
-        if (tool_name.empty()) {
-            return MakeJsonRpcError(id, -32602, "tool name is required");
+
+        const auto id = request.contains("id") ? request.at("id") : nlohmann::json(nullptr);
+        std::string method;
+        if (!JsonString(request, "method", &method)) {
+            return MakeJsonRpcError(id, -32600, "method must be a string");
         }
-        const auto arguments = params.value("arguments", nlohmann::json::object());
-        return MakeJsonRpcResult(id, CallDevToolsMcpTool(context, tool_name, arguments));
+        const auto* params_value = JsonObjectMember(request, "params");
+        const auto empty_params = nlohmann::json::object();
+        const auto& params = params_value ? *params_value : empty_params;
+
+        if (method == "initialize") {
+            return MakeJsonRpcResult(id,
+                                     nlohmann::json{{"protocolVersion", "2025-03-26"},
+                                                    {"capabilities", {{"tools", nlohmann::json::object()}}},
+                                                    {"serverInfo", {{"name", "mbink-devtools"},
+                                                                    {"version", "0.1.0"}}}});
+        }
+        if (method == "tools/list") {
+            return MakeJsonRpcResult(id, nlohmann::json{{"tools", BuildMcpToolsJson()}});
+        }
+        if (method == "tools/call") {
+            if (!params.is_object()) {
+                return MakeJsonRpcError(id, -32602, "params must be an object");
+            }
+            std::string tool_name;
+            if (!JsonString(params, "name", &tool_name) || tool_name.empty()) {
+                return MakeJsonRpcError(id, -32602, "tool name is required");
+            }
+            const auto* arguments_value = JsonObjectMember(params, "arguments");
+            if (arguments_value && !arguments_value->is_object()) {
+                return MakeJsonRpcError(id, -32602, "arguments must be an object");
+            }
+            const auto& arguments = arguments_value ? *arguments_value : empty_params;
+            return MakeJsonRpcResult(id, CallDevToolsMcpTool(context, tool_name, arguments));
+        }
+        if (method == "notifications/initialized") {
+            return nlohmann::json{{"jsonrpc", "2.0"}};
+        }
+        return MakeJsonRpcError(id, -32601, "method not found");
+    } catch (const std::exception& e) {
+        return MakeJsonRpcError(nullptr, -32603, e.what());
+    } catch (...) {
+        return MakeJsonRpcError(nullptr, -32603, "internal error");
     }
-    if (method == "notifications/initialized") {
-        return nlohmann::json{{"jsonrpc", "2.0"}};
-    }
-    return MakeJsonRpcError(id, -32601, "method not found");
 }
 
 std::string RandomToken() {
@@ -622,8 +708,7 @@ private:
             listen_socket_ = INVALID_SOCKET;
         }
         for (SOCKET client : active_clients_) {
-            shutdown(client, SD_BOTH);
-            closesocket(client);
+            CloseClient(client);
         }
         active_clients_.clear();
         running_ = false;
@@ -648,10 +733,22 @@ private:
 
     void StopServer() {
         void* host_user_data = nullptr;
+        std::set<SOCKET> clients_to_close;
+        SOCKET listen_to_close = INVALID_SOCKET;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             host_user_data = host_user_data_;
-            StopLocked();
+            stopping_ = true;
+            running_ = false;
+            listen_to_close = listen_socket_;
+            listen_socket_ = INVALID_SOCKET;
+            clients_to_close.swap(active_clients_);
+        }
+        if (listen_to_close != INVALID_SOCKET) {
+            CloseClient(listen_to_close);
+        }
+        for (SOCKET client : clients_to_close) {
+            CloseClient(client);
         }
         if (host_user_data && g_host_services.set_main_thread_sync_cancelled) {
             g_host_services.set_main_thread_sync_cancelled(host_user_data, true);
@@ -670,6 +767,12 @@ private:
         std::string data;
         char buffer[4096];
         for (;;) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (stopping_) {
+                    break;
+                }
+            }
             const int n = recv(client, buffer, sizeof(buffer), 0);
             if (n <= 0) {
                 break;
@@ -1193,18 +1296,235 @@ const DevToolsBridgeApi kBridgeApi{
     BridgeHttpStop,
 };
 
+std::once_flag g_attach_once;
+bool g_attach_ok = false;
+std::mutex g_lifecycle_mutex;
+std::set<void*> g_initialized_hosts;
+
+bool EnsureAttached() {
+    std::call_once(g_attach_once, []() {
+        if (mbink_devtools_host_get_services(kDevToolsAttachVersion, &g_host_services) != kMbinkOk) {
+            return;
+        }
+        g_attach_ok = mbink_devtools_host_attach(kDevToolsAttachVersion, &kBridgeApi) == kMbinkOk;
+    });
+    return g_attach_ok;
+}
+
+const DevToolsHostContext* HostContextOrNull(MBinkHandle handle, DevToolsHostContext* storage) {
+    if (!handle || !storage || !EnsureAttached() || !g_host_services.with_current_context_sync) {
+        return nullptr;
+    }
+    struct State {
+        DevToolsHostContext* out = nullptr;
+        bool ok = false;
+    } state{storage, false};
+    const int rc = g_host_services.with_current_context_sync(
+        handle,
+        [](const DevToolsHostContext* current_context, void* raw_state) {
+            auto* state = static_cast<State*>(raw_state);
+            if (!state || !state->out || !current_context) {
+                return;
+            }
+            *state->out = *current_context;
+            state->ok = current_context->window && current_context->document;
+        },
+        &state);
+    return rc == kMbinkOk && state.ok ? storage : nullptr;
+}
+
+bool EnsureInitialized(const DevToolsHostContext* context) {
+    if (!context || !context->host_user_data) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+    if (g_initialized_hosts.insert(context->host_user_data).second) {
+        BridgeInitialize(context);
+    }
+    return true;
+}
+
 }  // namespace
 }  // namespace mbink
 
-#ifdef _WIN32
-#define MBINK_DEVTOOLS_EXPORT __declspec(dllexport)
-#else
-#define MBINK_DEVTOOLS_EXPORT __attribute__((visibility("default")))
-#endif
-
 namespace mbink {
 
-extern "C" MBINK_DEVTOOLS_EXPORT int mbink_devtools_attach(
+extern "C" MBINK_DEVTOOLS_API int mbink_devtools_open(MBinkHandle handle) {
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host || !EnsureInitialized(host)) {
+        return kMbinkErrorInvalidHandle;
+    }
+    return BridgeOpen(host);
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_devtools_close(MBinkHandle handle) {
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host) {
+        return kMbinkErrorInvalidHandle;
+    }
+    return BridgeClose(host);
+}
+
+extern "C" MBINK_DEVTOOLS_API MBinkDevToolsHttpOptions
+mbink_devtools_default_http_options(void) {
+    MBinkDevToolsHttpOptions options{};
+    options.bind_host = "127.0.0.1";
+    options.port = 0;
+    options.auth_token = nullptr;
+    options.require_auth = true;
+    return options;
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_start(
+    MBinkHandle handle,
+    const MBinkDevToolsHttpOptions* options,
+    MBinkDevToolsHttpInfo* out_info) {
+    if (!out_info) {
+        return kMbinkErrorInvalidParam;
+    }
+    out_info->port = 0;
+    out_info->url = nullptr;
+    out_info->auth_token = nullptr;
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host) {
+        return kMbinkErrorInvalidHandle;
+    }
+
+    DevToolsHttpServerOptionsBridge bridge_options;
+    bridge_options.bind_host = options && options->bind_host ? options->bind_host : "127.0.0.1";
+    bridge_options.port = options ? options->port : 0;
+    bridge_options.auth_token = options ? options->auth_token : nullptr;
+    bridge_options.require_auth = options ? options->require_auth : true;
+
+    DevToolsHttpServerInfoBridge bridge_info;
+    char* bridge_error = nullptr;
+    const int rc = BridgeHttpStart(host, &bridge_options, &bridge_info, &bridge_error);
+    if (bridge_error && g_host_services.free_string) {
+        g_host_services.free_string(bridge_error);
+    }
+    if (rc != kMbinkOk) {
+        return rc;
+    }
+    out_info->port = bridge_info.port;
+    out_info->url = bridge_info.url;
+    out_info->auth_token = bridge_info.auth_token;
+    return kMbinkOk;
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_stop(MBinkHandle handle) {
+    (void)handle;
+    return BridgeHttpStop(nullptr);
+}
+
+extern "C" MBINK_DEVTOOLS_API void mbink_devtools_http_info_free(
+    MBinkDevToolsHttpInfo* info) {
+    if (!info) {
+        return;
+    }
+    if (info->url && g_host_services.free_string) {
+        g_host_services.free_string(info->url);
+    }
+    if (info->auth_token && g_host_services.free_string) {
+        g_host_services.free_string(info->auth_token);
+    }
+    info->port = 0;
+    info->url = nullptr;
+    info->auth_token = nullptr;
+}
+
+extern "C" MBINK_DEVTOOLS_API MBinkUiDevSnapshotOptions
+mbink_ui_dev_default_snapshot_options(void) {
+    MBinkUiDevSnapshotOptions options{};
+    options.runtime_epoch = nullptr;
+    options.max_nodes = kDefaultSnapshotMaxNodes;
+    options.max_depth = kDefaultSnapshotMaxDepth;
+    options.root_selector = nullptr;
+    options.include_screenshot = false;
+    options.inline_screenshot = false;
+    options.screenshot_file = nullptr;
+    return options;
+}
+
+UiDevSnapshotOptionsBridge ToBridgeSnapshotOptions(
+    const DevToolsHostContext* host,
+    const MBinkUiDevSnapshotOptions* options) {
+    UiDevSnapshotOptionsBridge out;
+    out.runtime_epoch = options && options->runtime_epoch
+                            ? options->runtime_epoch
+                            : (host && host->runtime_epoch ? host->runtime_epoch : nullptr);
+    out.max_nodes = options && options->max_nodes > 0 ? options->max_nodes : kDefaultSnapshotMaxNodes;
+    out.max_depth = options && options->max_depth > 0 ? options->max_depth : kDefaultSnapshotMaxDepth;
+    out.root_selector = options && options->root_selector ? options->root_selector : nullptr;
+    out.include_screenshot = options && options->include_screenshot;
+    out.inline_screenshot = options && options->inline_screenshot;
+    out.screenshot_file = options && options->screenshot_file ? options->screenshot_file : nullptr;
+    out.shutdown_requested = host && host->shutdown_requested;
+    return out;
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_snapshot_file(
+    MBinkHandle handle,
+    const char* output_path,
+    const MBinkUiDevSnapshotOptions* options) {
+    if (!output_path) {
+        return kMbinkErrorInvalidParam;
+    }
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host || !EnsureInitialized(host)) {
+        return kMbinkErrorInvalidHandle;
+    }
+    char* bridge_error = nullptr;
+    const auto bridge_options = ToBridgeSnapshotOptions(host, options);
+    const int rc = BridgeSnapshotFile(host, output_path, &bridge_options, &bridge_error);
+    if (bridge_error && g_host_services.free_string) {
+        g_host_services.free_string(bridge_error);
+    }
+    return rc;
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_snapshot_json(
+    MBinkHandle handle,
+    const MBinkUiDevSnapshotOptions* options,
+    char** out_json) {
+    if (!out_json) {
+        return kMbinkErrorInvalidParam;
+    }
+    *out_json = nullptr;
+    const auto token = NewCommandToken();
+    const auto path = std::filesystem::temp_directory_path() /
+        ("mbink-ui-dev-snapshot-" + token + ".json");
+    const int rc = mbink_ui_dev_snapshot_file(handle, path.string().c_str(), options);
+    if (rc != kMbinkOk) {
+        return rc;
+    }
+    const auto content = ReadFile(path);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    *out_json = CopyHostString(content);
+    return *out_json ? kMbinkOk : kMbinkErrorUnknown;
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_command_json(
+    MBinkHandle handle,
+    const char* command_json,
+    char** out_response_json) {
+    if (!command_json || !out_response_json) {
+        return kMbinkErrorInvalidParam;
+    }
+    *out_response_json = nullptr;
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host || !EnsureInitialized(host)) {
+        return kMbinkErrorInvalidHandle;
+    }
+    return BridgeCommandJson(host, command_json, out_response_json);
+}
+
+extern "C" MBINK_DEVTOOLS_API int mbink_devtools_attach(
     unsigned int version,
     const DevToolsHostServices* host_services,
     DevToolsRegisterBridgeFn register_bridge,

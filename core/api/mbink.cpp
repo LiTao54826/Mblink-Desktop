@@ -87,16 +87,6 @@ std::mutex g_dbghelpMutex;
 
 constexpr unsigned int kDevToolsAttachVersion = mbink::kDevToolsBridgeVersion;
 
-struct DevToolsLibraryState {
-#ifdef _WIN32
-    HMODULE module = nullptr;
-#endif
-    bool attempted = false;
-};
-
-DevToolsLibraryState g_devtoolsLibrary;
-std::mutex g_devtoolsLibraryMutex;
-
 void ClearElementListenersRecursive(const std::shared_ptr<mbink::Node>& node) {
     if (!node) {
         return;
@@ -393,7 +383,6 @@ struct WindowContext {
     std::string mountedResourceKey;
     std::string mountedResourceMountPoint = "/";
     std::string runtimeEpoch;
-    bool devtoolsInitialized = false;
     bool embeddedRuntimeLoaded = false;
     bool officialPreactLoaded = false;
     std::string lifecycleReason = "created";
@@ -875,147 +864,6 @@ std::string FsPathToUtf8String(const fs::path& path) {
 #endif
 }
 
-fs::path DevToolsLibraryName() {
-#ifdef _WIN32
-    return Utf8PathToFsPath("mbink_devtools.dll");
-#elif defined(__APPLE__)
-    return Utf8PathToFsPath("libmbink_devtools.dylib");
-#else
-    return Utf8PathToFsPath("libmbink_devtools.so");
-#endif
-}
-
-fs::path CurrentRuntimeDirectory() {
-#ifdef _WIN32
-    HMODULE module = nullptr;
-    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                            reinterpret_cast<LPCWSTR>(&mbink_version),
-                            &module)) {
-        module = GetModuleHandleW(nullptr);
-    }
-    wchar_t buffer[MAX_PATH] = {};
-    const DWORD length = GetModuleFileNameW(module, buffer, MAX_PATH);
-    if (length == 0) {
-        return fs::current_path();
-    }
-    return fs::path(buffer).parent_path();
-#else
-    return fs::current_path();
-#endif
-}
-
-std::vector<fs::path> DevToolsLibraryCandidates() {
-    std::vector<fs::path> candidates;
-    if (const char* env_path = std::getenv("MBINK_DEVTOOLS_PATH"); env_path && *env_path) {
-        fs::path path = Utf8PathToFsPath(env_path);
-        candidates.push_back(fs::is_directory(path) ? path / DevToolsLibraryName() : path);
-    }
-    candidates.push_back(CurrentRuntimeDirectory() / DevToolsLibraryName());
-    return candidates;
-}
-
-bool LoadDevToolsLibrary(std::string* error) {
-    if (mbink::HasDevToolsBridge()) {
-        return true;
-    }
-
-    std::lock_guard<std::mutex> lock(g_devtoolsLibraryMutex);
-    if (mbink::HasDevToolsBridge()) {
-        return true;
-    }
-    if (g_devtoolsLibrary.attempted) {
-        if (error) *error = "mbink_devtools not loaded";
-        return false;
-    }
-    g_devtoolsLibrary.attempted = true;
-
-#ifdef _WIN32
-    std::string last_error;
-    mbink::DevToolsHostServices host_services;
-    host_services.version = kDevToolsAttachVersion;
-    host_services.copy_string = mbink_copy_string;
-    host_services.free_string = mbink_free;
-    host_services.is_main_thread = [](const mbink::DevToolsHostContext* host) -> bool {
-        if (!host || !host->host_user_data) {
-            return false;
-        }
-        auto* ctx = static_cast<WindowContext*>(host->host_user_data);
-        return ctx && ctx->mainThreadQueue.isMainThread();
-    };
-    host_services.run_on_main_thread_sync = RunDevToolsOnMainThreadSync;
-    host_services.wake_event_loop = [](const mbink::DevToolsHostContext* host) {
-        if (!host || !host->host_user_data) {
-            return;
-        }
-        auto* ctx = static_cast<WindowContext*>(host->host_user_data);
-        if (ctx && ctx->eventLoop) {
-            ctx->eventLoop->Wake();
-        }
-    };
-    host_services.set_main_thread_sync_cancelled = [](void* host_user_data, bool cancelled) {
-        auto* ctx = static_cast<WindowContext*>(host_user_data);
-        if (!ctx) {
-            return;
-        }
-        if (ctx->devtoolsSyncCancelled) {
-            ctx->devtoolsSyncCancelled->store(cancelled, std::memory_order_release);
-        }
-        if (cancelled && ctx->eventLoop) {
-            ctx->eventLoop->Wake();
-        }
-    };
-    host_services.with_current_context_sync = RunWithCurrentDevToolsContextSync;
-    host_services.shutdown_requested = [](void* host_user_data) -> std::atomic<bool>* {
-        auto* ctx = static_cast<WindowContext*>(host_user_data);
-        return ctx && ctx->shutdownRequested ? ctx->shutdownRequested.get() : nullptr;
-    };
-    for (const auto& candidate : DevToolsLibraryCandidates()) {
-        const auto candidate_path = fs::absolute(candidate);
-        if (!fs::exists(candidate_path)) {
-            continue;
-        }
-        HMODULE module = LoadLibraryW(candidate_path.wstring().c_str());
-        if (!module) {
-            last_error = "failed to load " + FsPathToUtf8String(candidate_path);
-            continue;
-        }
-        auto attach = reinterpret_cast<mbink::MbinkDevToolsAttachFn>(
-            GetProcAddress(module, "mbink_devtools_attach"));
-        if (!attach) {
-            FreeLibrary(module);
-            last_error = "mbink_devtools_attach not found in " + FsPathToUtf8String(candidate_path);
-            continue;
-        }
-        if (attach(kDevToolsAttachVersion,
-                   &host_services,
-                   [](unsigned int version, const mbink::DevToolsBridgeApi* api) -> bool {
-                       return version == kDevToolsAttachVersion && mbink::RegisterDevToolsBridge(api);
-                   },
-                   [](unsigned int version, const mbink::DevToolsBridgeApi* api) {
-                       if (version == kDevToolsAttachVersion) {
-                           mbink::UnregisterDevToolsBridge(api);
-                       }
-                   }) != MBINK_OK ||
-            !mbink::HasDevToolsBridge()) {
-            FreeLibrary(module);
-            last_error = "mbink_devtools_attach failed for " + FsPathToUtf8String(candidate_path);
-            continue;
-        }
-        g_devtoolsLibrary.module = module;
-        return true;
-    }
-    if (error) {
-        *error = last_error.empty() ? "mbink_devtools not found" : last_error;
-    }
-    g_devtoolsLibrary.attempted = false;
-    return false;
-#else
-    if (error) *error = "dynamic mbink_devtools loading is not implemented on this platform";
-    return false;
-#endif
-}
-
 std::string NormalizeFsPath(const fs::path& path) {
     std::string result = FsPathToUtf8String(path.lexically_normal());
     std::replace(result.begin(), result.end(), '\\', '/');
@@ -1474,27 +1322,48 @@ mbink::DevToolsHostContext makeDevToolsHostContext(WindowContext* ctx) {
     return host;
 }
 
-bool ensureDevToolsReady(WindowContext* ctx, std::string* error) {
-    if (!ctx || !ctx->window || !ctx->document) {
-        if (error) *error = "invalid devtools host";
-        return false;
+void fillDevToolsHostServices(mbink::DevToolsHostServices* out_services) {
+    if (!out_services) {
+        return;
     }
-    if (!LoadDevToolsLibrary(error)) {
-        return false;
-    }
-    if (!ctx->devtoolsInitialized) {
-        mbink::DevToolsInitialize(makeDevToolsHostContext(ctx));
-        ctx->devtoolsInitialized = true;
-    }
-    return true;
-}
-
-bool ensureDevToolsHttpReady(WindowContext* ctx, std::string* error) {
-    if (!ctx || !ctx->window || !ctx->document) {
-        if (error) *error = "invalid devtools host";
-        return false;
-    }
-    return LoadDevToolsLibrary(error);
+    *out_services = {};
+    out_services->version = kDevToolsAttachVersion;
+    out_services->copy_string = mbink_copy_string;
+    out_services->free_string = mbink_free;
+    out_services->is_main_thread = [](const mbink::DevToolsHostContext* host) -> bool {
+        if (!host || !host->host_user_data) {
+            return false;
+        }
+        auto* ctx = static_cast<WindowContext*>(host->host_user_data);
+        return ctx && ctx->mainThreadQueue.isMainThread();
+    };
+    out_services->run_on_main_thread_sync = RunDevToolsOnMainThreadSync;
+    out_services->wake_event_loop = [](const mbink::DevToolsHostContext* host) {
+        if (!host || !host->host_user_data) {
+            return;
+        }
+        auto* ctx = static_cast<WindowContext*>(host->host_user_data);
+        if (ctx && ctx->eventLoop) {
+            ctx->eventLoop->Wake();
+        }
+    };
+    out_services->set_main_thread_sync_cancelled = [](void* host_user_data, bool cancelled) {
+        auto* ctx = static_cast<WindowContext*>(host_user_data);
+        if (!ctx) {
+            return;
+        }
+        if (ctx->devtoolsSyncCancelled) {
+            ctx->devtoolsSyncCancelled->store(cancelled, std::memory_order_release);
+        }
+        if (cancelled && ctx->eventLoop) {
+            ctx->eventLoop->Wake();
+        }
+    };
+    out_services->with_current_context_sync = RunWithCurrentDevToolsContextSync;
+    out_services->shutdown_requested = [](void* host_user_data) -> std::atomic<bool>* {
+        auto* ctx = static_cast<WindowContext*>(host_user_data);
+        return ctx && ctx->shutdownRequested ? ctx->shutdownRequested.get() : nullptr;
+    };
 }
 
 #ifdef _WIN32
@@ -1729,6 +1598,31 @@ int mbink_init(void) {
     return MBINK_OK;
 }
 
+int mbink_devtools_host_attach(unsigned int version,
+                               const mbink::DevToolsBridgeApi* api) {
+    if (version != kDevToolsAttachVersion || !api ||
+        api->version != kDevToolsAttachVersion) {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+    return mbink::RegisterDevToolsBridge(api) ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+}
+
+void mbink_devtools_host_detach(unsigned int version,
+                                const mbink::DevToolsBridgeApi* api) {
+    if (version == kDevToolsAttachVersion) {
+        mbink::UnregisterDevToolsBridge(api);
+    }
+}
+
+int mbink_devtools_host_get_services(unsigned int version,
+                                     mbink::DevToolsHostServices* out_services) {
+    if (version != kDevToolsAttachVersion || !out_services) {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+    fillDevToolsHostServices(out_services);
+    return MBINK_OK;
+}
+
 void mbink_cleanup(void) {
     g_initialized = false;
 }
@@ -1803,18 +1697,11 @@ void mbink_destroy(MBinkHandle handle) {
     auto ctx = getContext(handle);
     setLifecycle(ctx, MBINK_LIFECYCLE_DESTROYED, "destroyed");
 
-    SAFE_CLEANUP("shutdown_devtools", {
-        if (ctx->window && ctx->document) {
-            mbink::DevToolsHttpStop(makeDevToolsHostContext(ctx));
-        }
-        if (ctx->devtoolsInitialized && ctx->window && ctx->document) {
-            mbink::DevToolsClose(makeDevToolsHostContext(ctx));
-            mbink::DevToolsShutdown(makeDevToolsHostContext(ctx));
-            ctx->devtoolsInitialized = false;
-        }
-    });
     if (ctx->shutdownRequested) {
         ctx->shutdownRequested->store(true, std::memory_order_release);
+    }
+    if (ctx->devtoolsSyncCancelled) {
+        ctx->devtoolsSyncCancelled->store(true, std::memory_order_release);
     }
 
     // 0. 先销毁 tray，避免后续窗口销毁时残留托盘图标
@@ -2644,120 +2531,6 @@ int mbink_emit(MBinkHandle handle, const char* event_name, const char* data_json
     return MBINK_OK;
 }
 
-// ========== DevTools ==========
-
-int mbink_devtools_open(MBinkHandle handle) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    auto ctx = getContext(handle);
-    std::string error;
-    if (!ensureDevToolsReady(ctx, &error)) {
-        setLastError(error.empty() ? "invalid devtools host" : error);
-        return MBINK_ERROR_NOT_FOUND;
-    }
-
-    const int rc = mbink::DevToolsOpen(makeDevToolsHostContext(ctx));
-    if (rc != MBINK_OK) {
-        setLastError("mbink_devtools_open failed");
-        return rc;
-    }
-
-    if (ctx && ctx->window) {
-        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
-    }
-    return MBINK_OK;
-}
-
-int mbink_devtools_close(MBinkHandle handle) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    auto ctx = getContext(handle);
-    if (ctx && ctx->devtoolsInitialized) {
-        const int rc = mbink::DevToolsClose(makeDevToolsHostContext(ctx));
-        if (rc != MBINK_OK) {
-            setLastError("mbink_devtools_close failed");
-            return rc;
-        }
-    }
-    if (ctx && ctx->window) {
-        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
-    }
-    return MBINK_OK;
-}
-
-// ========== 状态创建 ==========
-
-MBinkDevToolsHttpOptions mbink_devtools_default_http_options(void) {
-    MBinkDevToolsHttpOptions options = {};
-    options.bind_host = "127.0.0.1";
-    options.port = 0;
-    options.auth_token = nullptr;
-    options.require_auth = true;
-    return options;
-}
-
-int mbink_devtools_http_start(MBinkHandle handle,
-                              const MBinkDevToolsHttpOptions* options,
-                              MBinkDevToolsHttpInfo* out_info) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    if (!out_info) return MBINK_ERROR_INVALID_PARAM;
-    out_info->port = 0;
-    out_info->url = nullptr;
-    out_info->auth_token = nullptr;
-
-    auto ctx = getContext(handle);
-    std::string error;
-    if (!ensureDevToolsHttpReady(ctx, &error)) {
-        setLastError(error.empty() ? "mbink_devtools not available" : error);
-        return MBINK_ERROR_NOT_FOUND;
-    }
-
-    mbink::DevToolsHttpServerOptionsBridge bridge_options;
-    bridge_options.bind_host = options && options->bind_host ? options->bind_host : "127.0.0.1";
-    bridge_options.port = options ? options->port : 0;
-    bridge_options.auth_token = options ? options->auth_token : nullptr;
-    bridge_options.require_auth = options ? options->require_auth : true;
-
-    mbink::DevToolsHttpServerInfoBridge bridge_info;
-    char* bridge_error = nullptr;
-    const int rc = mbink::DevToolsHttpStart(makeDevToolsHostContext(ctx),
-                                            bridge_options,
-                                            bridge_info,
-                                            &bridge_error);
-    if (rc != MBINK_OK) {
-        setLastError(bridge_error && *bridge_error ? bridge_error : "mbink_devtools_http_start failed");
-        if (bridge_error) mbink_free(bridge_error);
-        return rc;
-    }
-
-    out_info->port = bridge_info.port;
-    out_info->url = bridge_info.url;
-    out_info->auth_token = bridge_info.auth_token;
-    if (bridge_error) mbink_free(bridge_error);
-    return MBINK_OK;
-}
-
-int mbink_devtools_http_stop(MBinkHandle handle) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    auto ctx = getContext(handle);
-    if (!ctx || !mbink::HasDevToolsBridge()) {
-        return MBINK_OK;
-    }
-    const int rc = mbink::DevToolsHttpStop(makeDevToolsHostContext(ctx));
-    if (rc != MBINK_OK) {
-        setLastError("mbink_devtools_http_stop failed");
-        return rc;
-    }
-    return MBINK_OK;
-}
-
-void mbink_devtools_http_info_free(MBinkDevToolsHttpInfo* info) {
-    if (!info) return;
-    if (info->url) mbink_free(info->url);
-    if (info->auth_token) mbink_free(info->auth_token);
-    info->port = 0;
-    info->url = nullptr;
-    info->auth_token = nullptr;
-}
-
 int mbink_observe_set_callback(MBinkHandle handle,
                                MBinkObserveCallback callback,
                                void* user_data) {
@@ -2812,118 +2585,6 @@ int mbink_observe_clear(MBinkHandle handle, MBinkObserveKind kind) {
         return MBINK_ERROR_INVALID_PARAM;
     }
     return MBINK_OK;
-}
-
-MBinkUiDevSnapshotOptions mbink_ui_dev_default_snapshot_options(void) {
-    MBinkUiDevSnapshotOptions options = {};
-    options.runtime_epoch = nullptr;
-    options.max_nodes = 2000;
-    options.max_depth = 64;
-    options.root_selector = nullptr;
-    options.include_screenshot = false;
-    options.inline_screenshot = false;
-    options.screenshot_file = nullptr;
-    return options;
-}
-
-mbink::UiDevSnapshotOptionsBridge toSnapshotOptions(
-    WindowContext* ctx,
-    const MBinkUiDevSnapshotOptions* options) {
-    mbink::UiDevSnapshotOptionsBridge out;
-    out.runtime_epoch = options && options->runtime_epoch
-                            ? options->runtime_epoch
-                            : (ctx && !ctx->runtimeEpoch.empty() ? ctx->runtimeEpoch.c_str() : nullptr);
-    out.max_nodes = options && options->max_nodes > 0 ? options->max_nodes : 2000;
-    out.max_depth = options && options->max_depth > 0 ? options->max_depth : 64;
-    out.root_selector = options && options->root_selector ? options->root_selector : nullptr;
-    out.include_screenshot = options && options->include_screenshot;
-    out.inline_screenshot = options && options->inline_screenshot;
-    out.screenshot_file = options && options->screenshot_file ? options->screenshot_file : nullptr;
-    out.shutdown_requested = ctx && ctx->shutdownRequested && ctx->shutdownRequested->load();
-    return out;
-}
-
-int mbink_ui_dev_snapshot_file(MBinkHandle handle,
-                               const char* output_path,
-                               const MBinkUiDevSnapshotOptions* options) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    if (!output_path) return MBINK_ERROR_INVALID_PARAM;
-    auto ctx = getContext(handle);
-    if (!ctx->window || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
-
-    forceRenderFrame(ctx, 1);
-    std::string error;
-    if (!ensureDevToolsReady(ctx, &error)) {
-        setLastError(error.empty() ? "mbink_devtools not available" : error);
-        return MBINK_ERROR_NOT_FOUND;
-    }
-
-    char* bridge_error = nullptr;
-    const int rc = mbink::DevToolsSnapshotFile(makeDevToolsHostContext(ctx),
-                                               output_path,
-                                               toSnapshotOptions(ctx, options),
-                                               &bridge_error);
-    if (rc != MBINK_OK) {
-        setLastError(bridge_error && *bridge_error ? bridge_error : "snapshot export failed");
-        if (bridge_error) mbink_free(bridge_error);
-        return rc;
-    }
-    if (bridge_error) mbink_free(bridge_error);
-    return MBINK_OK;
-}
-
-int mbink_ui_dev_snapshot_json(MBinkHandle handle,
-                               const MBinkUiDevSnapshotOptions* options,
-                               char** out_json) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    if (!out_json) return MBINK_ERROR_INVALID_PARAM;
-    const fs::path tmp_path = fs::temp_directory_path() /
-        ("mbink-ui-dev-snapshot-" + newRuntimeEpoch() + ".json");
-    const int rc = mbink_ui_dev_snapshot_file(handle,
-                                              tmp_path.string().c_str(),
-                                              options);
-    if (rc != MBINK_OK) return rc;
-    try {
-        auto content = readFileContents(tmp_path.string().c_str());
-        std::error_code ec;
-        fs::remove(tmp_path, ec);
-        *out_json = duplicateString(content);
-        return *out_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
-    } catch (const std::exception& e) {
-        setLastError(e.what());
-        return MBINK_ERROR_UNKNOWN;
-    }
-}
-
-int mbink_ui_dev_command_json(MBinkHandle handle,
-                              const char* command_json,
-                              char** out_response_json) {
-    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    if (!command_json || !out_response_json) return MBINK_ERROR_INVALID_PARAM;
-    auto ctx = getContext(handle);
-    if (!ctx->runtime || !ctx->window || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
-    if (ctx->shutdownRequested && ctx->shutdownRequested->load()) {
-        setLastError("shutdown_in_progress");
-        return MBINK_ERROR_INVALID_HANDLE;
-    }
-
-    std::string error;
-    if (!ensureDevToolsReady(ctx, &error)) {
-        setLastError(error.empty() ? "mbink_devtools not available" : error);
-        return MBINK_ERROR_NOT_FOUND;
-    }
-
-    char* response = nullptr;
-    const int rc = mbink::DevToolsCommandJson(makeDevToolsHostContext(ctx),
-                                              command_json,
-                                              &response);
-    if (rc != MBINK_OK) {
-        setLastError(response && *response ? response : "ui-dev command not handled");
-        if (response) mbink_free(response);
-        return rc;
-    }
-    *out_response_json = response;
-    return *out_response_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
 }
 
 int mbink_state_create_null(MBinkHandle handle, const char* name) {

@@ -19,14 +19,14 @@ fn main() {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
 
     if cfg!(target_os = "windows") {
-        if has_file(&lib_dir, &format!("{lib_name}.lib")) {
-            println!("cargo:rustc-link-lib=dylib={lib_name}");
-        } else if has_file(&lib_dir, &format!("{lib_name}.dll")) {
-            println!("cargo:warning=No import library found for {lib_name}.dll in {}. Falling back to runtime dynamic loading.", lib_dir.display());
+        if has_file(&lib_dir, &format!("{lib_name}.dll")) {
+            println!("cargo:rustc-cfg=mbink_runtime_load");
+        } else if has_file(&lib_dir, &format!("{lib_name}.lib")) {
+            println!("cargo:warning=Found {lib_name}.lib but no {lib_name}.dll in {}. Windows bindings use runtime dynamic loading, so the DLL must be available at runtime.", lib_dir.display());
             println!("cargo:rustc-cfg=mbink_runtime_load");
         } else {
             panic!(
-                "unable to find either {0}.lib or {0}.dll in MBINK_LIB_DIR or default runtime dir: {1}",
+                "unable to find either {0}.dll or {0}.lib in MBINK_LIB_DIR or default runtime dir: {1}",
                 lib_name,
                 lib_dir.display()
             );

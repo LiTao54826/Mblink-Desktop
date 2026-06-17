@@ -15,7 +15,7 @@ import urllib.request
 from .controls import LogView, Terminal
 from .resources import RESOURCE_FLAG_BYTECODE, load_resource_file
 from ._ffi import (
-    load_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
+    load_dll, load_devtools_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
     MBinkVoidCallback, MBinkBoolCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
     MBinkDevToolsHttpInfo, POINTER,
 )
@@ -29,6 +29,7 @@ class App:
                  transparent=False, always_on_top=False, resizable=True,
                  gpu=True, fullscreen=False, min_size=None, max_size=None):
         self._lib = load_dll(dll_path)
+        self._devtools_lib = None
         self._lib.mbink_init()
         self._destroyed = False
 
@@ -80,6 +81,11 @@ class App:
     def _ensure_alive(self):
         if self._destroyed or not self._handle:
             raise RuntimeError("MBink App 已销毁，不能继续调用此操作")
+
+    def _devtools(self):
+        if self._devtools_lib is None:
+            self._devtools_lib = load_devtools_dll(self._lib)
+        return self._devtools_lib
 
     def _resolve_user_path(self, path: str):
         if os.path.isabs(path):
@@ -330,7 +336,8 @@ class App:
 
     def ui_dev_snapshot(self, **options):
         self._ensure_alive()
-        snapshot_options = self._lib.mbink_ui_dev_default_snapshot_options()
+        devtools = self._devtools()
+        snapshot_options = devtools.mbink_ui_dev_default_snapshot_options()
         keepalive = []
         for key, value in options.items():
             if value is None:
@@ -344,7 +351,7 @@ class App:
             else:
                 raise TypeError(f"unknown snapshot option: {key}")
         out = c_void_p()
-        ret = self._lib.mbink_ui_dev_snapshot_json(
+        ret = devtools.mbink_ui_dev_snapshot_json(
             self._handle, ctypes.byref(snapshot_options), ctypes.byref(out)
         )
         if ret != 0:
@@ -361,7 +368,8 @@ class App:
 
     def ui_dev_snapshot_file(self, output_path: str, **options):
         self._ensure_alive()
-        snapshot_options = self._lib.mbink_ui_dev_default_snapshot_options()
+        devtools = self._devtools()
+        snapshot_options = devtools.mbink_ui_dev_default_snapshot_options()
         keepalive = []
         for key, value in options.items():
             if value is None:
@@ -374,7 +382,7 @@ class App:
                 setattr(snapshot_options, key, value)
             else:
                 raise TypeError(f"unknown snapshot option: {key}")
-        ret = self._lib.mbink_ui_dev_snapshot_file(
+        ret = devtools.mbink_ui_dev_snapshot_file(
             self._handle, output_path.encode("utf-8"), ctypes.byref(snapshot_options)
         )
         keepalive.clear()
@@ -386,9 +394,10 @@ class App:
 
     def ui_dev_command(self, command):
         self._ensure_alive()
+        devtools = self._devtools()
         payload = command if isinstance(command, str) else json.dumps(command, ensure_ascii=False)
         out = c_void_p()
-        ret = self._lib.mbink_ui_dev_command_json(
+        ret = devtools.mbink_ui_dev_command_json(
             self._handle, payload.encode("utf-8"), ctypes.byref(out)
         )
         if ret != 0:
@@ -843,7 +852,7 @@ class App:
 
     def devtools_open(self):
         self._ensure_alive()
-        ret = self._lib.mbink_devtools_open(self._handle)
+        ret = self._devtools().mbink_devtools_open(self._handle)
         if ret != 0:
             err = self._lib.mbink_last_error()
             msg = err.decode("utf-8") if err else "unknown devtools open error"
@@ -851,7 +860,7 @@ class App:
 
     def devtools_close(self):
         self._ensure_alive()
-        self._lib.mbink_devtools_close(self._handle)
+        self._devtools().mbink_devtools_close(self._handle)
 
     def enable_devtools(self, *, http_mcp=False, port=0, auth_token=None, require_auth=True, bind_host=None):
         self._ensure_alive()
@@ -867,7 +876,8 @@ class App:
 
     def devtools_http_session(self, *, port=0, auth_token=None, require_auth=True, bind_host=None):
         self._ensure_alive()
-        options = self._lib.mbink_devtools_default_http_options()
+        devtools = self._devtools()
+        options = devtools.mbink_devtools_default_http_options()
         keepalive = []
         if bind_host is not None:
             encoded = str(bind_host).encode("utf-8")
@@ -880,7 +890,7 @@ class App:
         options.port = int(port)
         options.require_auth = bool(require_auth)
         raw_info = MBinkDevToolsHttpInfo()
-        ret = self._lib.mbink_devtools_http_start(
+        ret = devtools.mbink_devtools_http_start(
             self._handle, ctypes.byref(options), ctypes.byref(raw_info)
         )
         keepalive.clear()
@@ -893,11 +903,11 @@ class App:
             token = raw_info.auth_token.decode("utf-8") if raw_info.auth_token else ""
             return DevToolsHttpSession(self, url, int(raw_info.port), token, bool(require_auth))
         finally:
-            self._lib.mbink_devtools_http_info_free(ctypes.byref(raw_info))
+            devtools.mbink_devtools_http_info_free(ctypes.byref(raw_info))
 
     def devtools_http_stop(self):
         self._ensure_alive()
-        ret = self._lib.mbink_devtools_http_stop(self._handle)
+        ret = self._devtools().mbink_devtools_http_stop(self._handle)
         if ret != 0:
             err = self._lib.mbink_last_error()
             msg = err.decode("utf-8") if err else "unknown devtools http stop error"

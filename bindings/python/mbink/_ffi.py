@@ -149,8 +149,97 @@ def load_dll(path=None):
             "或将 mbink.dll 放在当前目录下。"
         )
     lib = ctypes.CDLL(path)
+    lib._mbink_dll_path = path
     _bind_functions(lib)
     return lib
+
+
+def _devtools_library_names():
+    if platform.system() == "Windows":
+        return ["mbink_devtools.dll"]
+    if platform.system() == "Darwin":
+        return ["libmbink_devtools.dylib"]
+    return ["libmbink_devtools.so"]
+
+
+def _find_devtools_dll(mbink_lib=None, path=None):
+    if path:
+        return path
+
+    names = _devtools_library_names()
+    candidates = []
+    env_path = os.environ.get("MBINK_DEVTOOLS_PATH", "")
+    if env_path:
+        if os.path.isdir(env_path):
+            candidates.extend(os.path.join(env_path, name) for name in names)
+        else:
+            candidates.append(env_path)
+
+    mbink_path = getattr(mbink_lib, "_mbink_dll_path", None)
+    if mbink_path:
+        base_dir = os.path.dirname(os.path.abspath(mbink_path))
+        candidates.extend(os.path.join(base_dir, name) for name in names)
+
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
+    for directory in (
+        os.path.join(pkg_dir, "bin"),
+        pkg_dir,
+        os.getcwd(),
+        os.path.join(proj_root, "build", "bin", "Release"),
+        os.path.join(proj_root, "build", "bin", "Debug"),
+    ):
+        candidates.extend(os.path.join(directory, name) for name in names)
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    for name in names:
+        found = ctypes.util.find_library(
+            name.replace(".dll", "").replace("lib", "").replace(".so", "").replace(".dylib", "")
+        )
+        if found:
+            return found
+
+    return None
+
+
+def load_devtools_dll(mbink_lib=None, path=None):
+    resolved = _find_devtools_dll(mbink_lib, path)
+    if resolved is None:
+        raise FileNotFoundError(
+            "mbink_devtools dynamic library not found. Set MBINK_DEVTOOLS_PATH "
+            "or place mbink_devtools.dll next to mbink.dll."
+        )
+    lib = ctypes.CDLL(resolved)
+    lib._mbink_devtools_dll_path = resolved
+    _bind_devtools_functions(lib)
+    return lib
+
+
+def _bind_devtools_functions(lib):
+    H = c_void_p
+    lib.mbink_devtools_open.restype = c_int
+    lib.mbink_devtools_open.argtypes = [H]
+    lib.mbink_devtools_close.restype = c_int
+    lib.mbink_devtools_close.argtypes = [H]
+    lib.mbink_devtools_default_http_options.restype = MBinkDevToolsHttpOptions
+    lib.mbink_devtools_default_http_options.argtypes = []
+    lib.mbink_devtools_http_start.restype = c_int
+    lib.mbink_devtools_http_start.argtypes = [H, POINTER(MBinkDevToolsHttpOptions), POINTER(MBinkDevToolsHttpInfo)]
+    lib.mbink_devtools_http_stop.restype = c_int
+    lib.mbink_devtools_http_stop.argtypes = [H]
+    lib.mbink_devtools_http_info_free.restype = None
+    lib.mbink_devtools_http_info_free.argtypes = [POINTER(MBinkDevToolsHttpInfo)]
+    lib.mbink_ui_dev_default_snapshot_options.restype = MBinkUiDevSnapshotOptions
+    lib.mbink_ui_dev_default_snapshot_options.argtypes = []
+    lib.mbink_ui_dev_snapshot_json.restype = c_int
+    lib.mbink_ui_dev_snapshot_json.argtypes = [H, POINTER(MBinkUiDevSnapshotOptions), POINTER(c_void_p)]
+    lib.mbink_ui_dev_snapshot_file.restype = c_int
+    lib.mbink_ui_dev_snapshot_file.argtypes = [H, c_char_p, POINTER(MBinkUiDevSnapshotOptions)]
+    lib.mbink_ui_dev_command_json.restype = c_int
+    lib.mbink_ui_dev_command_json.argtypes = [H, c_char_p, POINTER(c_void_p)]
 
 
 def _bind_functions(lib):
@@ -302,19 +391,6 @@ def _bind_functions(lib):
     lib.mbink_emit.restype = c_int
     lib.mbink_emit.argtypes = [H, c_char_p, c_char_p]
 
-    # DevTools
-    lib.mbink_devtools_open.restype = c_int
-    lib.mbink_devtools_open.argtypes = [H]
-    lib.mbink_devtools_close.restype = c_int
-    lib.mbink_devtools_close.argtypes = [H]
-    lib.mbink_devtools_default_http_options.restype = MBinkDevToolsHttpOptions
-    lib.mbink_devtools_default_http_options.argtypes = []
-    lib.mbink_devtools_http_start.restype = c_int
-    lib.mbink_devtools_http_start.argtypes = [H, POINTER(MBinkDevToolsHttpOptions), POINTER(MBinkDevToolsHttpInfo)]
-    lib.mbink_devtools_http_stop.restype = c_int
-    lib.mbink_devtools_http_stop.argtypes = [H]
-    lib.mbink_devtools_http_info_free.restype = None
-    lib.mbink_devtools_http_info_free.argtypes = [POINTER(MBinkDevToolsHttpInfo)]
     lib.mbink_observe_set_callback.restype = c_int
     lib.mbink_observe_set_callback.argtypes = [H, MBinkObserveCallback, c_void_p]
     lib.mbink_observe_console_json.restype = c_int
@@ -325,14 +401,6 @@ def _bind_functions(lib):
     lib.mbink_observe_lifecycle_json.argtypes = [H, POINTER(c_void_p)]
     lib.mbink_observe_clear.restype = c_int
     lib.mbink_observe_clear.argtypes = [H, c_int]
-    lib.mbink_ui_dev_default_snapshot_options.restype = MBinkUiDevSnapshotOptions
-    lib.mbink_ui_dev_default_snapshot_options.argtypes = []
-    lib.mbink_ui_dev_snapshot_json.restype = c_int
-    lib.mbink_ui_dev_snapshot_json.argtypes = [H, POINTER(MBinkUiDevSnapshotOptions), POINTER(c_void_p)]
-    lib.mbink_ui_dev_snapshot_file.restype = c_int
-    lib.mbink_ui_dev_snapshot_file.argtypes = [H, c_char_p, POINTER(MBinkUiDevSnapshotOptions)]
-    lib.mbink_ui_dev_command_json.restype = c_int
-    lib.mbink_ui_dev_command_json.argtypes = [H, c_char_p, POINTER(c_void_p)]
 
     # 状态创建
     lib.mbink_state_create_null.restype = c_int

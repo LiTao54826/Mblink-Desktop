@@ -53,6 +53,7 @@ target_include_directories(mbink_devtools PUBLIC
 )
 
 target_link_libraries(mbink_devtools PUBLIC
+    mbink_api
     mbink_dom
     mbink_render
     mbink_event
@@ -81,6 +82,8 @@ if(MSVC)
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()
+
+target_compile_definitions(mbink_devtools PRIVATE MBINK_DEVTOOLS_BUILDING_DLL)
 
 set_target_properties(mbink_devtools PROPERTIES
     OUTPUT_NAME "mbink_devtools"

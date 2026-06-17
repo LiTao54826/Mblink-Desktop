@@ -58,8 +58,19 @@ func (a *App) Terminal(elementID string) (*Terminal, error) {
 	return &Terminal{handle: h}, nil
 }
 
-func (a *App) DevtoolsOpen() error  { return checkRC(C.mbink_devtools_open(a.handle)) }
-func (a *App) DevtoolsClose() error { return checkRC(C.mbink_devtools_close(a.handle)) }
+func (a *App) DevtoolsOpen() error {
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return err
+	}
+	return checkRC(C.go_mbink_devtools_open_call(a.handle))
+}
+
+func (a *App) DevtoolsClose() error {
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return err
+	}
+	return checkRC(C.go_mbink_devtools_close_call(a.handle))
+}
 
 func (a *App) EnableDevtools() error { return a.DevtoolsOpen() }
 
@@ -68,7 +79,10 @@ func (a *App) EnableDevtoolsHttp(options DevToolsHttpOptions) (*DevToolsHttpSess
 }
 
 func (a *App) DevtoolsHttpSession(options DevToolsHttpOptions) (*DevToolsHttpSession, error) {
-	raw := C.mbink_devtools_default_http_options()
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return nil, err
+	}
+	raw := C.go_mbink_devtools_default_http_options_call()
 	var bindHost *C.char
 	if options.BindHost != "" {
 		bindHost, _ = cString(options.BindHost)
@@ -87,10 +101,10 @@ func (a *App) DevtoolsHttpSession(options DevToolsHttpOptions) (*DevToolsHttpSes
 	raw.require_auth = boolToC(!options.NoAuth)
 
 	var info C.MBinkDevToolsHttpInfo
-	if err := checkRC(C.mbink_devtools_http_start(a.handle, &raw, &info)); err != nil {
+	if err := checkRC(C.go_mbink_devtools_http_start_call(a.handle, &raw, &info)); err != nil {
 		return nil, err
 	}
-	defer C.mbink_devtools_http_info_free(&info)
+	defer C.go_mbink_devtools_http_info_free_call(&info)
 	return &DevToolsHttpSession{
 		URL:         C.GoString(info.url),
 		Port:        uint16(info.port),
@@ -101,7 +115,10 @@ func (a *App) DevtoolsHttpSession(options DevToolsHttpOptions) (*DevToolsHttpSes
 }
 
 func (a *App) DevtoolsHttpStop() error {
-	return checkRC(C.mbink_devtools_http_stop(a.handle))
+	if err := ensureDevtoolsRuntime(); err != nil {
+		return err
+	}
+	return checkRC(C.go_mbink_devtools_http_stop_call(a.handle))
 }
 
 func (s *DevToolsHttpSession) Request(method string, params any) (map[string]any, error) {

@@ -97,29 +97,6 @@ typedef struct {
     bool load_official_preact;
 } MBinkRuntimeOptions;
 
-typedef struct {
-    const char* runtime_epoch;
-    size_t max_nodes;
-    int max_depth;
-    const char* root_selector;
-    bool include_screenshot;
-    bool inline_screenshot;
-    const char* screenshot_file;
-} MBinkUiDevSnapshotOptions;
-
-typedef struct {
-    const char* bind_host;   /* nullptr/default = 127.0.0.1 */
-    unsigned short port;     /* 0 = ephemeral port */
-    const char* auth_token;  /* nullptr/empty = generated token when require_auth is true */
-    bool require_auth;
-} MBinkDevToolsHttpOptions;
-
-typedef struct {
-    unsigned short port;
-    char* url;
-    char* auth_token;
-} MBinkDevToolsHttpInfo;
-
 // ========== 回调类型 ==========
 
 // 函数绑定回调: JS 调用 backend.xxx() 时触发，返回 JSON 字符串。
@@ -276,17 +253,6 @@ MBINK_API int mbink_on_update(MBinkHandle handle, MBinkUpdateCallback callback, 
 MBINK_API int mbink_emit(MBinkHandle handle, const char* event_name,
                              const char* data_json);
 
-// ========== DevTools ==========
-
-MBINK_API int mbink_devtools_open(MBinkHandle handle);
-MBINK_API int mbink_devtools_close(MBinkHandle handle);
-MBINK_API MBinkDevToolsHttpOptions mbink_devtools_default_http_options(void);
-MBINK_API int mbink_devtools_http_start(MBinkHandle handle,
-                                        const MBinkDevToolsHttpOptions* options,
-                                        MBinkDevToolsHttpInfo* out_info);
-MBINK_API int mbink_devtools_http_stop(MBinkHandle handle);
-MBINK_API void mbink_devtools_http_info_free(MBinkDevToolsHttpInfo* info);
-
 // ========== Observability ==========
 
 MBINK_API int mbink_observe_set_callback(MBinkHandle handle,
@@ -296,20 +262,6 @@ MBINK_API int mbink_observe_console_json(MBinkHandle handle, char** out_json);
 MBINK_API int mbink_observe_errors_json(MBinkHandle handle, char** out_json);
 MBINK_API int mbink_observe_lifecycle_json(MBinkHandle handle, char** out_json);
 MBINK_API int mbink_observe_clear(MBinkHandle handle, MBinkObserveKind kind);
-
-// ========== UI Dev / Control ==========
-
-MBINK_API MBinkUiDevSnapshotOptions mbink_ui_dev_default_snapshot_options(void);
-MBINK_API int mbink_ui_dev_snapshot_json(MBinkHandle handle,
-                                         const MBinkUiDevSnapshotOptions* options,
-                                         char** out_json);
-MBINK_API int mbink_ui_dev_snapshot_file(MBinkHandle handle,
-                                         const char* output_path,
-                                         const MBinkUiDevSnapshotOptions* options);
-MBINK_API int mbink_ui_dev_command_json(MBinkHandle handle,
-                                        const char* command_json,
-                                        char** out_response_json);
-
 
 // ========== 状态创建 ==========
 
@@ -572,5 +524,19 @@ MBINK_API void mbink_free(void* ptr);
 MBINK_API const char* mbink_last_error(void);
 
 #ifdef __cplusplus
+}
+
+namespace mbink {
+struct DevToolsBridgeApi;
+struct DevToolsHostServices;
+}
+
+extern "C" {
+MBINK_API int mbink_devtools_host_attach(unsigned int version,
+                                         const mbink::DevToolsBridgeApi* api);
+MBINK_API void mbink_devtools_host_detach(unsigned int version,
+                                          const mbink::DevToolsBridgeApi* api);
+MBINK_API int mbink_devtools_host_get_services(unsigned int version,
+                                               mbink::DevToolsHostServices* out_services);
 }
 #endif

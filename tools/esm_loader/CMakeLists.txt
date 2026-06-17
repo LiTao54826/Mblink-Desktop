@@ -13,6 +13,7 @@ target_include_directories(esm_loader PRIVATE
 
 target_link_libraries(esm_loader PRIVATE
     mbink_api
+    mbink_devtools
 )
 
 set_target_properties(esm_loader PROPERTIES

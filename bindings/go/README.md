@@ -100,5 +100,5 @@ Current package includes:
 - this lets `go run ./examples/...` started from `bindings/go/` find the DLL from the working directory more directly
 - for other executables, `mbink.dll` still needs to be reachable at run time, typically via the executable directory or `PATH`
 - development-only runtime UI analysis can be enabled with `App.EnableDevtoolsHttp`; the returned session exposes `URL`, `Port`, `AuthToken`, and `Request`
-- Go binding packages do not vendor `mbink_devtools.dll`; development tooling should provide it next to `mbink.dll` or set `MBINK_DEVTOOLS_PATH`, and the C API resolves it on demand
+- Go binding packages do not vendor `mbink_devtools.dll`; development tooling should provide it next to `mbink.dll` or set `MBINK_DEVTOOLS_PATH`, and the Go devtools wrapper loads it on demand
 - wrapper runtime, lifecycle, observation, snapshot, and UI-dev command methods should stay aligned with `docs/C_API_RUNTIME_PARITY.md`
