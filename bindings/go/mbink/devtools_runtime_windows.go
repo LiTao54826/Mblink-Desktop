@@ -103,12 +103,12 @@ static int go_mbink_load_devtools(void) {
 
     HMODULE mbink_module = GetModuleHandleW(L"mbink.dll");
     if (mbink_module) {
-        DWORD len = GetModuleFileNameW(mbink_module, buffer, MAX_PATH);
-        if (len > 0 && len < MAX_PATH) {
+        DWORD len = GetModuleFileNameW(mbink_module, buffer, 32768);
+        if (len > 0 && len < 32768) {
             wchar_t* slash = wcsrchr(buffer, L'\\');
             if (slash) {
                 *(slash + 1) = L'\0';
-                wcscat_s(buffer, MAX_PATH, L"mbink_devtools.dll");
+                wcscat_s(buffer, 32768, L"mbink_devtools.dll");
                 if (go_mbink_try_load_devtools_path(buffer)) {
                     goto resolve;
                 }

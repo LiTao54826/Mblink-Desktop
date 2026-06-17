@@ -69,9 +69,11 @@ std::vector<fs::path> devtoolsLibraryCandidates() {
     std::vector<fs::path> candidates;
     if (const char* env_path = std::getenv("MBINK_DEVTOOLS_PATH"); env_path && *env_path) {
         fs::path path(env_path);
-        if (path.is_absolute()) {
-            candidates.push_back(fs::is_directory(path) ? path / devtoolsLibraryName() : path);
+        if (!path.is_absolute()) {
+            candidates.push_back(path);
+            return candidates;
         }
+        candidates.push_back(fs::is_directory(path) ? path / devtoolsLibraryName() : path);
     }
     if (auto exe_dir = currentExecutableDirectory()) {
         candidates.push_back(*exe_dir / devtoolsLibraryName());
@@ -100,6 +102,10 @@ bool loadDevtoolsApi(DevtoolsApi* api, std::string* error) {
     std::string last_error;
     for (const auto& candidate : devtoolsLibraryCandidates()) {
         std::error_code ec;
+        if (!candidate.is_absolute()) {
+            if (error) *error = "MBINK_DEVTOOLS_PATH must be absolute";
+            return false;
+        }
         const auto path = fs::absolute(candidate, ec);
         if (ec || !fs::exists(path, ec)) {
             continue;
@@ -255,8 +261,7 @@ bool usesUiDevRuntime(const Options& options) {
     return options.open_devtools ||
            options.devtools_http_mcp ||
            !options.snapshot_file.empty() ||
-           hasCommandChannel(options) ||
-           hasObservabilityFiles(options);
+           hasCommandChannel(options);
 }
 
 bool parseArgs(int argc, char** argv, Options* options) {
