@@ -2,6 +2,7 @@
 #include "core/devtools/mbink_devtools.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -9,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -19,6 +21,100 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+struct DevtoolsApi {
+#ifdef _WIN32
+    HMODULE module = nullptr;
+#endif
+    int (*open)(MBinkHandle) = nullptr;
+    MBinkDevToolsHttpOptions (*default_http_options)() = nullptr;
+    int (*http_start)(MBinkHandle, const MBinkDevToolsHttpOptions*, MBinkDevToolsHttpInfo*) = nullptr;
+    int (*http_stop)(MBinkHandle) = nullptr;
+    void (*http_info_free)(MBinkDevToolsHttpInfo*) = nullptr;
+    MBinkUiDevSnapshotOptions (*default_snapshot_options)() = nullptr;
+    int (*snapshot_file)(MBinkHandle, const char*, const MBinkUiDevSnapshotOptions*) = nullptr;
+    int (*command_json)(MBinkHandle, const char*, char**) = nullptr;
+};
+
+fs::path devtoolsLibraryName() {
+#ifdef _WIN32
+    return "mbink_devtools.dll";
+#elif defined(__APPLE__)
+    return "libmbink_devtools.dylib";
+#else
+    return "libmbink_devtools.so";
+#endif
+}
+
+std::vector<fs::path> devtoolsLibraryCandidates(char** argv) {
+    std::vector<fs::path> candidates;
+    if (const char* env_path = std::getenv("MBINK_DEVTOOLS_PATH"); env_path && *env_path) {
+        fs::path path(env_path);
+        candidates.push_back(fs::is_directory(path) ? path / devtoolsLibraryName() : path);
+    }
+    if (argv && argv[0] && *argv[0]) {
+        std::error_code ec;
+        const auto exe_path = fs::absolute(fs::path(argv[0]), ec);
+        if (!ec) {
+            candidates.push_back(exe_path.parent_path() / devtoolsLibraryName());
+        }
+    }
+    return candidates;
+}
+
+template <typename Fn>
+bool loadSymbol(DevtoolsApi* api, const char* name, Fn* out) {
+    if (!api || !out) return false;
+#ifdef _WIN32
+    *out = reinterpret_cast<Fn>(GetProcAddress(api->module, name));
+#else
+    *out = nullptr;
+#endif
+    return *out != nullptr;
+}
+
+bool loadDevtoolsApi(char** argv, DevtoolsApi* api, std::string* error) {
+    if (!api) return false;
+    if (api->module) return true;
+#ifndef _WIN32
+    if (error) *error = "mbink_devtools dynamic loading is only implemented on Windows";
+    return false;
+#else
+    std::string last_error;
+    for (const auto& candidate : devtoolsLibraryCandidates(argv)) {
+        std::error_code ec;
+        const auto path = fs::absolute(candidate, ec);
+        if (ec || !fs::exists(path, ec)) {
+            continue;
+        }
+        HMODULE module = LoadLibraryW(path.wstring().c_str());
+        if (!module) {
+            last_error = "failed to load " + path.string();
+            continue;
+        }
+        DevtoolsApi loaded;
+        loaded.module = module;
+        if (!loadSymbol(&loaded, "mbink_devtools_open", &loaded.open) ||
+            !loadSymbol(&loaded, "mbink_devtools_default_http_options", &loaded.default_http_options) ||
+            !loadSymbol(&loaded, "mbink_devtools_http_start", &loaded.http_start) ||
+            !loadSymbol(&loaded, "mbink_devtools_http_stop", &loaded.http_stop) ||
+            !loadSymbol(&loaded, "mbink_devtools_http_info_free", &loaded.http_info_free) ||
+            !loadSymbol(&loaded, "mbink_ui_dev_default_snapshot_options", &loaded.default_snapshot_options) ||
+            !loadSymbol(&loaded, "mbink_ui_dev_snapshot_file", &loaded.snapshot_file) ||
+            !loadSymbol(&loaded, "mbink_ui_dev_command_json", &loaded.command_json)) {
+            FreeLibrary(module);
+            last_error = "mbink_devtools is missing required C API symbols at " + path.string();
+            continue;
+        }
+        *api = loaded;
+        return true;
+    }
+    if (error) {
+        *error = last_error.empty() ? "mbink_devtools.dll not found" : last_error;
+    }
+    return false;
+#endif
+}
 
 std::string readFile(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
@@ -225,9 +321,9 @@ bool parseArgs(int argc, char** argv, Options* options) {
     return true;
 }
 
-void writeSnapshotIfRequested(MBinkHandle handle, const Options& options) {
+void writeSnapshotIfRequested(MBinkHandle handle, const Options& options, const DevtoolsApi& devtools) {
     if (options.snapshot_file.empty()) return;
-    auto snapshot_options = mbink_ui_dev_default_snapshot_options();
+    auto snapshot_options = devtools.default_snapshot_options();
     snapshot_options.runtime_epoch = options.runtime_epoch.empty() ? nullptr : options.runtime_epoch.c_str();
     snapshot_options.max_nodes = options.snapshot_max_nodes;
     snapshot_options.max_depth = options.snapshot_max_depth;
@@ -235,7 +331,7 @@ void writeSnapshotIfRequested(MBinkHandle handle, const Options& options) {
     snapshot_options.include_screenshot = options.snapshot_include_screenshot;
     snapshot_options.inline_screenshot = options.snapshot_inline_screenshot;
     snapshot_options.screenshot_file = options.snapshot_screenshot_file.empty() ? nullptr : options.snapshot_screenshot_file.c_str();
-    if (mbink_ui_dev_snapshot_file(handle, options.snapshot_file.c_str(), &snapshot_options) != MBINK_OK) {
+    if (devtools.snapshot_file(handle, options.snapshot_file.c_str(), &snapshot_options) != MBINK_OK) {
         std::cerr << "snapshot failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
     }
 }
@@ -259,6 +355,7 @@ void maybeWriteObservabilityFiles(MBinkHandle handle,
 
 void handleCommandFile(MBinkHandle handle,
                        const Options& options,
+                       const DevtoolsApi& devtools,
                        std::string* last_command_id,
                        UiDevRuntimeState* state) {
     if (!hasCommandChannel(options) || !state) return;
@@ -285,7 +382,7 @@ void handleCommandFile(MBinkHandle handle,
     if (command_id.empty() || command_id == *last_command_id) return;
 
     char* response = nullptr;
-    if (mbink_ui_dev_command_json(handle, content.c_str(), &response) == MBINK_OK && response) {
+    if (devtools.command_json(handle, content.c_str(), &response) == MBINK_OK && response) {
         writeTextFile(options.response_file, response);
         *last_command_id = command_id;
         std::error_code ec;
@@ -302,13 +399,14 @@ void handleCommandFile(MBinkHandle handle,
 
 bool startDevToolsHttpMcp(MBinkHandle handle,
                           const Options& options,
+                          const DevtoolsApi& devtools,
                           MBinkDevToolsHttpInfo* info) {
     if (!options.devtools_http_mcp || !info) return true;
-    auto http_options = mbink_devtools_default_http_options();
+    auto http_options = devtools.default_http_options();
     http_options.port = options.devtools_http_port;
     http_options.auth_token = options.devtools_http_token.empty() ? nullptr : options.devtools_http_token.c_str();
     http_options.require_auth = true;
-    if (mbink_devtools_http_start(handle, &http_options, info) != MBINK_OK) {
+    if (devtools.http_start(handle, &http_options, info) != MBINK_OK) {
         std::cerr << "devtools HTTP MCP failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
         return false;
     }
@@ -388,8 +486,18 @@ int main(int argc, char** argv) {
     }
 
     const bool ui_dev_enabled = usesUiDevRuntime(options);
+    DevtoolsApi devtools;
+    if (ui_dev_enabled) {
+        std::string devtools_error;
+        if (!loadDevtoolsApi(argv, &devtools, &devtools_error)) {
+            std::cerr << "devtools runtime failed: " << devtools_error << "\n";
+            mbink_destroy(app);
+            mbink_cleanup();
+            return 1;
+        }
+    }
     if (options.open_devtools) {
-        if (mbink_devtools_open(app) != MBINK_OK) {
+        if (devtools.open(app) != MBINK_OK) {
             std::cerr << "devtools failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
         }
     }
@@ -397,10 +505,10 @@ int main(int argc, char** argv) {
     mbink_show(app);
     mbink_render_frame(app, 2);
     mbink_poll_events(app);
-    writeSnapshotIfRequested(app, options);
+    writeSnapshotIfRequested(app, options, devtools);
     UiDevRuntimeState ui_dev_state;
     MBinkDevToolsHttpInfo http_info{};
-    if (!startDevToolsHttpMcp(app, options, &http_info)) {
+    if (!startDevToolsHttpMcp(app, options, devtools, &http_info)) {
         mbink_destroy(app);
         mbink_cleanup();
         return 1;
@@ -411,7 +519,7 @@ int main(int argc, char** argv) {
     std::string last_command_id;
     while (mbink_poll_events(app)) {
         if (ui_dev_enabled) {
-            handleCommandFile(app, options, &last_command_id, &ui_dev_state);
+            handleCommandFile(app, options, devtools, &last_command_id, &ui_dev_state);
             maybeWriteObservabilityFiles(app, options, &ui_dev_state);
         }
 
@@ -429,8 +537,8 @@ int main(int argc, char** argv) {
 
     maybeWriteObservabilityFiles(app, options, &ui_dev_state, true);
     if (options.devtools_http_mcp) {
-        mbink_devtools_http_stop(app);
-        mbink_devtools_http_info_free(&http_info);
+        devtools.http_stop(app);
+        devtools.http_info_free(&http_info);
     }
     mbink_destroy(app);
     mbink_cleanup();

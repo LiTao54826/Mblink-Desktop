@@ -164,16 +164,16 @@ def _devtools_library_names():
 
 def _find_devtools_dll(mbink_lib=None, path=None):
     if path:
-        return path
+        return os.path.abspath(path)
 
     names = _devtools_library_names()
     candidates = []
     env_path = os.environ.get("MBINK_DEVTOOLS_PATH", "")
     if env_path:
         if os.path.isdir(env_path):
-            candidates.extend(os.path.join(env_path, name) for name in names)
+            candidates.extend(os.path.abspath(os.path.join(env_path, name)) for name in names)
         else:
-            candidates.append(env_path)
+            candidates.append(os.path.abspath(env_path))
 
     mbink_path = getattr(mbink_lib, "_mbink_dll_path", None)
     if mbink_path:
@@ -181,26 +181,15 @@ def _find_devtools_dll(mbink_lib=None, path=None):
         candidates.extend(os.path.join(base_dir, name) for name in names)
 
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
-    proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
     for directory in (
         os.path.join(pkg_dir, "bin"),
         pkg_dir,
-        os.getcwd(),
-        os.path.join(proj_root, "build", "bin", "Release"),
-        os.path.join(proj_root, "build", "bin", "Debug"),
     ):
-        candidates.extend(os.path.join(directory, name) for name in names)
+        candidates.extend(os.path.abspath(os.path.join(directory, name)) for name in names)
 
     for candidate in candidates:
         if candidate and os.path.exists(candidate):
             return candidate
-
-    for name in names:
-        found = ctypes.util.find_library(
-            name.replace(".dll", "").replace("lib", "").replace(".so", "").replace(".dylib", "")
-        )
-        if found:
-            return found
 
     return None
 

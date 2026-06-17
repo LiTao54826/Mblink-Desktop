@@ -1364,6 +1364,19 @@ void fillDevToolsHostServices(mbink::DevToolsHostServices* out_services) {
         auto* ctx = static_cast<WindowContext*>(host_user_data);
         return ctx && ctx->shutdownRequested ? ctx->shutdownRequested.get() : nullptr;
     };
+    out_services->flush_for_snapshot = [](const mbink::DevToolsHostContext* host, int passes) -> int {
+        if (!host || !host->host_user_data) {
+            return MBINK_ERROR_INVALID_PARAM;
+        }
+        auto* ctx = static_cast<WindowContext*>(host->host_user_data);
+        if (!ctx || !ctx->shutdownRequested || ctx->shutdownRequested->load()) {
+            return MBINK_ERROR_INVALID_HANDLE;
+        }
+        flushRuntimeWork(ctx);
+        forceRenderFrame(ctx, passes < 1 ? 1 : passes);
+        flushRuntimeWork(ctx);
+        return MBINK_OK;
+    };
 }
 
 #ifdef _WIN32
@@ -1696,6 +1709,11 @@ void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
     setLifecycle(ctx, MBINK_LIFECYCLE_DESTROYED, "destroyed");
+
+    SAFE_CLEANUP("devtools_shutdown", {
+        auto host = makeDevToolsHostContext(ctx);
+        mbink::DevToolsShutdown(host);
+    });
 
     if (ctx->shutdownRequested) {
         ctx->shutdownRequested->store(true, std::memory_order_release);

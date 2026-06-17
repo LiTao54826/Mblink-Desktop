@@ -13,7 +13,7 @@ class QuickJSRuntime;
 class RenderObject;
 class Window;
 
-inline constexpr unsigned int kDevToolsBridgeVersion = 6;
+inline constexpr unsigned int kDevToolsBridgeVersion = 7;
 
 enum class DevToolsDockPosition {
     Bottom,
@@ -54,6 +54,7 @@ struct DevToolsHostServices {
     void (*set_main_thread_sync_cancelled)(void*, bool) = nullptr;
     int (*with_current_context_sync)(void*, DevToolsHostContextTask, void*) = nullptr;
     std::atomic<bool>* (*shutdown_requested)(void*) = nullptr;
+    int (*flush_for_snapshot)(const DevToolsHostContext*, int) = nullptr;
 };
 
 struct DevToolsHttpServerOptionsBridge {

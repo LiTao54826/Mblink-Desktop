@@ -1149,8 +1149,19 @@ fn devtools_dll_path() -> PathBuf {
     }
 
     let core_path = dll_path();
-    if let Some(parent) = core_path.parent() {
-        let candidate = parent.join("mbink_devtools.dll");
+    if core_path.is_absolute() && core_path.exists() {
+        if let Some(parent) = core_path.parent() {
+            let candidate = parent.join("mbink_devtools.dll");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let runtime_core = manifest_dir.join("runtime").join("mbink.dll");
+    if runtime_core.exists() {
+        let candidate = runtime_core.with_file_name("mbink_devtools.dll");
         if candidate.exists() {
             return candidate;
         }
@@ -1160,13 +1171,14 @@ fn devtools_dll_path() -> PathBuf {
         return candidate;
     }
 
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let runtime_candidate = manifest_dir.join("runtime").join("mbink_devtools.dll");
     if runtime_candidate.exists() {
         return runtime_candidate;
     }
 
-    PathBuf::from("mbink_devtools.dll")
+    panic!(
+        "mbink_devtools.dll not found. Set MBINK_DEVTOOLS_PATH or place it next to mbink.dll"
+    )
 }
 
 fn dll_next_to_exe() -> Option<PathBuf> {
@@ -1177,6 +1189,10 @@ fn dll_next_to_exe() -> Option<PathBuf> {
 
 fn devtools_dll_next_to_exe() -> Option<PathBuf> {
     let exe_dir = env::current_exe().ok()?.parent()?.to_path_buf();
+    let core_candidate = exe_dir.join("mbink.dll");
+    if !core_candidate.exists() {
+        return None;
+    }
     let candidate = exe_dir.join("mbink_devtools.dll");
     candidate.exists().then_some(candidate)
 }

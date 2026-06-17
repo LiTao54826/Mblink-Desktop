@@ -94,10 +94,6 @@ static int go_mbink_load_devtools(void) {
         }
     }
 
-    if (go_mbink_try_load_devtools_path(L"mbink_devtools.dll")) {
-        goto resolve;
-    }
-
     return -3;
 
 resolve:

@@ -686,7 +686,17 @@ public:
         return kMbinkOk;
     }
 
-    int Stop() {
+    int Stop(const DevToolsHostContext* context) {
+        const void* requested_host = context ? context->host_user_data : nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!running_) {
+                return kMbinkOk;
+            }
+            if (requested_host && host_user_data_ != requested_host) {
+                return kMbinkErrorInvalidHandle;
+            }
+        }
         StopServer();
         return kMbinkOk;
     }
@@ -979,13 +989,17 @@ public:
         return kMbinkErrorUnknown;
     }
 
-    int Stop() {
+    int Stop(const DevToolsHostContext*) {
         return kMbinkOk;
     }
 };
 #endif
 
 HttpMcpServer g_http_mcp_server;
+std::once_flag g_attach_once;
+bool g_attach_ok = false;
+std::mutex g_lifecycle_mutex;
+std::set<void*> g_initialized_hosts;
 
 void BridgeInitialize(const DevToolsHostContext* context) {
     if (!context || !context->document || !context->window) {
@@ -997,7 +1011,11 @@ void BridgeInitialize(const DevToolsHostContext* context) {
 }
 
 void BridgeShutdown(const DevToolsHostContext* context) {
-    g_http_mcp_server.Stop();
+    g_http_mcp_server.Stop(context);
+    if (context && context->host_user_data) {
+        std::lock_guard<std::mutex> lock(g_lifecycle_mutex);
+        g_initialized_hosts.erase(context->host_user_data);
+    }
     RunWithHostMainThread(context, [&]() {
         auto& devtools = DevToolsManager::GetInstance();
         devtools.Close();
@@ -1160,6 +1178,14 @@ int BridgeSnapshotFile(const DevToolsHostContext* context,
     snapshot_options.screenshot_path = options && options->screenshot_file ? options->screenshot_file : "";
     snapshot_options.shutdown_requested = HostShutdownToken(context);
 
+    if (g_host_services.flush_for_snapshot) {
+        const int flush_rc = g_host_services.flush_for_snapshot(context, 2);
+        if (flush_rc != kMbinkOk) {
+            SetHostString(out_error, "snapshot flush failed");
+            return flush_rc;
+        }
+    }
+
     bool ok = false;
     std::string error;
     const int rc = RunWithHostMainThread(context, [&]() {
@@ -1259,8 +1285,8 @@ int BridgeHttpStart(const DevToolsHostContext* context,
     return g_http_mcp_server.Start(context, options, info, out_error);
 }
 
-int BridgeHttpStop(const DevToolsHostContext*) {
-    return g_http_mcp_server.Stop();
+int BridgeHttpStop(const DevToolsHostContext* context) {
+    return g_http_mcp_server.Stop(context);
 }
 
 const DevToolsBridgeApi kBridgeApi{
@@ -1295,11 +1321,6 @@ const DevToolsBridgeApi kBridgeApi{
     BridgeHttpStart,
     BridgeHttpStop,
 };
-
-std::once_flag g_attach_once;
-bool g_attach_ok = false;
-std::mutex g_lifecycle_mutex;
-std::set<void*> g_initialized_hosts;
 
 bool EnsureAttached() {
     std::call_once(g_attach_once, []() {
@@ -1415,8 +1436,12 @@ extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_start(
 }
 
 extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_stop(MBinkHandle handle) {
-    (void)handle;
-    return BridgeHttpStop(nullptr);
+    DevToolsHostContext context;
+    auto* host = HostContextOrNull(handle, &context);
+    if (!host) {
+        return kMbinkErrorInvalidHandle;
+    }
+    return BridgeHttpStop(host);
 }
 
 extern "C" MBINK_DEVTOOLS_API void mbink_devtools_http_info_free(
@@ -1534,6 +1559,11 @@ extern "C" MBINK_DEVTOOLS_API int mbink_devtools_attach(
         host_services->version != kDevToolsAttachVersion ||
         !host_services->copy_string ||
         !host_services->free_string ||
+        !host_services->run_on_main_thread_sync ||
+        !host_services->set_main_thread_sync_cancelled ||
+        !host_services->with_current_context_sync ||
+        !host_services->shutdown_requested ||
+        !host_services->flush_for_snapshot ||
         !register_bridge) {
         return kMbinkErrorInvalidParam;
     }
