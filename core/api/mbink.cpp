@@ -28,11 +28,6 @@
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
-#include "core/devtools/devtools_manager.h"
-#include "core/devtools/inspector/element_picker.h"
-#include "core/render/objects/render_object.h"
-#include "tools/esm_loader/ui_dev_control.h"
-#include "tools/esm_loader/ui_dev_snapshot.h"
 #include "tools/esm_loader/embedded_js.h"
 #include "core/devtools/devtools_bridge.h"
 
@@ -64,6 +59,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <chrono>
+#include <thread>
 
 namespace {
 
@@ -100,47 +96,6 @@ struct DevToolsLibraryState {
 
 DevToolsLibraryState g_devtoolsLibrary;
 std::mutex g_devtoolsLibraryMutex;
-
-constexpr size_t kDefaultSnapshotMaxNodes = 2000;
-constexpr size_t kHttpSnapshotMaxNodes = 10000;
-constexpr int kDefaultSnapshotMaxDepth = 64;
-constexpr int kHttpSnapshotMaxDepth = 256;
-
-std::shared_ptr<mbink::Element> SharedElement(mbink::Element* element) {
-    if (!element) {
-        return nullptr;
-    }
-    try {
-        return std::static_pointer_cast<mbink::Element>(element->shared_from_this());
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-std::shared_ptr<mbink::RenderObject> SharedRenderObject(mbink::RenderObject* render_object) {
-    if (!render_object) {
-        return nullptr;
-    }
-    try {
-        return render_object->shared_from_this();
-    } catch (...) {
-        return nullptr;
-    }
-}
-
-mbink::DevToolsDockPosition ToBridgeDockPosition(mbink::DockPosition position) {
-    return position == mbink::DockPosition::Right ? mbink::DevToolsDockPosition::Right
-                                                  : mbink::DevToolsDockPosition::Bottom;
-}
-
-mbink::DevToolsBounds MakeDevToolsBounds(float x, float y, float width, float height) {
-    mbink::DevToolsBounds bounds;
-    bounds.x = x;
-    bounds.y = y;
-    bounds.width = width;
-    bounds.height = height;
-    return bounds;
-}
 
 void ClearElementListenersRecursive(const std::shared_ptr<mbink::Node>& node) {
     if (!node) {
@@ -449,7 +404,8 @@ struct WindowContext {
     void* observeUserData = nullptr;
     std::shared_ptr<std::atomic<bool>> shutdownRequested =
         std::make_shared<std::atomic<bool>>(false);
-    std::atomic<bool> devtoolsSyncCancelled{false};
+    std::shared_ptr<std::atomic<bool>> devtoolsSyncCancelled =
+        std::make_shared<std::atomic<bool>>(false);
 
     // 共享对象存储
     std::unordered_map<std::string, SharedObjectData*> sharedObjects;
@@ -498,14 +454,26 @@ int RunDevToolsOnMainThreadSync(const mbink::DevToolsHostContext* host,
         return MBINK_OK;
     }
 
+    struct PendingTask {
+        mbink::DevToolsMainThreadTask task = nullptr;
+        void* user_data = nullptr;
+        std::atomic<bool> cancel{false};
+    };
+    auto pending = std::make_shared<PendingTask>();
+    pending->task = task;
+    pending->user_data = user_data;
     auto done = std::make_shared<std::atomic<bool>>(false);
     auto alive = ctx->mainThreadQueue.aliveFlag();
-    const auto cancelled = [ctx]() {
-        return ctx->devtoolsSyncCancelled.load(std::memory_order_acquire);
+    auto global_cancelled = ctx->devtoolsSyncCancelled;
+    const auto cancelled = [global_cancelled]() {
+        return global_cancelled && global_cancelled->load(std::memory_order_acquire);
     };
-    ctx->mainThreadQueue.post([task, user_data, done, alive, cancelled]() {
-        if (!cancelled() && alive && alive->load()) {
-            task(user_data);
+    ctx->mainThreadQueue.post([pending, done, alive, global_cancelled]() {
+        const bool should_cancel =
+            pending->cancel.load(std::memory_order_acquire) ||
+            (global_cancelled && global_cancelled->load(std::memory_order_acquire));
+        if (!should_cancel && alive && alive->load() && pending->task) {
+            pending->task(pending->user_data);
         }
         done->store(true, std::memory_order_release);
     });
@@ -513,9 +481,11 @@ int RunDevToolsOnMainThreadSync(const mbink::DevToolsHostContext* host,
     while (!done->load(std::memory_order_acquire)) {
         if (cancelled() ||
             (ctx->shutdownRequested && ctx->shutdownRequested->load(std::memory_order_acquire))) {
+            pending->cancel.store(true, std::memory_order_release);
             return MBINK_ERROR_INVALID_HANDLE;
         }
         if (!alive || !alive->load()) {
+            pending->cancel.store(true, std::memory_order_release);
             return MBINK_ERROR_INVALID_HANDLE;
         }
 #ifdef _WIN32
@@ -945,312 +915,6 @@ std::vector<fs::path> DevToolsLibraryCandidates() {
     return candidates;
 }
 
-std::string ReadTextFile(const fs::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        return {};
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
-
-std::string JsonTextResult(const nlohmann::json& value) {
-    auto text_value = value;
-    if (text_value.is_object()) {
-        text_value.erase("screenshot_base64");
-        if (text_value.contains("screenshot") && text_value["screenshot"].is_object()) {
-            text_value["screenshot"].erase("base64");
-        }
-    }
-    return text_value.dump(2);
-}
-
-nlohmann::json McpToolContent(const nlohmann::json& value) {
-    return nlohmann::json{{"content", nlohmann::json::array({{{"type", "text"},
-                                                              {"text", JsonTextResult(value)}}})},
-                          {"structuredContent", value},
-                          {"isError", !value.value("ok", false)}};
-}
-
-nlohmann::json BuildMcpToolsJson() {
-    return nlohmann::json::array({
-        {{"name", "snapshot_ui"}, {"description", "Get a UI snapshot"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"max_nodes", {{"type", "integer"}, {"minimum", 1}}},
-                                          {"max_depth", {{"type", "integer"}, {"minimum", 1}}},
-                                          {"root_selector", {{"type", "string"}}},
-                                          {"include_screenshot", {{"type", "boolean"}}},
-                                          {"inline_screenshot", {{"type", "boolean"}}}}}}}},
-        {{"name", "query_element"}, {"description", "Query elements by selector"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}},
-                                          {"limit", {{"type", "integer"}, {"minimum", 0}}}}},
-                          {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "inspect"}, {"description", "Inspect one element"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}}}},
-                          {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "click"}, {"description", "Click an element"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}}}},
-                          {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "input_text"}, {"description", "Input text into an element"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}}, {"text", {{"type", "string"}}}}},
-                          {"required", nlohmann::json::array({"selector", "text"})}}}},
-        {{"name", "scroll"}, {"description", "Scroll an element"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}},
-                                          {"x", {{"type", "number"}}},
-                                          {"y", {{"type", "number"}}}}},
-                          {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "highlight"}, {"description", "Highlight an element"},
-         {"inputSchema", {{"type", "object"},
-                          {"properties", {{"selector", {{"type", "string"}}}, {"color", {{"type", "string"}}}}},
-                          {"required", nlohmann::json::array({"selector"})}}}}
-    });
-}
-
-nlohmann::json MakeJsonRpcResult(const nlohmann::json& id, const nlohmann::json& result) {
-    return nlohmann::json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}};
-}
-
-nlohmann::json MakeJsonRpcError(const nlohmann::json& id,
-                                int code,
-                                const std::string& message) {
-    return nlohmann::json{{"jsonrpc", "2.0"},
-                          {"id", id},
-                          {"error", {{"code", code}, {"message", message}}}};
-}
-
-std::string NewDevToolsCommandToken() {
-    const auto tick = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    return "devtools-" + std::to_string(tick);
-}
-
-nlohmann::json DevToolsErrorJson(const std::string& code, const std::string& message) {
-    return nlohmann::json{{"ok", false},
-                          {"error", {{"code", code}, {"message", message}}}};
-}
-
-nlohmann::json DevToolsCommandToJson(WindowContext* ctx, nlohmann::json command) {
-    if (!ctx || !ctx->runtime || !ctx->window || !ctx->document) {
-        return DevToolsErrorJson("invalid_host", "invalid devtools host");
-    }
-    if (!command.contains("id")) {
-        command["id"] = NewDevToolsCommandToken();
-    }
-
-    char* response = nullptr;
-    const auto payload = command.dump();
-    const int rc = mbink_ui_dev_command_json(reinterpret_cast<MBinkHandle>(ctx),
-                                             payload.c_str(),
-                                             &response);
-    if (rc != MBINK_OK || !response) {
-        const char* last_error = mbink_last_error();
-        const std::string message =
-            response ? response : (last_error && *last_error ? last_error : "ui-dev command failed");
-        if (response) {
-            mbink_free(response);
-        }
-        return DevToolsErrorJson("ui_dev_command_failed", message);
-    }
-
-    auto parsed = nlohmann::json::parse(response, nullptr, false);
-    mbink_free(response);
-    if (parsed.is_discarded()) {
-        return DevToolsErrorJson("invalid_devtools_response",
-                                 "devtools command returned invalid JSON");
-    }
-    return parsed;
-}
-
-nlohmann::json SnapshotToJson(WindowContext* ctx, const nlohmann::json& arguments) {
-    if (!ctx || !ctx->window || !ctx->document) {
-        return DevToolsErrorJson("invalid_host", "invalid devtools host");
-    }
-
-    int64_t requested_max_nodes = static_cast<int64_t>(kDefaultSnapshotMaxNodes);
-    int requested_max_depth = kDefaultSnapshotMaxDepth;
-    if (arguments.contains("max_nodes")) {
-        if (!arguments["max_nodes"].is_number_integer()) {
-            return DevToolsErrorJson("invalid_args", "max_nodes must be an integer");
-        }
-        requested_max_nodes = arguments["max_nodes"].get<int64_t>();
-    }
-    if (arguments.contains("max_depth")) {
-        if (!arguments["max_depth"].is_number_integer()) {
-            return DevToolsErrorJson("invalid_args", "max_depth must be an integer");
-        }
-        requested_max_depth = arguments["max_depth"].get<int>();
-    }
-    if (requested_max_nodes <= 0 ||
-        requested_max_nodes > static_cast<int64_t>(kHttpSnapshotMaxNodes)) {
-        return DevToolsErrorJson("invalid_args", "max_nodes must be between 1 and 10000");
-    }
-    if (requested_max_depth <= 0 || requested_max_depth > kHttpSnapshotMaxDepth) {
-        return DevToolsErrorJson("invalid_args", "max_depth must be between 1 and 256");
-    }
-
-    const auto token = NewDevToolsCommandToken();
-    const auto snapshot_path = fs::temp_directory_path() /
-        ("mbink-devtools-http-snapshot-" + token + ".json");
-    const auto generated_screenshot_path = fs::temp_directory_path() /
-        ("mbink-devtools-http-screenshot-" + token + ".png");
-    const std::string snapshot_path_string = snapshot_path.string();
-    const std::string root_selector = arguments.value("root_selector", std::string{});
-    const bool include_screenshot = arguments.value("include_screenshot", false);
-    const bool inline_screenshot = arguments.value("inline_screenshot", false);
-    const std::string screenshot_file = arguments.value("screenshot_file", std::string{});
-    const std::string actual_screenshot =
-        screenshot_file.empty() ? generated_screenshot_path.string() : screenshot_file;
-
-    MBinkUiDevSnapshotOptions options = mbink_ui_dev_default_snapshot_options();
-    options.runtime_epoch = ctx->runtimeEpoch.empty() ? nullptr : ctx->runtimeEpoch.c_str();
-    options.max_nodes = static_cast<size_t>(requested_max_nodes);
-    options.max_depth = requested_max_depth;
-    options.root_selector = root_selector.empty() ? nullptr : root_selector.c_str();
-    options.include_screenshot = include_screenshot;
-    options.inline_screenshot = inline_screenshot;
-    options.screenshot_file = include_screenshot ? actual_screenshot.c_str() : nullptr;
-
-    const int rc = mbink_ui_dev_snapshot_file(reinterpret_cast<MBinkHandle>(ctx),
-                                              snapshot_path_string.c_str(),
-                                              &options);
-    if (rc != MBINK_OK) {
-        std::error_code ec;
-        fs::remove(snapshot_path, ec);
-        const char* last_error = mbink_last_error();
-        return DevToolsErrorJson("snapshot_failed",
-                                 last_error && *last_error ? last_error : "snapshot export failed");
-    }
-
-    auto parsed = nlohmann::json::parse(ReadTextFile(snapshot_path), nullptr, false);
-    std::error_code ec;
-    fs::remove(snapshot_path, ec);
-    if (parsed.is_discarded()) {
-        return DevToolsErrorJson("snapshot_parse_failed", "snapshot JSON parse failed");
-    }
-    return parsed;
-}
-
-nlohmann::json CallDevToolsMcpTool(WindowContext* ctx,
-                                   const std::string& tool_name,
-                                   const nlohmann::json& arguments) {
-    if (tool_name == "snapshot_ui" || tool_name == "snapshot") {
-        return McpToolContent(SnapshotToJson(ctx, arguments));
-    }
-
-    if (tool_name == "query_element" || tool_name == "inspect" || tool_name == "click" ||
-        tool_name == "input_text" || tool_name == "scroll" || tool_name == "highlight") {
-        const auto selector = arguments.value("selector", std::string{});
-        if (selector.empty()) {
-            return McpToolContent(DevToolsErrorJson("invalid_args", "selector is required"));
-        }
-        nlohmann::json command = arguments;
-        command["type"] = tool_name;
-        return McpToolContent(DevToolsCommandToJson(ctx, std::move(command)));
-    }
-
-    return McpToolContent(DevToolsErrorJson("tool_not_found",
-                                            "unknown devtools MCP tool: " + tool_name));
-}
-
-nlohmann::json HandleMcpJsonRpc(WindowContext* ctx, const nlohmann::json& request) {
-    if (!request.is_object()) {
-        return MakeJsonRpcError(nullptr, -32600, "invalid request");
-    }
-
-    const auto id = request.contains("id") ? request.at("id") : nlohmann::json(nullptr);
-    const auto method = request.value("method", std::string{});
-    const auto params = request.value("params", nlohmann::json::object());
-
-    if (method == "initialize") {
-        return MakeJsonRpcResult(id,
-                                 nlohmann::json{{"protocolVersion", "2025-03-26"},
-                                                {"capabilities", {{"tools", nlohmann::json::object()}}},
-                                                {"serverInfo", {{"name", "mbink-devtools"},
-                                                                {"version", mbink_version()}}}});
-    }
-    if (method == "tools/list") {
-        return MakeJsonRpcResult(id, nlohmann::json{{"tools", BuildMcpToolsJson()}});
-    }
-    if (method == "tools/call") {
-        if (!params.is_object()) {
-            return MakeJsonRpcError(id, -32602, "params must be an object");
-        }
-        const auto tool_name = params.value("name", std::string{});
-        if (tool_name.empty()) {
-            return MakeJsonRpcError(id, -32602, "tool name is required");
-        }
-        const auto arguments = params.value("arguments", nlohmann::json::object());
-        return MakeJsonRpcResult(id, CallDevToolsMcpTool(ctx, tool_name, arguments));
-    }
-    if (method == "notifications/initialized") {
-        return nlohmann::json{{"jsonrpc", "2.0"}};
-    }
-    return MakeJsonRpcError(id, -32601, "method not found");
-}
-
-int HandleDevToolsHttpMcpJson(void* host_user_data,
-                              const char* request_json,
-                              char** out_response_json) {
-    if (!host_user_data || !request_json || !out_response_json) {
-        return MBINK_ERROR_INVALID_PARAM;
-    }
-    *out_response_json = nullptr;
-    auto* ctx = static_cast<WindowContext*>(host_user_data);
-    if (!ctx || !ctx->shutdownRequested || ctx->shutdownRequested->load()) {
-        *out_response_json = mbink_copy_string("devtools host is unavailable");
-        return MBINK_ERROR_INVALID_HANDLE;
-    }
-
-    struct RequestState {
-        std::string request;
-        std::string response;
-    } state{request_json, {}};
-
-    const int rc = RunWithCurrentDevToolsContextSync(
-        host_user_data,
-        [](const mbink::DevToolsHostContext* current_context, void* raw_state) {
-            auto* state = static_cast<RequestState*>(raw_state);
-            if (!state || !current_context || !current_context->host_user_data) {
-                return;
-            }
-            auto* ctx = static_cast<WindowContext*>(current_context->host_user_data);
-            auto parsed = nlohmann::json::parse(state->request, nullptr, false);
-            if (parsed.is_discarded()) {
-                state->response = MakeJsonRpcError(nullptr, -32700, "parse error").dump();
-                return;
-            }
-            try {
-                if (parsed.is_array()) {
-                    nlohmann::json responses = nlohmann::json::array();
-                    for (const auto& item : parsed) {
-                        responses.push_back(HandleMcpJsonRpc(ctx, item));
-                    }
-                    state->response = responses.dump();
-                } else {
-                    state->response = HandleMcpJsonRpc(ctx, parsed).dump();
-                }
-            } catch (const std::exception& e) {
-                state->response = MakeJsonRpcError(nullptr, -32603, e.what()).dump();
-            } catch (...) {
-                state->response = MakeJsonRpcError(nullptr, -32603, "internal error").dump();
-            }
-        },
-        &state);
-
-    if (rc != MBINK_OK) {
-        *out_response_json = mbink_copy_string("devtools host is unavailable");
-        return rc;
-    }
-    *out_response_json = mbink_copy_string(state.response.c_str());
-    return *out_response_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
-}
-
 bool LoadDevToolsLibrary(std::string* error) {
     if (mbink::HasDevToolsBridge()) {
         return true;
@@ -1294,13 +958,18 @@ bool LoadDevToolsLibrary(std::string* error) {
         if (!ctx) {
             return;
         }
-        ctx->devtoolsSyncCancelled.store(cancelled, std::memory_order_release);
+        if (ctx->devtoolsSyncCancelled) {
+            ctx->devtoolsSyncCancelled->store(cancelled, std::memory_order_release);
+        }
         if (cancelled && ctx->eventLoop) {
             ctx->eventLoop->Wake();
         }
     };
     host_services.with_current_context_sync = RunWithCurrentDevToolsContextSync;
-    host_services.handle_http_mcp_json = HandleDevToolsHttpMcpJson;
+    host_services.shutdown_requested = [](void* host_user_data) -> std::atomic<bool>* {
+        auto* ctx = static_cast<WindowContext*>(host_user_data);
+        return ctx && ctx->shutdownRequested ? ctx->shutdownRequested.get() : nullptr;
+    };
     for (const auto& candidate : DevToolsLibraryCandidates()) {
         const auto candidate_path = fs::absolute(candidate);
         if (!fs::exists(candidate_path)) {
@@ -1644,137 +1313,6 @@ void forceRenderFrame(WindowContext* ctx, int passes) {
     }
 }
 
-bool CoreDevToolsIsOpen() {
-    return mbink::DevToolsManager::GetInstance().IsOpen();
-}
-
-mbink::DevToolsDockPosition CoreDevToolsDockPosition() {
-    return ToBridgeDockPosition(mbink::DevToolsManager::GetInstance().GetDockPosition());
-}
-
-mbink::DevToolsBounds CoreDevToolsMainAppBounds(float width, float height) {
-    float x = 0.0f;
-    float y = 0.0f;
-    float out_width = width;
-    float out_height = height;
-    mbink::DevToolsManager::GetInstance().GetMainAppBounds(width, height, x, y, out_width, out_height);
-    return MakeDevToolsBounds(x, y, out_width, out_height);
-}
-
-mbink::DevToolsBounds CoreDevToolsPanelBounds(float width, float height) {
-    float x = 0.0f;
-    float y = 0.0f;
-    float out_width = 0.0f;
-    float out_height = 0.0f;
-    mbink::DevToolsManager::GetInstance().GetPanelBounds(width, height, x, y, out_width, out_height);
-    return MakeDevToolsBounds(x, y, out_width, out_height);
-}
-
-bool CoreDevToolsHandleKeyboardShortcut(int key, bool ctrl, bool shift, bool alt) {
-    return mbink::DevToolsManager::GetInstance().HandleKeyboardShortcut(key, ctrl, shift, alt);
-}
-
-bool CoreDevToolsHandleMouseWheel(int x, int y, float delta_x, float delta_y) {
-    return mbink::DevToolsManager::GetInstance().HandleMouseWheel(x, y, delta_x, delta_y);
-}
-
-bool CoreDevToolsIsDraggingPanelBorder() {
-    return mbink::DevToolsManager::GetInstance().IsDraggingPanelBorder();
-}
-
-bool CoreDevToolsIsMouseOnPanelBorder(float x, float y, float width, float height) {
-    return mbink::DevToolsManager::GetInstance().IsMouseOnPanelBorder(x, y, width, height);
-}
-
-bool CoreDevToolsHandlePanelBorderDrag(float x, float y, float width, float height, bool pressed) {
-    return mbink::DevToolsManager::GetInstance().HandlePanelBorderDrag(x, y, width, height, pressed);
-}
-
-bool CoreDevToolsUpdatePanelBorderDrag(float x, float y, float width, float height) {
-    return mbink::DevToolsManager::GetInstance().UpdatePanelBorderDrag(x, y, width, height);
-}
-
-bool CoreDevToolsIsDraggingSplitter() {
-    return mbink::DevToolsManager::GetInstance().IsDraggingSplitter();
-}
-
-bool CoreDevToolsHandleMouseEvent(int x, int y, int button, bool pressed) {
-    return mbink::DevToolsManager::GetInstance().HandleMouseEvent(x, y, button, pressed);
-}
-
-bool CoreDevToolsHandleMouseMove(int x, int y) {
-    return mbink::DevToolsManager::GetInstance().HandleMouseMove(x, y);
-}
-
-bool CoreDevToolsIsMouseOnSplitter(int x, int y) {
-    return mbink::DevToolsManager::GetInstance().IsMouseOnSplitter(x, y);
-}
-
-void CoreDevToolsClearBoxModelHover() {
-    mbink::DevToolsManager::GetInstance().ClearBoxModelHover();
-}
-
-bool CoreDevToolsIsPickerActive() {
-    return mbink::DevToolsManager::GetInstance().IsPickerActive();
-}
-
-void CoreDevToolsSetPickerHover(mbink::Element* element, mbink::RenderObject* render_object) {
-    auto* picker = mbink::DevToolsManager::GetInstance().GetElementPicker();
-    if (!picker) {
-        return;
-    }
-    picker->SetHoverElement(SharedElement(element), SharedRenderObject(render_object));
-}
-
-void CoreDevToolsSelectElement(mbink::Element* element) {
-    mbink::DevToolsManager::GetInstance().SelectElement(SharedElement(element));
-}
-
-void CoreDevToolsStopPicker() {
-    mbink::DevToolsManager::GetInstance().StopElementPicker();
-}
-
-void CoreDevToolsRenderHighlight(SkCanvas* canvas) {
-    mbink::DevToolsManager::GetInstance().RenderHighlight(canvas);
-}
-
-void CoreDevToolsRenderPanel(SkCanvas* canvas, float width, float height) {
-    mbink::DevToolsManager::GetInstance().Render(canvas, width, height);
-}
-
-const mbink::DevToolsCoreApi kCoreDevToolsApi{
-    kDevToolsAttachVersion,
-    CoreDevToolsIsOpen,
-    CoreDevToolsDockPosition,
-    CoreDevToolsMainAppBounds,
-    CoreDevToolsPanelBounds,
-    CoreDevToolsHandleKeyboardShortcut,
-    CoreDevToolsHandleMouseWheel,
-    CoreDevToolsIsDraggingPanelBorder,
-    CoreDevToolsIsMouseOnPanelBorder,
-    CoreDevToolsHandlePanelBorderDrag,
-    CoreDevToolsUpdatePanelBorderDrag,
-    CoreDevToolsIsDraggingSplitter,
-    CoreDevToolsHandleMouseEvent,
-    CoreDevToolsHandleMouseMove,
-    CoreDevToolsIsMouseOnSplitter,
-    CoreDevToolsClearBoxModelHover,
-    CoreDevToolsIsPickerActive,
-    CoreDevToolsSetPickerHover,
-    CoreDevToolsSelectElement,
-    CoreDevToolsStopPicker,
-    CoreDevToolsRenderHighlight,
-    CoreDevToolsRenderPanel,
-};
-
-void RegisterCoreDevToolsFacade() {
-    mbink::RegisterDevToolsCoreApi(&kCoreDevToolsApi);
-}
-
-void UnregisterCoreDevToolsFacade() {
-    mbink::UnregisterDevToolsCoreApi(&kCoreDevToolsApi);
-}
-
 int loadHtmlContent(WindowContext* ctx,
                     const std::string& content,
                     const std::string& base_path,
@@ -1941,8 +1479,11 @@ bool ensureDevToolsReady(WindowContext* ctx, std::string* error) {
         if (error) *error = "invalid devtools host";
         return false;
     }
+    if (!LoadDevToolsLibrary(error)) {
+        return false;
+    }
     if (!ctx->devtoolsInitialized) {
-        mbink::DevToolsManager::GetInstance().Initialize(ctx->document.get(), ctx->window.get());
+        mbink::DevToolsInitialize(makeDevToolsHostContext(ctx));
         ctx->devtoolsInitialized = true;
     }
     return true;
@@ -2184,13 +1725,11 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
 int mbink_init(void) {
     if (g_initialized) return MBINK_OK;
-    RegisterCoreDevToolsFacade();
     g_initialized = true;
     return MBINK_OK;
 }
 
 void mbink_cleanup(void) {
-    UnregisterCoreDevToolsFacade();
     g_initialized = false;
 }
 
@@ -2269,9 +1808,8 @@ void mbink_destroy(MBinkHandle handle) {
             mbink::DevToolsHttpStop(makeDevToolsHostContext(ctx));
         }
         if (ctx->devtoolsInitialized && ctx->window && ctx->document) {
-            auto& devtools = mbink::DevToolsManager::GetInstance();
-            devtools.Close();
-            devtools.Shutdown();
+            mbink::DevToolsClose(makeDevToolsHostContext(ctx));
+            mbink::DevToolsShutdown(makeDevToolsHostContext(ctx));
             ctx->devtoolsInitialized = false;
         }
     });
@@ -3117,9 +2655,11 @@ int mbink_devtools_open(MBinkHandle handle) {
         return MBINK_ERROR_NOT_FOUND;
     }
 
-    auto& devtools = mbink::DevToolsManager::GetInstance();
-    devtools.Initialize(ctx->document.get(), ctx->window.get());
-    devtools.Open();
+    const int rc = mbink::DevToolsOpen(makeDevToolsHostContext(ctx));
+    if (rc != MBINK_OK) {
+        setLastError("mbink_devtools_open failed");
+        return rc;
+    }
 
     if (ctx && ctx->window) {
         ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
@@ -3131,7 +2671,11 @@ int mbink_devtools_close(MBinkHandle handle) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx && ctx->devtoolsInitialized) {
-        mbink::DevToolsManager::GetInstance().Close();
+        const int rc = mbink::DevToolsClose(makeDevToolsHostContext(ctx));
+        if (rc != MBINK_OK) {
+            setLastError("mbink_devtools_close failed");
+            return rc;
+        }
     }
     if (ctx && ctx->window) {
         ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
@@ -3194,7 +2738,7 @@ int mbink_devtools_http_start(MBinkHandle handle,
 int mbink_devtools_http_stop(MBinkHandle handle) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
-    if (!ctx || !ctx->devtoolsInitialized) {
+    if (!ctx || !mbink::HasDevToolsBridge()) {
         return MBINK_OK;
     }
     const int rc = mbink::DevToolsHttpStop(makeDevToolsHostContext(ctx));
@@ -3308,26 +2852,23 @@ int mbink_ui_dev_snapshot_file(MBinkHandle handle,
     if (!ctx->window || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
 
     forceRenderFrame(ctx, 1);
-    mbink::ui_dev::SnapshotExportOptions snapshot_options;
-    auto bridge_options = toSnapshotOptions(ctx, options);
-    snapshot_options.runtime_epoch = bridge_options.runtime_epoch ? bridge_options.runtime_epoch : "";
-    snapshot_options.max_nodes = bridge_options.max_nodes;
-    snapshot_options.max_depth = bridge_options.max_depth;
-    snapshot_options.root_selector = bridge_options.root_selector ? bridge_options.root_selector : "";
-    snapshot_options.include_screenshot = bridge_options.include_screenshot;
-    snapshot_options.inline_screenshot = bridge_options.inline_screenshot;
-    snapshot_options.screenshot_path = bridge_options.screenshot_file ? bridge_options.screenshot_file : "";
-    snapshot_options.shutdown_requested = ctx->shutdownRequested;
-
     std::string error;
-    if (!mbink::ui_dev::ExportUiDevSnapshot(ctx->window,
-                                            ctx->document,
-                                            output_path,
-                                            snapshot_options,
-                                            &error)) {
-        setLastError(error.empty() ? "snapshot export failed" : error);
-        return MBINK_ERROR_UNKNOWN;
+    if (!ensureDevToolsReady(ctx, &error)) {
+        setLastError(error.empty() ? "mbink_devtools not available" : error);
+        return MBINK_ERROR_NOT_FOUND;
     }
+
+    char* bridge_error = nullptr;
+    const int rc = mbink::DevToolsSnapshotFile(makeDevToolsHostContext(ctx),
+                                               output_path,
+                                               toSnapshotOptions(ctx, options),
+                                               &bridge_error);
+    if (rc != MBINK_OK) {
+        setLastError(bridge_error && *bridge_error ? bridge_error : "snapshot export failed");
+        if (bridge_error) mbink_free(bridge_error);
+        return rc;
+    }
+    if (bridge_error) mbink_free(bridge_error);
     return MBINK_OK;
 }
 
@@ -3366,55 +2907,23 @@ int mbink_ui_dev_command_json(MBinkHandle handle,
         return MBINK_ERROR_INVALID_HANDLE;
     }
 
-    try {
-        const auto token = newRuntimeEpoch();
-        const auto base = fs::temp_directory_path();
-        const auto command_path = base / ("mbink-devtools-command-" + token + ".json");
-        const auto response_path = base / ("mbink-devtools-response-" + token + ".json");
-        {
-            std::ofstream file(command_path, std::ios::binary | std::ios::trunc);
-            if (!file) {
-                setLastError("ui-dev command write failed");
-                return MBINK_ERROR_UNKNOWN;
-            }
-            file << command_json;
-        }
-
-        bool handled = false;
-        bool ok = false;
-        std::string error;
-        std::string last_command_id;
-        ok = mbink::ui_dev::TryHandleUiDevCommand(ctx->runtime.get(),
-                                                  ctx->window.get(),
-                                                  ctx->document.get(),
-                                                  command_path.string(),
-                                                  response_path.string(),
-                                                  &last_command_id,
-                                                  &ctx->runtimeEpoch,
-                                                  ctx->shutdownRequested,
-                                                  &handled,
-                                                  &error);
-        if (!ok || !handled) {
-            std::error_code ec;
-            fs::remove(command_path, ec);
-            fs::remove(response_path, ec);
-            setLastError(error.empty() ? "ui-dev command not handled" : error);
-            return MBINK_ERROR_UNKNOWN;
-        }
-        auto response = ReadTextFile(response_path);
-        std::error_code ec;
-        fs::remove(command_path, ec);
-        fs::remove(response_path, ec);
-        if (response.empty()) {
-            setLastError("empty ui-dev response");
-            return MBINK_ERROR_UNKNOWN;
-        }
-        *out_response_json = duplicateString(response);
-        return *out_response_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
-    } catch (const std::exception& e) {
-        setLastError(e.what());
-        return MBINK_ERROR_UNKNOWN;
+    std::string error;
+    if (!ensureDevToolsReady(ctx, &error)) {
+        setLastError(error.empty() ? "mbink_devtools not available" : error);
+        return MBINK_ERROR_NOT_FOUND;
     }
+
+    char* response = nullptr;
+    const int rc = mbink::DevToolsCommandJson(makeDevToolsHostContext(ctx),
+                                              command_json,
+                                              &response);
+    if (rc != MBINK_OK) {
+        setLastError(response && *response ? response : "ui-dev command not handled");
+        if (response) mbink_free(response);
+        return rc;
+    }
+    *out_response_json = response;
+    return *out_response_json ? MBINK_OK : MBINK_ERROR_UNKNOWN;
 }
 
 int mbink_state_create_null(MBinkHandle handle, const char* name) {

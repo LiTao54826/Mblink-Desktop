@@ -142,7 +142,6 @@ target_link_libraries(mbink_api PUBLIC
     mbink_utils
     mbink_network
     mbink_devtools_bridge
-    mbink_devtools_core
     mbink_compositor
 )
 

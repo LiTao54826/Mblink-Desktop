@@ -77,6 +77,37 @@ function requestWithBadOrigin(port, token) {
     });
     socket.once('end', () => resolve(data));
     socket.once('close', () => resolve(data));
+    socket.once('error', err => {
+      if (err && err.code === 'ECONNRESET' && data) {
+        resolve(data);
+        return;
+      }
+      reject(err);
+    });
+  });
+}
+
+function requestRawJson(port, token, body) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    socket.once('connect', () => {
+      socket.write(
+        `POST /mcp HTTP/1.1\r\n` +
+        `Host: 127.0.0.1\r\n` +
+        `Origin: http://127.0.0.1:${port}\r\n` +
+        `Authorization: Bearer ${token}\r\n` +
+        `Content-Type: application/json\r\n` +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+        `\r\n` +
+        body
+      );
+    });
+    socket.on('data', chunk => {
+      data += chunk.toString('utf8');
+    });
+    socket.once('end', () => resolve(data));
+    socket.once('close', () => resolve(data));
     socket.once('error', reject);
   });
 }
@@ -133,6 +164,29 @@ async function main() {
   const badOriginResponse = await requestWithBadOrigin(devtools.port, devtools.auth_token);
   assert(badOriginResponse.startsWith('HTTP/1.1 403'),
     `expected 403 for deceptive loopback origin, got: ${badOriginResponse.split('\r\n')[0]}`);
+
+  const malformedJsonRpcResponse = await requestRawJson(devtools.port, devtools.auth_token, '"not-object"');
+  assert(malformedJsonRpcResponse.startsWith('HTTP/1.1 200'),
+    `expected malformed JSON-RPC to be handled as JSON-RPC error, got: ${malformedJsonRpcResponse.split('\r\n')[0]}`);
+  assert(malformedJsonRpcResponse.includes('"code":-32600') || malformedJsonRpcResponse.includes('"code": -32600'),
+    `expected JSON-RPC invalid request error, got: ${malformedJsonRpcResponse}`);
+
+  const batchResponse = await requestRawJson(
+    devtools.port,
+    devtools.auth_token,
+    JSON.stringify([
+      { jsonrpc: '2.0', id: 31, method: 'tools/list' },
+      { jsonrpc: '2.0', id: 32, method: 'tools/call', params: [] },
+    ])
+  );
+  assert(batchResponse.startsWith('HTTP/1.1 200'),
+    `expected batch JSON-RPC to be handled, got: ${batchResponse.split('\r\n')[0]}`);
+  assert(batchResponse.includes('"id":31') || batchResponse.includes('"id": 31'),
+    `expected first batch response, got: ${batchResponse}`);
+  assert(batchResponse.includes('"id":32') || batchResponse.includes('"id": 32'),
+    `expected second batch response, got: ${batchResponse}`);
+  assert(batchResponse.includes('"code":-32602') || batchResponse.includes('"code": -32602'),
+    `expected invalid params error in batch, got: ${batchResponse}`);
 
   const validSocket = await holdValidSnapshotRequest(devtools.port, devtools.auth_token);
 

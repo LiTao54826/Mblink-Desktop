@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 
 class SkCanvas;
@@ -12,7 +13,7 @@ class QuickJSRuntime;
 class RenderObject;
 class Window;
 
-inline constexpr unsigned int kDevToolsBridgeVersion = 4;
+inline constexpr unsigned int kDevToolsBridgeVersion = 6;
 
 enum class DevToolsDockPosition {
     Bottom,
@@ -52,7 +53,7 @@ struct DevToolsHostServices {
     void (*wake_event_loop)(const DevToolsHostContext*) = nullptr;
     void (*set_main_thread_sync_cancelled)(void*, bool) = nullptr;
     int (*with_current_context_sync)(void*, DevToolsHostContextTask, void*) = nullptr;
-    int (*handle_http_mcp_json)(void*, const char*, char**) = nullptr;
+    std::atomic<bool>* (*shutdown_requested)(void*) = nullptr;
 };
 
 struct DevToolsHttpServerOptionsBridge {
@@ -75,8 +76,12 @@ struct DevToolsBounds {
     float height = 0.0f;
 };
 
-struct DevToolsCoreApi {
+struct DevToolsBridgeApi {
     unsigned int version = kDevToolsBridgeVersion;
+    void (*initialize)(const DevToolsHostContext*) = nullptr;
+    void (*shutdown)(const DevToolsHostContext*) = nullptr;
+    int (*open)(const DevToolsHostContext*) = nullptr;
+    int (*close)(const DevToolsHostContext*) = nullptr;
     bool (*is_open)() = nullptr;
     DevToolsDockPosition (*dock_position)() = nullptr;
     DevToolsBounds (*main_app_bounds)(float, float) = nullptr;
@@ -98,10 +103,8 @@ struct DevToolsCoreApi {
     void (*stop_picker)() = nullptr;
     void (*render_highlight)(SkCanvas*) = nullptr;
     void (*render_panel)(SkCanvas*, float, float) = nullptr;
-};
-
-struct DevToolsBridgeApi {
-    unsigned int version = kDevToolsBridgeVersion;
+    int (*snapshot_file)(const DevToolsHostContext*, const char*, const UiDevSnapshotOptionsBridge*, char**) = nullptr;
+    int (*command_json)(const DevToolsHostContext*, const char*, char**) = nullptr;
     int (*http_start)(const DevToolsHostContext*, const DevToolsHttpServerOptionsBridge*, DevToolsHttpServerInfoBridge*, char**) = nullptr;
     int (*http_stop)(const DevToolsHostContext*) = nullptr;
 };
@@ -118,9 +121,10 @@ void UnregisterDevToolsBridge(const DevToolsBridgeApi* api);
 bool HasDevToolsBridge();
 const DevToolsBridgeApi* GetDevToolsBridge();
 
-bool RegisterDevToolsCoreApi(const DevToolsCoreApi* api);
-void UnregisterDevToolsCoreApi(const DevToolsCoreApi* api);
-
+void DevToolsInitialize(const DevToolsHostContext& context);
+void DevToolsShutdown(const DevToolsHostContext& context);
+int DevToolsOpen(const DevToolsHostContext& context);
+int DevToolsClose(const DevToolsHostContext& context);
 bool DevToolsIsOpen();
 DevToolsDockPosition DevToolsGetDockPosition();
 DevToolsBounds DevToolsGetMainAppBounds(float width, float height);
@@ -142,6 +146,13 @@ void DevToolsSelectElement(Element* element);
 void DevToolsStopPicker();
 void DevToolsRenderHighlight(SkCanvas* canvas);
 void DevToolsRenderPanel(SkCanvas* canvas, float width, float height);
+int DevToolsSnapshotFile(const DevToolsHostContext& context,
+                         const char* output_path,
+                         const UiDevSnapshotOptionsBridge& options,
+                         char** out_error);
+int DevToolsCommandJson(const DevToolsHostContext& context,
+                        const char* command_json,
+                        char** out_response_json);
 
 int DevToolsHttpStart(const DevToolsHostContext& context,
                       const DevToolsHttpServerOptionsBridge& options,
