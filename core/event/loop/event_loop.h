@@ -92,6 +92,7 @@ public:
      * 用于测试或手动控制循环
      */
     void RunOnce();
+    void RunOnceNonBlocking();
     
     /**
      * @brief 检查是否应该退出
@@ -197,6 +198,8 @@ public:
     ClipboardManager* GetClipboardManager();
 
 private:
+    void RunOnceInternal(bool allow_idle_wait);
+
     /**
      * @brief 处理 SDL 事件
      * 

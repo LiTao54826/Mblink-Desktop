@@ -843,7 +843,11 @@ class App:
 
     def devtools_open(self):
         self._ensure_alive()
-        self._lib.mbink_devtools_open(self._handle)
+        ret = self._lib.mbink_devtools_open(self._handle)
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown devtools open error"
+            raise RuntimeError(msg)
 
     def devtools_close(self):
         self._ensure_alive()
@@ -858,7 +862,7 @@ class App:
                 require_auth=require_auth,
                 bind_host=bind_host,
             )
-        self._lib.mbink_devtools_open(self._handle)
+        self.devtools_open()
         return None
 
     def devtools_http_session(self, *, port=0, auth_token=None, require_auth=True, bind_host=None):

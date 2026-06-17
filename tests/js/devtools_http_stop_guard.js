@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 const net = require('net');
 const path = require('path');
 
@@ -80,7 +81,43 @@ function requestWithBadOrigin(port, token) {
   });
 }
 
+function holdValidSnapshotRequest(port, token) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'snapshot_ui', arguments: { max_nodes: 100, max_depth: 8 } },
+    });
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    socket.setTimeout(8000, () => {
+      socket.destroy(new Error('valid request socket timed out'));
+    });
+    socket.once('connect', () => {
+      socket.write(
+        `POST /mcp HTTP/1.1\r\n` +
+        `Host: 127.0.0.1\r\n` +
+        `Origin: http://127.0.0.1:${port}\r\n` +
+        `Authorization: Bearer ${token}\r\n` +
+        `Content-Type: application/json\r\n` +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+        `\r\n` +
+        body
+      );
+      resolve(socket);
+    });
+    socket.once('error', reject);
+  });
+}
+
 async function main() {
+  const devtoolsSrc = fs.readFileSync(path.resolve('core', 'devtools', 'devtools_entry.cpp'), 'utf8');
+  assert(devtoolsSrc.includes('BCryptGenRandom') && !devtoolsSrc.includes('mt19937'),
+    'devtools HTTP auth token must use the OS RNG, not a non-cryptographic PRNG');
+  const bridgeSrc = fs.readFileSync(path.resolve('core', 'devtools', 'devtools_bridge.h'), 'utf8');
+  assert(bridgeSrc.includes('set_main_thread_sync_cancelled'),
+    'devtools HTTP stop must be able to cancel in-flight main-thread marshaling');
+
   const exe = path.resolve('build', 'bin', 'Release', 'esm_loader.exe');
   const entry = path.resolve('tmp', 'mbink_idle_cpu_probe', 'open_idempotent_app', '.dist', 'App.js');
   const child = spawn(exe, [entry, '--devtools-http-mcp', '--quit', '3'], {
@@ -96,6 +133,8 @@ async function main() {
   const badOriginResponse = await requestWithBadOrigin(devtools.port, devtools.auth_token);
   assert(badOriginResponse.startsWith('HTTP/1.1 403'),
     `expected 403 for deceptive loopback origin, got: ${badOriginResponse.split('\r\n')[0]}`);
+
+  const validSocket = await holdValidSnapshotRequest(devtools.port, devtools.auth_token);
 
   const socket = net.createConnection({ host: '127.0.0.1', port: devtools.port });
   await new Promise((resolve, reject) => {
@@ -116,6 +155,7 @@ async function main() {
   const exit = await waitForExit(child, 10000);
   assert(exit.code === 0, `expected clean exit, got code=${exit.code} signal=${exit.signal}`);
 
+  validSocket.destroy();
   socket.destroy();
   console.log('[PASS] Devtools HTTP stop guard');
 }

@@ -1,7 +1,4 @@
-# DevTools模块 CMakeLists.txt
-
-set(DEVTOOLS_SOURCES
-    devtools_entry.cpp
+set(DEVTOOLS_CORE_SOURCES
     devtools_manager.cpp
     devtools_panel.cpp
     devtools_state.cpp
@@ -22,7 +19,7 @@ set(DEVTOOLS_SOURCES
     ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_control.cpp
 )
 
-set(DEVTOOLS_HEADERS
+set(DEVTOOLS_CORE_HEADERS
     devtools_manager.h
     devtools_panel.h
     devtools_state.h
@@ -41,9 +38,12 @@ set(DEVTOOLS_HEADERS
     serializer/dom_serializer.h
 )
 
-add_library(mbink_devtools SHARED ${DEVTOOLS_SOURCES})
+add_library(mbink_devtools_core STATIC
+    ${DEVTOOLS_CORE_SOURCES}
+    ${DEVTOOLS_CORE_HEADERS}
+)
 
-target_include_directories(mbink_devtools PUBLIC
+target_include_directories(mbink_devtools_core PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/tools/esm_loader
@@ -51,7 +51,7 @@ target_include_directories(mbink_devtools PUBLIC
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
-target_link_libraries(mbink_devtools PUBLIC
+target_link_libraries(mbink_devtools_core PUBLIC
     mbink_dom
     mbink_render
     mbink_event
@@ -63,22 +63,41 @@ target_link_libraries(mbink_devtools PUBLIC
     nlohmann_json
 )
 
-# 链接Skia
 if(TARGET skia)
-    target_link_libraries(mbink_devtools PUBLIC skia)
-endif()
-
-# 匹配 Skia 的运行时库设置
-if(WIN32)
-    target_link_libraries(mbink_devtools PRIVATE ws2_32)
+    target_link_libraries(mbink_devtools_core PUBLIC skia)
 endif()
 
 if(MSVC)
-    target_compile_options(mbink_devtools PUBLIC
+    target_compile_options(mbink_devtools_core PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(mbink_devtools PUBLIC
+    target_compile_definitions(mbink_devtools_core PUBLIC
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    )
+endif()
+
+add_library(mbink_devtools SHARED devtools_entry.cpp)
+
+target_include_directories(mbink_devtools PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(mbink_devtools PRIVATE
+    nlohmann_json
+)
+
+if(WIN32)
+    target_link_libraries(mbink_devtools PRIVATE ws2_32 bcrypt)
+endif()
+
+if(MSVC)
+    target_compile_options(mbink_devtools PRIVATE
+        $<$<CONFIG:Debug>:/MT>
+        $<$<CONFIG:Release>:/MT>
+    )
+    target_compile_definitions(mbink_devtools PRIVATE
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()

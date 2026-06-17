@@ -39,16 +39,28 @@ function run() {
     'No-work idle delay should use the documented 64ms default');
 
   const runOnce = extractFunction(eventLoopSrc, 'void EventLoop::RunOnce');
-  assert(runOnce.includes('CollectIdleWorkState(') &&
-         runOnce.includes('WaitForIdleWork(') &&
-         runOnce.includes('did_front_idle_wait'),
-    'RunOnce must front-load the idle wait before the full frame pass');
-  assert(runOnce.includes('idle_callback_') &&
-         runOnce.includes('!idle_state.has_frame_deadline_work'),
-    'RunOnce must only return early when idle and not waiting for rAF');
-  assert(!runOnce.includes('MillisecondsUntilNextTask()') ||
-         !runOnce.includes('SDL_WaitEventTimeout(nullptr, ClampIdleDelayMs(next_delay_ms))'),
-    'RunOnce should stop using the old tail-only idle sleep path');
+  const runOnceNonBlocking = extractFunction(eventLoopSrc, 'void EventLoop::RunOnceNonBlocking');
+  const runOnceInternal = extractFunction(eventLoopSrc, 'void EventLoop::RunOnceInternal');
+  assert(runOnce.includes('RunOnceInternal(true)'),
+    'EventLoop::RunOnce must use the blocking idle-wait path');
+  assert(runOnceNonBlocking.includes('RunOnceInternal(false)'),
+    'Manual poll path must have a non-blocking event-loop entrypoint');
+  assert(runOnceInternal.includes('CollectIdleWorkState(') &&
+         runOnceInternal.includes('WaitForIdleWork(') &&
+         runOnceInternal.includes('did_front_idle_wait'),
+    'RunOnceInternal must front-load the idle wait before the full frame pass');
+  assert(runOnceInternal.includes('allow_idle_wait') &&
+         runOnceInternal.includes('idle_callback_') &&
+         runOnceInternal.includes('!idle_state.has_frame_deadline_work'),
+    'RunOnceInternal must only block/return early when idle and not waiting for rAF');
+  assert(runOnceInternal.includes('if (!did_front_idle_wait)') &&
+         runOnceInternal.includes('WaitForIdleWork(CollectIdleWorkState('),
+    'RunOnceInternal should keep the tail idle sleep for the blocking EventLoop::Run path');
+  const cApiPath = path.join(process.cwd(), 'core', 'api', 'mbink.cpp');
+  const cApiSrc = fs.readFileSync(cApiPath, 'utf8');
+  const pollEvents = extractFunction(cApiSrc, 'bool mbink_poll_events');
+  assert(pollEvents.includes('RunOnceNonBlocking()') && !pollEvents.includes('RunOnce();'),
+    'mbink_poll_events must not perform the blocking idle wait used by EventLoop::Run');
 
   const collectIdle = extractFunction(eventLoopSrc, 'IdleWorkState CollectIdleWorkState');
   assert(collectIdle.includes('WindowManagerHasPendingUiTasks()') &&

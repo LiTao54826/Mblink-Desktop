@@ -488,13 +488,21 @@ void EventLoop::Wake() {
 }
 
 void EventLoop::RunOnce() {
+    RunOnceInternal(true);
+}
+
+void EventLoop::RunOnceNonBlocking() {
+    RunOnceInternal(false);
+}
+
+void EventLoop::RunOnceInternal(bool allow_idle_wait) {
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
     static Element* last_blink_focus_element = nullptr;
     static bool cursor_visible = true;
     auto focus_element = focus_manager_->GetFocusElement();
     bool did_front_idle_wait = false;
 
-    if (!should_quit_) {
+    if (allow_idle_wait && !should_quit_) {
         auto idle_state = CollectIdleWorkState(
             quickjs_runtime_,
             task_scheduler_.get(),
