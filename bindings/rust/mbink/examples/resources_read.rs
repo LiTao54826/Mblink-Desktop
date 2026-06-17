@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use mbink::{RESOURCE_FLAG_BYTECODE, compile_resources, load_resource_file};
+use mbink::{compile_resources, load_resource_file, RESOURCE_FLAG_BYTECODE};
 
 fn main() -> mbink::Result<()> {
     let base = std::env::temp_dir().join("mbink-rust-resource-read-example");
@@ -13,8 +13,11 @@ fn main() -> mbink::Result<()> {
     }
     fs::create_dir_all(&input_dir).map_err(|err| mbink::Error::Message(err.to_string()))?;
 
-    fs::write(input_dir.join("message.txt"), "hello from resource package\n")
-        .map_err(|err| mbink::Error::Message(err.to_string()))?;
+    fs::write(
+        input_dir.join("message.txt"),
+        "hello from resource package\n",
+    )
+    .map_err(|err| mbink::Error::Message(err.to_string()))?;
 
     compile_resources(&path_str(&input_dir), &path_str(&package_file), "")?;
 

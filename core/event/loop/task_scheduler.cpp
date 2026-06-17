@@ -193,6 +193,46 @@ bool TaskScheduler::HasPendingTasks() const {
     return false;
 }
 
+bool TaskScheduler::HasReadyTasks() const {
+    if (!microtasks_.empty()) {
+        return true;
+    }
+
+    if (!tasks_.empty()) {
+        const Uint64 current_time = GetCurrentTime();
+        if (tasks_.top().execute_time <= current_time) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int64_t TaskScheduler::MillisecondsUntilNextTask() const {
+    if (tasks_.empty()) {
+        return -1;
+    }
+
+    const Uint64 current_time = GetCurrentTime();
+    const Uint64 execute_time = tasks_.top().execute_time;
+    if (execute_time <= current_time) {
+        return 0;
+    }
+
+    const Uint64 delta_ticks = execute_time - current_time;
+    return static_cast<int64_t>((delta_ticks * 1000) / performance_frequency_);
+}
+
+bool TaskScheduler::HasPendingAnimationFrames() const {
+    for (const auto& task : animation_frame_tasks_) {
+        if (!task.cancelled) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void TaskScheduler::ClearAllTasks() {
     // 清空优先队列
     while (!tasks_.empty()) {

@@ -41,7 +41,11 @@ fn main() -> mbink::Result<()> {
         let logs = app.logview("logs")?;
         logs.append("INFO", "rust", "native controls demo booted")?;
         logs.append("INFO", "rust", "logview acquired from Rust safe wrapper")?;
-        logs.append("WARN", "rust", "terminal below is also controlled from Rust")?;
+        logs.append(
+            "WARN",
+            "rust",
+            "terminal below is also controlled from Rust",
+        )?;
         logs.export("text")?
     };
 

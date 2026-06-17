@@ -95,7 +95,7 @@
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/layer/paint_layer.h"
 #include "core/utils/encoding_utils.h"
-#include "core/devtools/devtools_manager.h"
+#include "core/devtools/devtools_bridge.h"
 #include "core/lexbor/style_manager.h"
 #include "core/render/layer/fbo_manager.h"
 #include "core/render/image/image_cache.h"
@@ -729,11 +729,29 @@ void Window::PostUiTask(std::function<void()> task) {
         return;
     }
 
-    std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
-    if (!ui_tasks_accepting_) {
-        return;
+    std::function<void()> wake_callback;
+    {
+        std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+        if (!ui_tasks_accepting_) {
+            return;
+        }
+        ui_tasks_.push_back(std::move(task));
+        wake_callback = ui_task_wake_callback_;
     }
-    ui_tasks_.push_back(std::move(task));
+
+    if (wake_callback) {
+        wake_callback();
+    }
+}
+
+void Window::SetUiTaskWakeCallback(std::function<void()> callback) {
+    std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+    ui_task_wake_callback_ = std::move(callback);
+}
+
+bool Window::HasPendingUiTasks() const {
+    std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+    return !ui_tasks_.empty();
 }
 
 void Window::FlushUiTasks(size_t max_tasks) {
@@ -1904,14 +1922,17 @@ void Window::Render() {
     float logical_height = physical_height / dpi_scale;
 
     // 检查 DevTools 是否打开，如果打开则调整主应用区域
-    auto& devtools = DevToolsManager::GetInstance();
+    const bool devtools_open = DevToolsIsOpen();
     float app_x = 0, app_y = 0;
     float app_width = logical_width;
     float app_height = logical_height;
 
-    if (devtools.IsOpen()) {
-        devtools.GetMainAppBounds(logical_width, logical_height,
-                                   app_x, app_y, app_width, app_height);
+    if (devtools_open) {
+        const auto app_bounds = DevToolsGetMainAppBounds(logical_width, logical_height);
+        app_x = app_bounds.x;
+        app_y = app_bounds.y;
+        app_width = app_bounds.width;
+        app_height = app_bounds.height;
     }
 
     // 设置视口尺寸
@@ -2064,12 +2085,12 @@ void Window::Render() {
         float width = static_cast<float>(physical_width) / dpi_scale;
         float height = static_cast<float>(physical_height) / dpi_scale;
 
-        auto& devtools = DevToolsManager::GetInstance();
         float sync_app_width = width;
         float sync_app_height = height;
-        if (devtools.IsOpen()) {
-            float app_x, app_y;
-            devtools.GetMainAppBounds(width, height, app_x, app_y, sync_app_width, sync_app_height);
+        if (devtools_open) {
+            const auto sync_bounds = DevToolsGetMainAppBounds(width, height);
+            sync_app_width = sync_bounds.width;
+            sync_app_height = sync_bounds.height;
         }
 
         if (needs_layout_update) {
@@ -2318,7 +2339,7 @@ void Window::Render() {
             }
 
             // 如果 DevTools 打开，裁剪到主应用区域
-            if (devtools.IsOpen()) {
+            if (devtools_open) {
                 const SkRect main_clip_rect = retained_present_used
                     ? SkRect::MakeXYWH(0.0f, 0.0f, app_width, app_height)
                     : SkRect::MakeXYWH(app_x, app_y, app_width, app_height);
@@ -2369,7 +2390,7 @@ void Window::Render() {
                 can_update_retained_dirty_region &&
                 has_dirty_bounds &&
                 !retained_dirty_bounds.physical.isEmpty() &&
-                !devtools.IsOpen() &&
+                !devtools_open &&
                 !SelectDropdownManager::Instance().IsDropdownOpen();
 
             if (!can_partial_retained_copy) {
@@ -2398,7 +2419,7 @@ void Window::Render() {
                 retained_main_has_content_ = false;
                 canvas->save();
                 canvas->scale(dpi_scale, dpi_scale);
-                if (devtools.IsOpen()) {
+                if (devtools_open) {
                     canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
                 }
                 process_ok = render_pipeline_->ProcessFrame(canvas);
@@ -2421,7 +2442,7 @@ void Window::Render() {
 
         canvas->save();
         canvas->scale(dpi_scale, dpi_scale);
-        if (devtools.IsOpen()) {
+        if (devtools_open) {
             canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
         }
 
@@ -2487,7 +2508,7 @@ void Window::Render() {
                       << " pending_animation_retry_count=" << pending_animation_retry_count
                       << " pending_animation_retry_exhausted=" << pending_animation_retry_exhausted
                       << " dirty_rects=" << dirty_rects_.size()
-                      << " devtools_open=" << (devtools.IsOpen() ? 1 : 0)
+                      << " devtools_open=" << (devtools_open ? 1 : 0)
                       << " dropdown_open=" << (dropdown_manager.IsDropdownOpen() ? 1 : 0)
                       << "\n";
         }
@@ -2526,9 +2547,7 @@ void Window::Render() {
 }
 
 void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
-    auto& devtools = DevToolsManager::GetInstance();
-
-    if (!devtools.IsOpen()) {
+    if (!DevToolsIsOpen()) {
         return;
     }
 
@@ -2540,19 +2559,23 @@ void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
 
     // 获取主应用区域
     float app_x, app_y, app_width, app_height;
-    devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    const auto app_bounds = DevToolsGetMainAppBounds(width, height);
+    app_x = app_bounds.x;
+    app_y = app_bounds.y;
+    app_width = app_bounds.width;
+    app_height = app_bounds.height;
 
     // 先渲染元素高亮覆盖层（在主应用区域内）
     canvas->save();
     canvas->scale(dpi_scale, dpi_scale);
     canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
-    devtools.RenderHighlight(canvas);
+    DevToolsRenderHighlight(canvas);
     canvas->restore();
 
     // 再渲染 DevTools 面板
     canvas->save();
     canvas->scale(dpi_scale, dpi_scale);
-    devtools.Render(canvas, width, height);
+    DevToolsRenderPanel(canvas, width, height);
     canvas->restore();
 }
 
@@ -3157,12 +3180,12 @@ void Window::ForceLayoutSync() {
     float height = static_cast<float>(physical_height) / dpi_scale;
 
     // 考虑 DevTools 面板
-    auto& devtools = DevToolsManager::GetInstance();
     float app_width = width;
     float app_height = height;
-    if (devtools.IsOpen()) {
-        float app_x, app_y;
-        devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    if (DevToolsIsOpen()) {
+        const auto app_bounds = DevToolsGetMainAppBounds(width, height);
+        app_width = app_bounds.width;
+        app_height = app_bounds.height;
     }
 
     // 处理待处理的 DOM 变化
@@ -3319,13 +3342,13 @@ void Window::EnsureRenderTree() {
     float height = static_cast<float>(physical_height) / dpi_scale;
 
     // 检查 DevTools 是否打开，如果打开则调整主应用区域
-    auto& devtools = DevToolsManager::GetInstance();
     float app_width = width;
     float app_height = height;
 
-    if (devtools.IsOpen()) {
-        float app_x, app_y;
-        devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    if (DevToolsIsOpen()) {
+        const auto app_bounds = DevToolsGetMainAppBounds(width, height);
+        app_width = app_bounds.width;
+        app_height = app_bounds.height;
     }
 
     // 设置视口尺寸

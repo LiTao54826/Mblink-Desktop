@@ -4,8 +4,6 @@ set(API_SOURCES
     mbink.cpp
     resource_package.cpp
     ${CMAKE_SOURCE_DIR}/tools/esm_loader/embedded_js.cpp
-    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_snapshot.cpp
-    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_control.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/module_resolver.cpp
 )
@@ -143,7 +141,7 @@ target_link_libraries(mbink_api PUBLIC
     mbink_bridge
     mbink_utils
     mbink_network
-    mbink_devtools
+    mbink_devtools_bridge
     mbink_compositor
 )
 

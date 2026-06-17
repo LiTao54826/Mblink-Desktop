@@ -33,9 +33,21 @@ public:
         return std::this_thread::get_id() == mainThreadId_;
     }
 
-    void post(std::function<void()> fn) {
+    void setWakeCallback(std::function<void()> callback) {
         std::lock_guard<std::mutex> lock(mutex_);
-        queue_.push_back(std::move(fn));
+        wakeCallback_ = std::move(callback);
+    }
+
+    void post(std::function<void()> fn) {
+        std::function<void()> wake;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push_back(std::move(fn));
+            wake = wakeCallback_;
+        }
+        if (wake) {
+            wake();
+        }
     }
 
     void flush() {
@@ -59,6 +71,7 @@ private:
     std::thread::id mainThreadId_;
     std::mutex mutex_;
     std::vector<std::function<void()>> queue_;
+    std::function<void()> wakeCallback_;
     std::shared_ptr<std::atomic<bool>> alive_;
 };
 

@@ -20,7 +20,12 @@ impl<'a> LogView<'a> {
         let source = to_cstring(source)?;
         let message = to_cstring(message)?;
         crate::app::check_rc_raw(unsafe {
-            mbink_sys::mbink_logview_append(self.handle, level.as_ptr(), source.as_ptr(), message.as_ptr())
+            mbink_sys::mbink_logview_append(
+                self.handle,
+                level.as_ptr(),
+                source.as_ptr(),
+                message.as_ptr(),
+            )
         })?;
         Ok(self)
     }
@@ -32,14 +37,21 @@ impl<'a> LogView<'a> {
 
     pub fn export(&self, format: &str) -> Result<String> {
         let format = to_cstring(format)?;
-        unsafe { string_from_owned_ptr(mbink_sys::mbink_logview_export(self.handle, format.as_ptr())) }
+        unsafe {
+            string_from_owned_ptr(mbink_sys::mbink_logview_export(
+                self.handle,
+                format.as_ptr(),
+            ))
+        }
     }
 }
 
 impl<'a> Terminal<'a> {
     pub fn write(&self, data: &str) -> Result<&Self> {
         let data = to_cstring(data)?;
-        crate::app::check_rc_raw(unsafe { mbink_sys::mbink_terminal_write(self.handle, data.as_ptr()) })?;
+        crate::app::check_rc_raw(unsafe {
+            mbink_sys::mbink_terminal_write(self.handle, data.as_ptr())
+        })?;
         Ok(self)
     }
 
@@ -50,19 +62,25 @@ impl<'a> Terminal<'a> {
 
     pub fn execute(&self, command: &str) -> Result<&Self> {
         let command = to_cstring(command)?;
-        crate::app::check_rc_raw(unsafe { mbink_sys::mbink_terminal_execute(self.handle, command.as_ptr()) })?;
+        crate::app::check_rc_raw(unsafe {
+            mbink_sys::mbink_terminal_execute(self.handle, command.as_ptr())
+        })?;
         Ok(self)
     }
 
     pub fn start_shell(&self, shell: &str) -> Result<&Self> {
         let shell = to_cstring(shell)?;
-        crate::app::check_rc_raw(unsafe { mbink_sys::mbink_terminal_start_shell(self.handle, shell.as_ptr()) })?;
+        crate::app::check_rc_raw(unsafe {
+            mbink_sys::mbink_terminal_start_shell(self.handle, shell.as_ptr())
+        })?;
         Ok(self)
     }
 
     pub fn send_input(&self, input: &str) -> Result<&Self> {
         let input = to_cstring(input)?;
-        crate::app::check_rc_raw(unsafe { mbink_sys::mbink_terminal_send_input(self.handle, input.as_ptr()) })?;
+        crate::app::check_rc_raw(unsafe {
+            mbink_sys::mbink_terminal_send_input(self.handle, input.as_ptr())
+        })?;
         Ok(self)
     }
 
@@ -81,16 +99,26 @@ pub(crate) enum ControlHandle {
     Terminal(mbink_sys::MBinkTerminalHandle),
 }
 
-pub(crate) fn logview_from_handle<'a>(handle: mbink_sys::MBinkLogViewHandle) -> Result<LogView<'a>> {
+pub(crate) fn logview_from_handle<'a>(
+    handle: mbink_sys::MBinkLogViewHandle,
+) -> Result<LogView<'a>> {
     if handle.is_null() {
         return Err(Error::NullHandle);
     }
-    Ok(LogView { handle, _marker: PhantomData })
+    Ok(LogView {
+        handle,
+        _marker: PhantomData,
+    })
 }
 
-pub(crate) fn terminal_from_handle<'a>(handle: mbink_sys::MBinkTerminalHandle) -> Result<Terminal<'a>> {
+pub(crate) fn terminal_from_handle<'a>(
+    handle: mbink_sys::MBinkTerminalHandle,
+) -> Result<Terminal<'a>> {
     if handle.is_null() {
         return Err(Error::NullHandle);
     }
-    Ok(Terminal { handle, _marker: PhantomData })
+    Ok(Terminal {
+        handle,
+        _marker: PhantomData,
+    })
 }

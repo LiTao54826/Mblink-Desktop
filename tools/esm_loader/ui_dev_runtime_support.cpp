@@ -222,6 +222,7 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
     });
 
     auto last_command_id = std::make_shared<std::string>();
+    const bool needs_frame_cadence = options.quit_after_seconds > 0;
     event_loop->SetUpdateCallback([runtime,
                                    window,
                                    document,
@@ -289,7 +290,7 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
             }
             event_loop->Stop();
         }
-    });
+    }, needs_frame_cadence);
 }
 
 }  // namespace mbink::ui_dev

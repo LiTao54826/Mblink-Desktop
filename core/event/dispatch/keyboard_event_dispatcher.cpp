@@ -26,7 +26,7 @@
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/window/window.h"
 #include "core/window/window_manager.h"
-#include "core/devtools/devtools_manager.h"
+#include "core/devtools/devtools_bridge.h"
 
 #include <iostream>
 
@@ -67,8 +67,7 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
         // 将 SDL 键码转换为 DOM keyCode
         int key_code = SDLKeycodeToKeyCode(event.key.key);
 
-        auto& devtools = DevToolsManager::GetInstance();
-        if (devtools.HandleKeyboardShortcut(key_code, ctrl_key, shift_key, alt_key)) {
+        if (DevToolsHandleKeyboardShortcut(key_code, ctrl_key, shift_key, alt_key)) {
             // DevTools 消费了这个快捷键
             window->SetNeedsRepaintFor(RepaintReason::DevTools);
             return true;

@@ -107,6 +107,19 @@ typedef struct {
     const char* screenshot_file;
 } MBinkUiDevSnapshotOptions;
 
+typedef struct {
+    const char* bind_host;   /* nullptr/default = 127.0.0.1 */
+    unsigned short port;     /* 0 = ephemeral port */
+    const char* auth_token;  /* nullptr/empty = generated token when require_auth is true */
+    bool require_auth;
+} MBinkDevToolsHttpOptions;
+
+typedef struct {
+    unsigned short port;
+    char* url;
+    char* auth_token;
+} MBinkDevToolsHttpInfo;
+
 // ========== 回调类型 ==========
 
 // 函数绑定回调: JS 调用 backend.xxx() 时触发，返回 JSON 字符串。
@@ -267,6 +280,12 @@ MBINK_API int mbink_emit(MBinkHandle handle, const char* event_name,
 
 MBINK_API int mbink_devtools_open(MBinkHandle handle);
 MBINK_API int mbink_devtools_close(MBinkHandle handle);
+MBINK_API MBinkDevToolsHttpOptions mbink_devtools_default_http_options(void);
+MBINK_API int mbink_devtools_http_start(MBinkHandle handle,
+                                        const MBinkDevToolsHttpOptions* options,
+                                        MBinkDevToolsHttpInfo* out_info);
+MBINK_API int mbink_devtools_http_stop(MBinkHandle handle);
+MBINK_API void mbink_devtools_http_info_free(MBinkDevToolsHttpInfo* info);
 
 // ========== Observability ==========
 

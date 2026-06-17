@@ -7,7 +7,7 @@
 
 #include "wheel_event_dispatcher.h"
 
-#include "core/devtools/devtools_manager.h"
+#include "core/devtools/devtools_bridge.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/html_textarea_element.h"
@@ -124,8 +124,7 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
     float logical_y = mouse_y / dpi_scale;
 
     // ===== 优先处理 DevTools 面板的滚轮事件 =====
-    auto& devtools = DevToolsManager::GetInstance();
-    if (devtools.IsOpen()) {
+    if (DevToolsIsOpen()) {
         // 获取窗口尺寸
         int win_width, win_height;
         SDL_GetWindowSize(window->GetSDLWindow(), &win_width, &win_height);
@@ -134,7 +133,11 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
         
         // 获取 DevTools 面板区域
         float panel_x, panel_y, panel_width, panel_height;
-        devtools.GetPanelBounds(width, height, panel_x, panel_y, panel_width, panel_height);
+        const auto panel_bounds = DevToolsGetPanelBounds(width, height);
+        panel_x = panel_bounds.x;
+        panel_y = panel_bounds.y;
+        panel_width = panel_bounds.width;
+        panel_height = panel_bounds.height;
         
         // 检查鼠标是否在 DevTools 面板区域内
         bool in_panel = (logical_x >= panel_x && logical_x < panel_x + panel_width &&
@@ -144,7 +147,7 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
             // 将滚轮事件传递给 DevTools
             int rel_x = static_cast<int>(logical_x - panel_x);
             int rel_y = static_cast<int>(logical_y - panel_y);
-            if (devtools.HandleMouseWheel(rel_x, rel_y, wheel_x, wheel_y)) {
+            if (DevToolsHandleMouseWheel(rel_x, rel_y, wheel_x, wheel_y)) {
                 window->SetNeedsRepaintFor(RepaintReason::DevTools);
                 return true;  // 事件被 DevTools 消费
             }

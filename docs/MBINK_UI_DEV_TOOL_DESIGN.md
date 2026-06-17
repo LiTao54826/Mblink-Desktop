@@ -126,7 +126,9 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 - 响应格式：`{"jsonrpc":"2.0","id":1,"result":{...}}`
 - 错误格式：`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"...","data":{...}}}`
 
-**后期扩展（P4）**：HTTP + SSE，支持 IDE 插件场景。
+**当前开发态 HTTP MCP**：`mbink_devtools.dll` 提供运行时内的本地 Streamable HTTP MCP 端点，只负责 live UI snapshot / query / inspect / click / input / scroll / highlight。该端点仅绑定 localhost，校验 Origin，并默认要求 bearer 或 `X-MBINK-DevTools-Token` token。
+
+`mbink-ui-dev serve` 仍是项目管理、脚手架、构建、watch、日志和资源读取的 stdio MCP 适配层；HTTP MCP 不接管这些项目级能力。
 
 ---
 
@@ -1242,6 +1244,7 @@ if (typeof __mbink_mock_host__ !== 'undefined') {
   },
   "mcp": {
     "transport": "stdio",
+    "runtime_http_transport": "mbink_devtools.dll /mcp when explicitly enabled",
     "snapshot_include_screenshot": true,
     "snapshot_max_depth": 20
   }
@@ -1527,7 +1530,8 @@ Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何
 **目标**：覆盖更多使用场景和集成方式。
 
 **交付物**：
-- [ ] HTTP + SSE 传输层（支持 IDE 插件集成）
+- [x] Dev runtime Streamable HTTP MCP transport in `mbink_devtools.dll` for UI analysis/control
+- [ ] HTTP notifications / SSE push for build status and file change events
 - [ ] 更多模板生态完善（如官方示例扩展、宿主集成增强）
 - [ ] MCP Notification：构建状态、文件变更事件推送给 AI
 - [ ] snapshot 性能优化（懒加载子树 + max_depth 控制）

@@ -19,6 +19,7 @@ c_void_p = ctypes.c_void_p
 c_float = ctypes.c_float
 c_size_t = ctypes.c_size_t
 c_uint32 = ctypes.c_uint32
+c_ushort = ctypes.c_ushort
 POINTER = ctypes.POINTER
 
 # ========== 回调类型 ==========
@@ -75,6 +76,23 @@ class MBinkUiDevSnapshotOptions(ctypes.Structure):
         ("include_screenshot", c_bool),
         ("inline_screenshot", c_bool),
         ("screenshot_file", c_char_p),
+    ]
+
+
+class MBinkDevToolsHttpOptions(ctypes.Structure):
+    _fields_ = [
+        ("bind_host", c_char_p),
+        ("port", c_ushort),
+        ("auth_token", c_char_p),
+        ("require_auth", c_bool),
+    ]
+
+
+class MBinkDevToolsHttpInfo(ctypes.Structure):
+    _fields_ = [
+        ("port", c_ushort),
+        ("url", c_char_p),
+        ("auth_token", c_char_p),
     ]
 
 
@@ -289,6 +307,14 @@ def _bind_functions(lib):
     lib.mbink_devtools_open.argtypes = [H]
     lib.mbink_devtools_close.restype = c_int
     lib.mbink_devtools_close.argtypes = [H]
+    lib.mbink_devtools_default_http_options.restype = MBinkDevToolsHttpOptions
+    lib.mbink_devtools_default_http_options.argtypes = []
+    lib.mbink_devtools_http_start.restype = c_int
+    lib.mbink_devtools_http_start.argtypes = [H, POINTER(MBinkDevToolsHttpOptions), POINTER(MBinkDevToolsHttpInfo)]
+    lib.mbink_devtools_http_stop.restype = c_int
+    lib.mbink_devtools_http_stop.argtypes = [H]
+    lib.mbink_devtools_http_info_free.restype = None
+    lib.mbink_devtools_http_info_free.argtypes = [POINTER(MBinkDevToolsHttpInfo)]
     lib.mbink_observe_set_callback.restype = c_int
     lib.mbink_observe_set_callback.argtypes = [H, MBinkObserveCallback, c_void_p]
     lib.mbink_observe_console_json.restype = c_int

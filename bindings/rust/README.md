@@ -38,6 +38,8 @@ On Windows runtime dynamic loading looks for the DLL in this order:
 2. `bindings/rust/mbink-sys/runtime/mbink.dll`
 3. `mbink.dll` from the process working directory / system search path
 
+`mbink_devtools.dll` is development-only and is not vendored by the Rust binding package. When `App::enable_devtools_http` or `App::devtools_http_session` is used, the shared C API resolves it from `MBINK_DEVTOOLS_PATH` first, then from the loaded `mbink.dll` directory.
+
 ## Build
 
 From `bindings/rust/`:
@@ -212,6 +214,7 @@ Use `RESOURCE_FLAG_BYTECODE` or `ResourceFile::is_bytecode()` to detect whether 
 - DevTools helpers:
   - `devtools_open`
   - `devtools_close`
+  - `enable_devtools_http` / `devtools_http_session`
 - basic event callbacks:
   - `on_resize`
   - `on_close`

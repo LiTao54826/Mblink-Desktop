@@ -64,6 +64,7 @@ endif()
 
 # 链接窗口模块
 target_link_libraries(mbink_event PUBLIC mbink_window)
+target_link_libraries(mbink_event PUBLIC mbink_devtools_bridge)
 
 # 链接编辑模块（用于 DragManager, SelectionManager 等）
 target_link_libraries(mbink_event PUBLIC mbink_editing)

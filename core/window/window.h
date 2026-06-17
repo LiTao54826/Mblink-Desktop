@@ -598,6 +598,8 @@ public:
      * @brief 投递任务到窗口所属 UI 线程执行
      */
     void PostUiTask(std::function<void()> task);
+    void SetUiTaskWakeCallback(std::function<void()> callback);
+    bool HasPendingUiTasks() const;
 
     /**
      * @brief 执行已投递的 UI 线程任务
@@ -745,8 +747,9 @@ private:
     bool should_close_ = false;
     RenderBackend actual_backend_ = RenderBackend::AUTO;  // 实际使用的渲染后端
     bool ui_tasks_accepting_ = true;
-    std::mutex ui_tasks_mutex_;
+    mutable std::mutex ui_tasks_mutex_;
     std::vector<std::function<void()>> ui_tasks_;
+    std::function<void()> ui_task_wake_callback_;
 
     // 事件回调（简单回调）
     std::function<void(int, int)> on_resize_callback_;

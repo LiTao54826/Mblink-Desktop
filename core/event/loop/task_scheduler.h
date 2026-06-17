@@ -138,6 +138,10 @@ public:
      * @return true 如果有待处理的任务
      */
     bool HasPendingTasks() const;
+
+    bool HasReadyTasks() const;
+    int64_t MillisecondsUntilNextTask() const;
+    bool HasPendingAnimationFrames() const;
     
     /**
      * @brief 清除所有任务

@@ -105,14 +105,34 @@ pub struct MBinkUiDevSnapshotOptions {
     pub screenshot_file: *const c_char,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MBinkDevToolsHttpOptions {
+    pub bind_host: *const c_char,
+    pub port: u16,
+    pub auth_token: *const c_char,
+    pub require_auth: bool,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MBinkDevToolsHttpInfo {
+    pub port: u16,
+    pub url: *mut c_char,
+    pub auth_token: *mut c_char,
+}
+
 pub type MBinkCallback = Option<unsafe extern "C" fn(*const c_char, *mut c_void) -> *mut c_char>;
-pub type MBinkAsyncCallback = Option<unsafe extern "C" fn(*const c_char, *mut c_void) -> *mut c_char>;
-pub type MBinkStateCallback = Option<unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void)>;
+pub type MBinkAsyncCallback =
+    Option<unsafe extern "C" fn(*const c_char, *mut c_void) -> *mut c_char>;
+pub type MBinkStateCallback =
+    Option<unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void)>;
 pub type MBinkResizeCallback = Option<unsafe extern "C" fn(c_int, c_int, *mut c_void)>;
 pub type MBinkVoidCallback = Option<unsafe extern "C" fn(*mut c_void)>;
 pub type MBinkBoolCallback = Option<unsafe extern "C" fn(*mut c_void) -> bool>;
 pub type MBinkUpdateCallback = Option<unsafe extern "C" fn(f32, *mut c_void)>;
-pub type MBinkObserveCallback = Option<unsafe extern "C" fn(MBinkObserveKind, *const c_char, *mut c_void)>;
+pub type MBinkObserveCallback =
+    Option<unsafe extern "C" fn(MBinkObserveKind, *const c_char, *mut c_void)>;
 
 #[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
 extern "C" {
@@ -129,9 +149,17 @@ extern "C" {
     pub fn mbink_stop(handle: MBinkHandle);
     pub fn mbink_poll_events(handle: MBinkHandle) -> bool;
     pub fn mbink_default_runtime_options() -> MBinkRuntimeOptions;
-    pub fn mbink_configure_runtime(handle: MBinkHandle, options: *const MBinkRuntimeOptions) -> c_int;
-    pub fn mbink_load_embedded_runtime(handle: MBinkHandle, include_official_preact: bool) -> c_int;
-    pub fn mbink_load_entry_file(handle: MBinkHandle, entry_path: *const c_char, execute_html_scripts: bool) -> c_int;
+    pub fn mbink_configure_runtime(
+        handle: MBinkHandle,
+        options: *const MBinkRuntimeOptions,
+    ) -> c_int;
+    pub fn mbink_load_embedded_runtime(handle: MBinkHandle, include_official_preact: bool)
+        -> c_int;
+    pub fn mbink_load_entry_file(
+        handle: MBinkHandle,
+        entry_path: *const c_char,
+        execute_html_scripts: bool,
+    ) -> c_int;
     pub fn mbink_load_module_file(handle: MBinkHandle, entry_path: *const c_char) -> c_int;
     pub fn mbink_render_frame(handle: MBinkHandle, passes: c_int) -> c_int;
     pub fn mbink_runtime_epoch(handle: MBinkHandle, out_epoch: *mut *mut c_char) -> c_int;
@@ -143,8 +171,16 @@ extern "C" {
     pub fn mbink_tray_destroy(handle: MBinkHandle) -> c_int;
     pub fn mbink_tray_set_tooltip(handle: MBinkHandle, tooltip: *const c_char) -> c_int;
     pub fn mbink_tray_set_menu(handle: MBinkHandle, menu_json: *const c_char) -> c_int;
-    pub fn mbink_tray_set_left_click_callback(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_tray_set_menu_callback(handle: MBinkHandle, callback: MBinkCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_tray_set_left_click_callback(
+        handle: MBinkHandle,
+        callback: MBinkVoidCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_tray_set_menu_callback(
+        handle: MBinkHandle,
+        callback: MBinkCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
     pub fn mbink_set_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int;
     pub fn mbink_get_size(handle: MBinkHandle, width: *mut c_int, height: *mut c_int) -> c_int;
     pub fn mbink_set_position(handle: MBinkHandle, x: c_int, y: c_int) -> c_int;
@@ -164,43 +200,134 @@ extern "C" {
     pub fn mbink_load_html(handle: MBinkHandle, html: *const c_char) -> c_int;
     pub fn mbink_load_html_file(handle: MBinkHandle, filepath: *const c_char) -> c_int;
     pub fn mbink_eval_js(handle: MBinkHandle, code: *const c_char) -> c_int;
-    pub fn mbink_eval_module(handle: MBinkHandle, code: *const c_char, filename: *const c_char) -> c_int;
+    pub fn mbink_eval_module(
+        handle: MBinkHandle,
+        code: *const c_char,
+        filename: *const c_char,
+    ) -> c_int;
     pub fn mbink_load_js_file(handle: MBinkHandle, filepath: *const c_char) -> c_int;
     pub fn mbink_load_bytecode(handle: MBinkHandle, data: *const c_void, size: usize) -> c_int;
-    pub fn mbink_compile_resources(input_path: *const c_char, output_file: *const c_char, encryption_key: *const c_char) -> c_int;
-    pub fn mbink_load_resource_file(package_file: *const c_char, resource_path: *const c_char, encryption_key: *const c_char, out_data: *mut *mut c_void, out_size: *mut usize, out_flags: *mut u32) -> c_int;
-    pub fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *const c_char, encryption_key: *const c_char, mount_point: *const c_char) -> c_int;
-    pub fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int;
+    pub fn mbink_compile_resources(
+        input_path: *const c_char,
+        output_file: *const c_char,
+        encryption_key: *const c_char,
+    ) -> c_int;
+    pub fn mbink_load_resource_file(
+        package_file: *const c_char,
+        resource_path: *const c_char,
+        encryption_key: *const c_char,
+        out_data: *mut *mut c_void,
+        out_size: *mut usize,
+        out_flags: *mut u32,
+    ) -> c_int;
+    pub fn mbink_mount_resource_package(
+        handle: MBinkHandle,
+        package_file: *const c_char,
+        encryption_key: *const c_char,
+        mount_point: *const c_char,
+    ) -> c_int;
+    pub fn mbink_emit(
+        handle: MBinkHandle,
+        event_name: *const c_char,
+        data_json: *const c_char,
+    ) -> c_int;
     pub fn mbink_devtools_open(handle: MBinkHandle) -> c_int;
     pub fn mbink_devtools_close(handle: MBinkHandle) -> c_int;
-    pub fn mbink_observe_set_callback(handle: MBinkHandle, callback: MBinkObserveCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_devtools_default_http_options() -> MBinkDevToolsHttpOptions;
+    pub fn mbink_devtools_http_start(
+        handle: MBinkHandle,
+        options: *const MBinkDevToolsHttpOptions,
+        out_info: *mut MBinkDevToolsHttpInfo,
+    ) -> c_int;
+    pub fn mbink_devtools_http_stop(handle: MBinkHandle) -> c_int;
+    pub fn mbink_devtools_http_info_free(info: *mut MBinkDevToolsHttpInfo);
+    pub fn mbink_observe_set_callback(
+        handle: MBinkHandle,
+        callback: MBinkObserveCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
     pub fn mbink_observe_console_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
     pub fn mbink_observe_errors_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
     pub fn mbink_observe_lifecycle_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
     pub fn mbink_observe_clear(handle: MBinkHandle, kind: MBinkObserveKind) -> c_int;
     pub fn mbink_ui_dev_default_snapshot_options() -> MBinkUiDevSnapshotOptions;
-    pub fn mbink_ui_dev_snapshot_json(handle: MBinkHandle, options: *const MBinkUiDevSnapshotOptions, out_json: *mut *mut c_char) -> c_int;
-    pub fn mbink_ui_dev_snapshot_file(handle: MBinkHandle, output_path: *const c_char, options: *const MBinkUiDevSnapshotOptions) -> c_int;
-    pub fn mbink_ui_dev_command_json(handle: MBinkHandle, command_json: *const c_char, out_response_json: *mut *mut c_char) -> c_int;
+    pub fn mbink_ui_dev_snapshot_json(
+        handle: MBinkHandle,
+        options: *const MBinkUiDevSnapshotOptions,
+        out_json: *mut *mut c_char,
+    ) -> c_int;
+    pub fn mbink_ui_dev_snapshot_file(
+        handle: MBinkHandle,
+        output_path: *const c_char,
+        options: *const MBinkUiDevSnapshotOptions,
+    ) -> c_int;
+    pub fn mbink_ui_dev_command_json(
+        handle: MBinkHandle,
+        command_json: *const c_char,
+        out_response_json: *mut *mut c_char,
+    ) -> c_int;
 
     pub fn mbink_state_create_null(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_create_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int;
     pub fn mbink_state_create_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int;
-    pub fn mbink_state_create_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int;
-    pub fn mbink_state_create_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int;
+    pub fn mbink_state_create_double(handle: MBinkHandle, name: *const c_char, value: f64)
+        -> c_int;
+    pub fn mbink_state_create_string(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
     pub fn mbink_state_create_array(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_create_object(handle: MBinkHandle, name: *const c_char) -> c_int;
-    pub fn mbink_state_create_json(handle: MBinkHandle, name: *const c_char, json: *const c_char) -> c_int;
+    pub fn mbink_state_create_json(
+        handle: MBinkHandle,
+        name: *const c_char,
+        json: *const c_char,
+    ) -> c_int;
 
-    pub fn mbink_bind(handle: MBinkHandle, name: *const c_char, callback: MBinkCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_bind_async(handle: MBinkHandle, name: *const c_char, callback: MBinkAsyncCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_bind(
+        handle: MBinkHandle,
+        name: *const c_char,
+        callback: MBinkCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_bind_async(
+        handle: MBinkHandle,
+        name: *const c_char,
+        callback: MBinkAsyncCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
     pub fn mbink_unbind(handle: MBinkHandle, name: *const c_char);
-    pub fn mbink_on_resize(handle: MBinkHandle, callback: MBinkResizeCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_on_close(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_on_close_request(handle: MBinkHandle, callback: MBinkBoolCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_on_focus(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_on_blur(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;
-    pub fn mbink_on_update(handle: MBinkHandle, callback: MBinkUpdateCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_on_resize(
+        handle: MBinkHandle,
+        callback: MBinkResizeCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_on_close(
+        handle: MBinkHandle,
+        callback: MBinkVoidCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_on_close_request(
+        handle: MBinkHandle,
+        callback: MBinkBoolCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_on_focus(
+        handle: MBinkHandle,
+        callback: MBinkVoidCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_on_blur(
+        handle: MBinkHandle,
+        callback: MBinkVoidCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
+    pub fn mbink_on_update(
+        handle: MBinkHandle,
+        callback: MBinkUpdateCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
 
     pub fn mbink_state_exists(handle: MBinkHandle, name: *const c_char) -> bool;
     pub fn mbink_state_type(handle: MBinkHandle, name: *const c_char) -> MBinkType;
@@ -211,40 +338,146 @@ extern "C" {
     pub fn mbink_state_get_string(handle: MBinkHandle, name: *const c_char) -> *const c_char;
     pub fn mbink_state_get_length(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_get_json(handle: MBinkHandle, name: *const c_char) -> *mut c_char;
-    pub fn mbink_state_get_at(handle: MBinkHandle, name: *const c_char, index: c_int) -> *mut c_char;
-    pub fn mbink_state_get_key(handle: MBinkHandle, name: *const c_char, key: *const c_char) -> *mut c_char;
+    pub fn mbink_state_get_at(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+    ) -> *mut c_char;
+    pub fn mbink_state_get_key(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+    ) -> *mut c_char;
     pub fn mbink_state_set_null(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_set_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int;
     pub fn mbink_state_set_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int;
     pub fn mbink_state_set_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int;
-    pub fn mbink_state_set_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int;
-    pub fn mbink_state_set_json(handle: MBinkHandle, name: *const c_char, json: *const c_char) -> c_int;
-    pub fn mbink_state_array_push(handle: MBinkHandle, name: *const c_char, item_json: *const c_char) -> c_int;
-    pub fn mbink_state_array_push_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int;
-    pub fn mbink_state_array_push_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int;
-    pub fn mbink_state_array_push_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int;
-    pub fn mbink_state_array_push_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int;
+    pub fn mbink_state_set_string(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_set_json(
+        handle: MBinkHandle,
+        name: *const c_char,
+        json: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_array_push(
+        handle: MBinkHandle,
+        name: *const c_char,
+        item_json: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_array_push_int(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: i64,
+    ) -> c_int;
+    pub fn mbink_state_array_push_double(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: f64,
+    ) -> c_int;
+    pub fn mbink_state_array_push_string(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_array_push_bool(
+        handle: MBinkHandle,
+        name: *const c_char,
+        value: bool,
+    ) -> c_int;
     pub fn mbink_state_array_pop(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_array_shift(handle: MBinkHandle, name: *const c_char) -> c_int;
-    pub fn mbink_state_array_unshift(handle: MBinkHandle, name: *const c_char, item_json: *const c_char) -> c_int;
-    pub fn mbink_state_array_remove(handle: MBinkHandle, name: *const c_char, index: c_int) -> c_int;
+    pub fn mbink_state_array_unshift(
+        handle: MBinkHandle,
+        name: *const c_char,
+        item_json: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_array_remove(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+    ) -> c_int;
     pub fn mbink_state_array_clear(handle: MBinkHandle, name: *const c_char) -> c_int;
-    pub fn mbink_state_array_set(handle: MBinkHandle, name: *const c_char, index: c_int, item_json: *const c_char) -> c_int;
-    pub fn mbink_state_array_set_int(handle: MBinkHandle, name: *const c_char, index: c_int, value: i64) -> c_int;
-    pub fn mbink_state_array_set_double(handle: MBinkHandle, name: *const c_char, index: c_int, value: f64) -> c_int;
-    pub fn mbink_state_array_set_string(handle: MBinkHandle, name: *const c_char, index: c_int, value: *const c_char) -> c_int;
-    pub fn mbink_state_object_set(handle: MBinkHandle, name: *const c_char, key: *const c_char, value_json: *const c_char) -> c_int;
-    pub fn mbink_state_object_set_int(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: i64) -> c_int;
-    pub fn mbink_state_object_set_double(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: f64) -> c_int;
-    pub fn mbink_state_object_set_string(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: *const c_char) -> c_int;
-    pub fn mbink_state_object_set_bool(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: bool) -> c_int;
-    pub fn mbink_state_object_remove(handle: MBinkHandle, name: *const c_char, key: *const c_char) -> c_int;
+    pub fn mbink_state_array_set(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+        item_json: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_array_set_int(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+        value: i64,
+    ) -> c_int;
+    pub fn mbink_state_array_set_double(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+        value: f64,
+    ) -> c_int;
+    pub fn mbink_state_array_set_string(
+        handle: MBinkHandle,
+        name: *const c_char,
+        index: c_int,
+        value: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_object_set(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+        value_json: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_object_set_int(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+        value: i64,
+    ) -> c_int;
+    pub fn mbink_state_object_set_double(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+        value: f64,
+    ) -> c_int;
+    pub fn mbink_state_object_set_string(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_object_set_bool(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+        value: bool,
+    ) -> c_int;
+    pub fn mbink_state_object_remove(
+        handle: MBinkHandle,
+        name: *const c_char,
+        key: *const c_char,
+    ) -> c_int;
     pub fn mbink_state_object_clear(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_increment(handle: MBinkHandle, name: *const c_char, delta: f64) -> c_int;
     pub fn mbink_state_multiply(handle: MBinkHandle, name: *const c_char, factor: f64) -> c_int;
-    pub fn mbink_state_string_append(handle: MBinkHandle, name: *const c_char, suffix: *const c_char) -> c_int;
-    pub fn mbink_state_string_prepend(handle: MBinkHandle, name: *const c_char, prefix: *const c_char) -> c_int;
-    pub fn mbink_state_watch(handle: MBinkHandle, name: *const c_char, callback: MBinkStateCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_state_string_append(
+        handle: MBinkHandle,
+        name: *const c_char,
+        suffix: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_string_prepend(
+        handle: MBinkHandle,
+        name: *const c_char,
+        prefix: *const c_char,
+    ) -> c_int;
+    pub fn mbink_state_watch(
+        handle: MBinkHandle,
+        name: *const c_char,
+        callback: MBinkStateCallback,
+        user_data: *mut c_void,
+    ) -> c_int;
     pub fn mbink_state_unwatch(handle: MBinkHandle, watch_id: c_int);
     pub fn mbink_state_batch_begin(handle: MBinkHandle);
     pub fn mbink_state_batch_end(handle: MBinkHandle);
@@ -254,12 +487,29 @@ extern "C" {
 
     pub fn mbink_shared_create(handle: MBinkHandle, name: *const c_char) -> MBinkSharedHandle;
     pub fn mbink_shared_destroy(shared: MBinkSharedHandle);
-    pub fn mbink_shared_set_int(shared: MBinkSharedHandle, key: *const c_char, value: i64) -> c_int;
-    pub fn mbink_shared_set_double(shared: MBinkSharedHandle, key: *const c_char, value: f64) -> c_int;
-    pub fn mbink_shared_set_string(shared: MBinkSharedHandle, key: *const c_char, value: *const c_char) -> c_int;
-    pub fn mbink_shared_set_bool(shared: MBinkSharedHandle, key: *const c_char, value: bool) -> c_int;
+    pub fn mbink_shared_set_int(shared: MBinkSharedHandle, key: *const c_char, value: i64)
+        -> c_int;
+    pub fn mbink_shared_set_double(
+        shared: MBinkSharedHandle,
+        key: *const c_char,
+        value: f64,
+    ) -> c_int;
+    pub fn mbink_shared_set_string(
+        shared: MBinkSharedHandle,
+        key: *const c_char,
+        value: *const c_char,
+    ) -> c_int;
+    pub fn mbink_shared_set_bool(
+        shared: MBinkSharedHandle,
+        key: *const c_char,
+        value: bool,
+    ) -> c_int;
     pub fn mbink_shared_set_null(shared: MBinkSharedHandle, key: *const c_char) -> c_int;
-    pub fn mbink_shared_set_json(shared: MBinkSharedHandle, key: *const c_char, json: *const c_char) -> c_int;
+    pub fn mbink_shared_set_json(
+        shared: MBinkSharedHandle,
+        key: *const c_char,
+        json: *const c_char,
+    ) -> c_int;
     pub fn mbink_shared_get_int(shared: MBinkSharedHandle, key: *const c_char) -> i64;
     pub fn mbink_shared_get_double(shared: MBinkSharedHandle, key: *const c_char) -> f64;
     pub fn mbink_shared_get_string(shared: MBinkSharedHandle, key: *const c_char) -> *mut c_char;
@@ -273,16 +523,25 @@ extern "C" {
 
     pub fn mbink_logview_get(handle: MBinkHandle, element_id: *const c_char) -> MBinkLogViewHandle;
     pub fn mbink_logview_destroy(logview: MBinkLogViewHandle);
-    pub fn mbink_logview_append(logview: MBinkLogViewHandle, level: *const c_char, source: *const c_char, message: *const c_char) -> c_int;
+    pub fn mbink_logview_append(
+        logview: MBinkLogViewHandle,
+        level: *const c_char,
+        source: *const c_char,
+        message: *const c_char,
+    ) -> c_int;
     pub fn mbink_logview_clear(logview: MBinkLogViewHandle);
     pub fn mbink_logview_export(logview: MBinkLogViewHandle, format: *const c_char) -> *mut c_char;
 
-    pub fn mbink_terminal_get(handle: MBinkHandle, element_id: *const c_char) -> MBinkTerminalHandle;
+    pub fn mbink_terminal_get(
+        handle: MBinkHandle,
+        element_id: *const c_char,
+    ) -> MBinkTerminalHandle;
     pub fn mbink_terminal_destroy(terminal: MBinkTerminalHandle);
     pub fn mbink_terminal_write(terminal: MBinkTerminalHandle, data: *const c_char) -> c_int;
     pub fn mbink_terminal_clear(terminal: MBinkTerminalHandle);
     pub fn mbink_terminal_execute(terminal: MBinkTerminalHandle, command: *const c_char) -> c_int;
-    pub fn mbink_terminal_start_shell(terminal: MBinkTerminalHandle, shell: *const c_char) -> c_int;
+    pub fn mbink_terminal_start_shell(terminal: MBinkTerminalHandle, shell: *const c_char)
+        -> c_int;
     pub fn mbink_terminal_send_input(terminal: MBinkTerminalHandle, input: *const c_char) -> c_int;
     pub fn mbink_terminal_resize(terminal: MBinkTerminalHandle, rows: c_int, cols: c_int);
     pub fn mbink_terminal_serialize(terminal: MBinkTerminalHandle) -> *mut c_char;

@@ -799,6 +799,9 @@ int main(int argc, char** argv) {
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
         EventLoop event_loop(task_scheduler);
         event_loop.SetQuickJSRuntime(runtime.get());
+        window->SetUiTaskWakeCallback([&event_loop]() {
+            event_loop.Wake();
+        });
         WindowBindings::SetActiveEventLoop(&event_loop);
         LOG("  ✓ Event loop created");
 

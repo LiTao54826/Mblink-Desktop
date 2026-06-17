@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -66,6 +67,7 @@ void printUsage(const char* program_name) {
     std::cout << "  --no-scripts\n";
     std::cout << "  --no-official-preact\n";
     std::cout << "  --devtools\n";
+    std::cout << "  --devtools-http-mcp [--devtools-http-port <n>] [--devtools-http-token <token>]\n";
     std::cout << "  --ui-dev-snapshot-file <path>\n";
     std::cout << "  --ui-dev-command-file <path>\n";
     std::cout << "  --ui-dev-response-file <path>\n";
@@ -97,6 +99,9 @@ struct Options {
     int max_height = 0;
     bool execute_scripts = true;
     bool load_official_preact = true;
+    bool devtools_http_mcp = false;
+    unsigned short devtools_http_port = 0;
+    std::string devtools_http_token;
     float quit_after_seconds = 0.0f;
     std::string snapshot_file;
     std::string command_file;
@@ -112,6 +117,30 @@ struct Options {
     bool snapshot_inline_screenshot = false;
     std::string snapshot_screenshot_file;
 };
+
+struct UiDevRuntimeState {
+    std::optional<fs::file_time_type> last_command_write_time;
+    std::chrono::steady_clock::time_point next_observability_flush =
+        (std::chrono::steady_clock::time_point::min)();
+};
+
+bool hasObservabilityFiles(const Options& options) {
+    return !options.console_file.empty() ||
+           !options.errors_file.empty() ||
+           !options.lifecycle_file.empty();
+}
+
+bool hasCommandChannel(const Options& options) {
+    return !options.command_file.empty() && !options.response_file.empty();
+}
+
+bool usesUiDevRuntime(const Options& options) {
+    return options.open_devtools ||
+           options.devtools_http_mcp ||
+           !options.snapshot_file.empty() ||
+           hasCommandChannel(options) ||
+           hasObservabilityFiles(options);
+}
 
 bool parseArgs(int argc, char** argv, Options* options) {
     for (int i = 1; i < argc; ++i) {
@@ -135,6 +164,12 @@ bool parseArgs(int argc, char** argv, Options* options) {
             if (auto* v = needValue("--title")) options->title = v;
         } else if (arg == "--devtools") {
             options->open_devtools = true;
+        } else if (arg == "--devtools-http-mcp") {
+            options->devtools_http_mcp = true;
+        } else if (arg == "--devtools-http-port") {
+            if (auto* v = needValue("--devtools-http-port")) options->devtools_http_port = static_cast<unsigned short>(std::stoi(v));
+        } else if (arg == "--devtools-http-token") {
+            if (auto* v = needValue("--devtools-http-token")) options->devtools_http_token = v;
         } else if (arg == "--borderless") {
             options->borderless = true;
         } else if (arg == "--transparent") {
@@ -210,9 +245,32 @@ void writeObservabilityFiles(MBinkHandle handle, const Options& options) {
     writeOwnedJsonFile(options.lifecycle_file, mbink_observe_lifecycle_json, handle);
 }
 
-void handleCommandFile(MBinkHandle handle, const Options& options, std::string* last_command_id) {
-    if (options.command_file.empty() || options.response_file.empty()) return;
-    if (!fs::exists(options.command_file)) return;
+void maybeWriteObservabilityFiles(MBinkHandle handle,
+                                  const Options& options,
+                                  UiDevRuntimeState* state,
+                                  bool force = false) {
+    if (!hasObservabilityFiles(options) || !state) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (!force && now < state->next_observability_flush) return;
+    writeObservabilityFiles(handle, options);
+    state->next_observability_flush = now + std::chrono::milliseconds(250);
+}
+
+void handleCommandFile(MBinkHandle handle,
+                       const Options& options,
+                       std::string* last_command_id,
+                       UiDevRuntimeState* state) {
+    if (!hasCommandChannel(options) || !state) return;
+    std::error_code ec;
+    if (!fs::exists(options.command_file, ec) || ec) return;
+
+    const auto write_time = fs::last_write_time(options.command_file, ec);
+    if (ec) return;
+    if (state->last_command_write_time && *state->last_command_write_time == write_time) {
+        return;
+    }
+    state->last_command_write_time = write_time;
+
     const auto content = readFile(options.command_file);
     if (content.empty()) return;
 
@@ -241,6 +299,26 @@ void handleCommandFile(MBinkHandle handle, const Options& options, std::string* 
     if (response) mbink_free(response);
 }
 
+bool startDevToolsHttpMcp(MBinkHandle handle,
+                          const Options& options,
+                          MBinkDevToolsHttpInfo* info) {
+    if (!options.devtools_http_mcp || !info) return true;
+    auto http_options = mbink_devtools_default_http_options();
+    http_options.port = options.devtools_http_port;
+    http_options.auth_token = options.devtools_http_token.empty() ? nullptr : options.devtools_http_token.c_str();
+    http_options.require_auth = true;
+    if (mbink_devtools_http_start(handle, &http_options, info) != MBINK_OK) {
+        std::cerr << "devtools HTTP MCP failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+        return false;
+    }
+    std::cout << nlohmann::json{{"event", "devtools_http_mcp"},
+                                {"url", info->url ? info->url : ""},
+                                {"port", info->port},
+                                {"auth_token", info->auth_token ? info->auth_token : ""}}.dump()
+              << std::endl;
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -258,6 +336,10 @@ int main(int argc, char** argv) {
     }
     if (!fs::exists(options.entry_path)) {
         std::cerr << "error: file not found: " << options.entry_path << "\n";
+        return 1;
+    }
+    if ((!options.command_file.empty() || !options.response_file.empty()) && !hasCommandChannel(options)) {
+        std::cerr << "error: --ui-dev-command-file and --ui-dev-response-file must be used together\n";
         return 1;
     }
 
@@ -304,21 +386,33 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const bool ui_dev_enabled = usesUiDevRuntime(options);
     if (options.open_devtools) {
-        mbink_devtools_open(app);
+        if (mbink_devtools_open(app) != MBINK_OK) {
+            std::cerr << "devtools failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+        }
     }
 
     mbink_show(app);
     mbink_render_frame(app, 2);
     mbink_poll_events(app);
     writeSnapshotIfRequested(app, options);
-    writeObservabilityFiles(app, options);
+    UiDevRuntimeState ui_dev_state;
+    MBinkDevToolsHttpInfo http_info{};
+    if (!startDevToolsHttpMcp(app, options, &http_info)) {
+        mbink_destroy(app);
+        mbink_cleanup();
+        return 1;
+    }
+    maybeWriteObservabilityFiles(app, options, &ui_dev_state, true);
 
     auto start = std::chrono::steady_clock::now();
     std::string last_command_id;
     while (mbink_poll_events(app)) {
-        handleCommandFile(app, options, &last_command_id);
-        writeObservabilityFiles(app, options);
+        if (ui_dev_enabled) {
+            handleCommandFile(app, options, &last_command_id, &ui_dev_state);
+            maybeWriteObservabilityFiles(app, options, &ui_dev_state);
+        }
 
         if (options.quit_after_seconds > 0.0f) {
             const auto elapsed = std::chrono::duration<float>(
@@ -328,10 +422,15 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        const auto sleep_ms = ui_dev_enabled ? 2 : 8;
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
     }
 
-    writeObservabilityFiles(app, options);
+    maybeWriteObservabilityFiles(app, options, &ui_dev_state, true);
+    if (options.devtools_http_mcp) {
+        mbink_devtools_http_stop(app);
+        mbink_devtools_http_info_free(&http_info);
+    }
     mbink_destroy(app);
     mbink_cleanup();
     return 0;

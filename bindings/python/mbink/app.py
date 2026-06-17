@@ -11,12 +11,13 @@ import inspect
 import warnings
 import asyncio
 import threading
+import urllib.request
 from .controls import LogView, Terminal
 from .resources import RESOURCE_FLAG_BYTECODE, load_resource_file
 from ._ffi import (
     load_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
     MBinkVoidCallback, MBinkBoolCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
-    POINTER,
+    MBinkDevToolsHttpInfo, POINTER,
 )
 
 
@@ -848,6 +849,57 @@ class App:
         self._ensure_alive()
         self._lib.mbink_devtools_close(self._handle)
 
+    def enable_devtools(self, *, http_mcp=False, port=0, auth_token=None, require_auth=True, bind_host=None):
+        self._ensure_alive()
+        if http_mcp:
+            return self.devtools_http_session(
+                port=port,
+                auth_token=auth_token,
+                require_auth=require_auth,
+                bind_host=bind_host,
+            )
+        self._lib.mbink_devtools_open(self._handle)
+        return None
+
+    def devtools_http_session(self, *, port=0, auth_token=None, require_auth=True, bind_host=None):
+        self._ensure_alive()
+        options = self._lib.mbink_devtools_default_http_options()
+        keepalive = []
+        if bind_host is not None:
+            encoded = str(bind_host).encode("utf-8")
+            keepalive.append(encoded)
+            options.bind_host = encoded
+        if auth_token is not None:
+            encoded = str(auth_token).encode("utf-8")
+            keepalive.append(encoded)
+            options.auth_token = encoded
+        options.port = int(port)
+        options.require_auth = bool(require_auth)
+        raw_info = MBinkDevToolsHttpInfo()
+        ret = self._lib.mbink_devtools_http_start(
+            self._handle, ctypes.byref(options), ctypes.byref(raw_info)
+        )
+        keepalive.clear()
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown devtools http error"
+            raise RuntimeError(msg)
+        try:
+            url = raw_info.url.decode("utf-8") if raw_info.url else ""
+            token = raw_info.auth_token.decode("utf-8") if raw_info.auth_token else ""
+            return DevToolsHttpSession(self, url, int(raw_info.port), token, bool(require_auth))
+        finally:
+            self._lib.mbink_devtools_http_info_free(ctypes.byref(raw_info))
+
+    def devtools_http_stop(self):
+        self._ensure_alive()
+        ret = self._lib.mbink_devtools_http_stop(self._handle)
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown devtools http stop error"
+            raise RuntimeError(msg)
+        return self
+
 
 class _BatchContext:
     """with app.batch(): 批量更新状态"""
@@ -864,3 +916,30 @@ class _BatchContext:
     def __exit__(self, *args):
         if self._handle:
             self._lib.mbink_state_batch_end(self._handle)
+
+
+class DevToolsHttpSession:
+    def __init__(self, app, url: str, port: int, auth_token: str, require_auth: bool):
+        self._app = app
+        self.url = url
+        self.port = port
+        self.auth_token = auth_token
+        self.require_auth = require_auth
+        self._next_id = 1
+
+    def request(self, method: str, params=None):
+        request_id = self._next_id
+        self._next_id += 1
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": method}
+        if params is not None:
+            payload["params"] = params
+        headers = {"Content-Type": "application/json"}
+        if self.auth_token:
+            headers["X-MBINK-DevTools-Token"] = self.auth_token
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(self.url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def stop(self):
+        self._app.devtools_http_stop()

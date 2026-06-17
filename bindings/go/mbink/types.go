@@ -63,7 +63,23 @@ type UiDevSnapshotOptions struct {
 	RootSelector      string
 	IncludeScreenshot bool
 	InlineScreenshot  bool
-	ScreenshotFile     string
+	ScreenshotFile    string
+}
+
+type DevToolsHttpOptions struct {
+	BindHost  string
+	Port      uint16
+	AuthToken string
+	NoAuth    bool
+}
+
+type DevToolsHttpSession struct {
+	URL         string
+	Port        uint16
+	AuthToken   string
+	RequireAuth bool
+	stop        func() error
+	nextID      int64
 }
 
 type ResourceFile struct {

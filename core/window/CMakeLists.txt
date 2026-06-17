@@ -39,6 +39,7 @@ target_include_directories(mbink_window PUBLIC
 
 # 链接 mbink_layout
 target_link_libraries(mbink_window PUBLIC mbink_layout)
+target_link_libraries(mbink_window PUBLIC mbink_devtools_bridge)
 
 # 链接 mbink_compositor（分层合成架构）
 target_link_libraries(mbink_window PUBLIC mbink_compositor)

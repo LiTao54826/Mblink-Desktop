@@ -12,6 +12,7 @@
 #include <functional>
 #include <unordered_set>
 #include <string>
+#include <atomic>
 
 namespace mbink {
 
@@ -81,6 +82,8 @@ public:
      * 设置退出标志，事件循环将在当前帧结束后退出
      */
     void Stop();
+
+    void Wake();
     
     /**
      * @brief 单次循环迭代
@@ -121,6 +124,7 @@ public:
      * @param callback 更新回调函数，参数为帧时间（秒）
      */
     void SetUpdateCallback(std::function<void(float)> callback);
+    void SetUpdateCallback(std::function<void(float)> callback, bool needs_frame_cadence);
     
     /**
      * @brief 设置渲染回调
@@ -362,6 +366,9 @@ private:
     std::function<void()> idle_callback_;
     std::function<void(float)> update_callback_;
     std::function<void()> render_callback_;
+    bool update_callback_needs_frame_cadence_ = true;
+    Uint32 wake_event_type_ = 0;
+    std::atomic<bool> wake_pending_{false};
 
     // 子系统（前向声明，实现文件中定义）
     std::unique_ptr<FrameController> frame_controller_;

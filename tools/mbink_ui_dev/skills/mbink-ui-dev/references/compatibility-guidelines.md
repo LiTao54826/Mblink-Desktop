@@ -126,14 +126,14 @@ Do not replace these with browser or npm widgets such as xterm.js-style terminal
 - Host templates should prefer loading and mounting `app.mbrp`; direct filesystem loading is for dev fallback only.
 - Rust and Go host builds copy `app.mbrp` into a host resources directory before compiling. Rust can embed the package through the generated build script path.
 - Do not hard-code absolute repository paths, local machine paths, or `MBINK_REPO_ROOT` in generated projects.
-- Do not duplicate `mbink.dll` inside each embedded template. The CLI distribution should include one adjacent runtime DLL, and host init copies it into the generated project.
+- Do not duplicate `mbink.dll` inside each embedded template. The CLI distribution should include one adjacent runtime DLL, and host init copies it into the generated project. `mbink_devtools.dll` is a development companion shipped next to `mbink-ui-dev.exe` and `esm_loader.exe`; generated Python, Go, and Rust host packages should not vendor it.
 
 ## CLI and MCP Feature Boundaries
 
 - `reload` currently restarts the runtime. Do not pass or assume `css`, `remount`, or `restart` modes.
 - `snapshot_ui` returns structured DOM snapshot data. `include_screenshot` is available as an opt-in PNG capture path; default snapshots remain DOM-only. Prefer file-mode screenshot metadata over inline base64. `max_depth` and `root_selector` are supported snapshot-bounding options for callers that need smaller DOM payloads.
 - CLI stdout is JSON and stderr is human-readable logs.
-- MCP uses stdio. HTTP plus SSE transport, push notifications, and VS Code side-panel preview are future work.
+- `mbink-ui-dev serve` uses stdio MCP for project-level work. The optional `mbink_devtools.dll` runtime HTTP MCP endpoint is local-only and limited to live UI analysis/control. Push notifications and VS Code side-panel preview are future work.
 - If multiple projects are present, always pass `--project <abs-path>` or call `open_project` for the intended project.
 
 ## Compatibility Checklist Before Finishing

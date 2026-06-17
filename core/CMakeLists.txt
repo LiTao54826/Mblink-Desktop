@@ -3,6 +3,15 @@
 message(STATUS "Configuring core library...")
 
 # 添加各个模块
+add_library(mbink_devtools_bridge STATIC
+    devtools/devtools_bridge.cpp
+)
+
+target_include_directories(mbink_devtools_bridge PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
 add_subdirectory(window)
 add_subdirectory(quickjs)
 add_subdirectory(dom)
@@ -34,7 +43,7 @@ target_link_libraries(mbink INTERFACE
     mbink_api
     mbink_utils
     mbink_network
-    mbink_devtools
+    mbink_devtools_bridge
     mbink_compositor
 )
 

@@ -8,7 +8,9 @@ mod shared;
 mod state;
 mod util;
 
-pub use app::{App, AppHandle, RuntimeOptions, UiDevSnapshotOptions};
+pub use app::{
+    App, AppHandle, DevToolsHttpOptions, DevToolsHttpSession, RuntimeOptions, UiDevSnapshotOptions,
+};
 pub use config::AppBuilder;
 pub use controls::{LogView, Terminal};
 pub use error::{Error, Result};

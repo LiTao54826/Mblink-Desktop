@@ -1,4 +1,6 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::sync::Once;
 
 use serde_json::Value;
@@ -6,11 +8,13 @@ use serde_json::Value;
 use crate::callback::{
     bind_async_trampoline, bind_trampoline, bool_trampoline, resize_trampoline,
     state_watch_trampoline, update_trampoline, void_trampoline, AsyncBindHolder, BindHolder,
-    BindKind, BindRegistration, BoolHolder, EventRegistry, ResizeHolder,
-    StateWatchHolder, StateWatchRegistration, UpdateHolder, VoidHolder,
+    BindKind, BindRegistration, BoolHolder, EventRegistry, ResizeHolder, StateWatchHolder,
+    StateWatchRegistration, UpdateHolder, VoidHolder,
 };
 use crate::config::AppBuilder;
-use crate::controls::{logview_from_handle, terminal_from_handle, ControlHandle, LogView, Terminal};
+use crate::controls::{
+    logview_from_handle, terminal_from_handle, ControlHandle, LogView, Terminal,
+};
 use crate::shared::Shared;
 use crate::state::State;
 use crate::util::{string_from_const_ptr, string_from_owned_ptr, to_cstring};
@@ -49,6 +53,70 @@ pub struct UiDevSnapshotOptions {
     pub include_screenshot: bool,
     pub inline_screenshot: bool,
     pub screenshot_file: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevToolsHttpOptions {
+    pub bind_host: Option<String>,
+    pub port: u16,
+    pub auth_token: Option<String>,
+    pub require_auth: bool,
+}
+
+impl Default for DevToolsHttpOptions {
+    fn default() -> Self {
+        Self {
+            bind_host: None,
+            port: 0,
+            auth_token: None,
+            require_auth: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DevToolsHttpSession {
+    url: String,
+    port: u16,
+    auth_token: String,
+    require_auth: bool,
+    handle: mbink_sys::MBinkHandle,
+    next_id: i64,
+}
+
+impl DevToolsHttpSession {
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn auth_token(&self) -> &str {
+        &self.auth_token
+    }
+
+    pub fn require_auth(&self) -> bool {
+        self.require_auth
+    }
+
+    pub fn request(&mut self, method: &str, params: Option<Value>) -> Result<Value> {
+        self.next_id += 1;
+        let mut payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": self.next_id,
+            "method": method,
+        });
+        if let Some(params) = params {
+            payload["params"] = params;
+        }
+        post_jsonrpc(&self.url, &self.auth_token, &payload)
+    }
+
+    pub fn stop(self) -> Result<()> {
+        check_rc_raw(unsafe { mbink_sys::mbink_devtools_http_stop(self.handle) })
+    }
 }
 
 impl Default for UiDevSnapshotOptions {
@@ -150,7 +218,9 @@ impl App {
     }
 
     pub fn handle(&self) -> AppHandle {
-        AppHandle { handle: self.handle }
+        AppHandle {
+            handle: self.handle,
+        }
     }
 
     pub fn run(&mut self) {
@@ -410,13 +480,19 @@ impl App {
             .map(to_cstring)
             .transpose()?;
         let mut raw = unsafe { mbink_sys::mbink_ui_dev_default_snapshot_options() };
-        raw.runtime_epoch = runtime_epoch.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.runtime_epoch = runtime_epoch
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         raw.max_nodes = options.max_nodes;
         raw.max_depth = options.max_depth;
-        raw.root_selector = root_selector.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.root_selector = root_selector
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         raw.include_screenshot = options.include_screenshot;
         raw.inline_screenshot = options.inline_screenshot;
-        raw.screenshot_file = screenshot_file.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.screenshot_file = screenshot_file
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         let mut out = std::ptr::null_mut();
         self.check_rc(unsafe {
             mbink_sys::mbink_ui_dev_snapshot_json(self.handle, &raw, &mut out)
@@ -428,7 +504,11 @@ impl App {
         Ok(serde_json::from_str(&self.ui_dev_snapshot_json(options)?)?)
     }
 
-    pub fn ui_dev_snapshot_file(&self, output_path: &str, options: UiDevSnapshotOptions) -> Result<&Self> {
+    pub fn ui_dev_snapshot_file(
+        &self,
+        output_path: &str,
+        options: UiDevSnapshotOptions,
+    ) -> Result<&Self> {
         let output_path = to_cstring(output_path)?;
         let runtime_epoch = options
             .runtime_epoch
@@ -446,13 +526,19 @@ impl App {
             .map(to_cstring)
             .transpose()?;
         let mut raw = unsafe { mbink_sys::mbink_ui_dev_default_snapshot_options() };
-        raw.runtime_epoch = runtime_epoch.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.runtime_epoch = runtime_epoch
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         raw.max_nodes = options.max_nodes;
         raw.max_depth = options.max_depth;
-        raw.root_selector = root_selector.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.root_selector = root_selector
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         raw.include_screenshot = options.include_screenshot;
         raw.inline_screenshot = options.inline_screenshot;
-        raw.screenshot_file = screenshot_file.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.screenshot_file = screenshot_file
+            .as_ref()
+            .map_or(std::ptr::null(), |v| v.as_ptr());
         self.check_rc(unsafe {
             mbink_sys::mbink_ui_dev_snapshot_file(self.handle, output_path.as_ptr(), &raw)
         })?;
@@ -470,7 +556,9 @@ impl App {
 
     pub fn ui_dev_command<T: serde::Serialize>(&self, command: &T) -> Result<Value> {
         let command_json = serde_json::to_string(command)?;
-        Ok(serde_json::from_str(&self.ui_dev_command_json(&command_json)?)?)
+        Ok(serde_json::from_str(
+            &self.ui_dev_command_json(&command_json)?,
+        )?)
     }
 
     pub fn set_title(&self, title: &str) -> Result<&Self> {
@@ -617,7 +705,12 @@ impl App {
         });
         let user_data = Box::into_raw(holder).cast();
         let rc = unsafe {
-            mbink_sys::mbink_bind(self.handle, name_c.as_ptr(), Some(bind_trampoline), user_data)
+            mbink_sys::mbink_bind(
+                self.handle,
+                name_c.as_ptr(),
+                Some(bind_trampoline),
+                user_data,
+            )
         };
         if rc != 0 {
             unsafe { self.drop_bind_user_data(BindKind::Sync, user_data) };
@@ -869,7 +962,10 @@ impl App {
             return Err(Error::NullHandle);
         }
         self.shared_handles.push(handle);
-        Ok(Shared { handle, _marker: std::marker::PhantomData })
+        Ok(Shared {
+            handle,
+            _marker: std::marker::PhantomData,
+        })
     }
 
     pub fn logview(&mut self, element_id: &str) -> Result<LogView<'_>> {
@@ -920,12 +1016,19 @@ impl App {
             unsafe { drop(Box::from_raw(user_data)) };
             self.check_rc(watch_id)?;
         }
-        self.state_watchers.push(StateWatchRegistration { watch_id, user_data });
+        self.state_watchers.push(StateWatchRegistration {
+            watch_id,
+            user_data,
+        });
         Ok(watch_id)
     }
 
     pub(crate) fn unregister_state_watch(&mut self, watch_id: i32) {
-        if let Some(index) = self.state_watchers.iter().position(|entry| entry.watch_id == watch_id) {
+        if let Some(index) = self
+            .state_watchers
+            .iter()
+            .position(|entry| entry.watch_id == watch_id)
+        {
             let watcher = self.state_watchers.swap_remove(index);
             unsafe {
                 mbink_sys::mbink_state_unwatch(self.handle, watch_id);
@@ -946,6 +1049,56 @@ impl App {
 
     pub fn devtools_close(&self) -> Result<&Self> {
         self.check_rc(unsafe { mbink_sys::mbink_devtools_close(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn enable_devtools(&self) -> Result<&Self> {
+        self.devtools_open()
+    }
+
+    pub fn enable_devtools_http(
+        &self,
+        options: DevToolsHttpOptions,
+    ) -> Result<DevToolsHttpSession> {
+        self.devtools_http_session(options)
+    }
+
+    pub fn devtools_http_session(
+        &self,
+        options: DevToolsHttpOptions,
+    ) -> Result<DevToolsHttpSession> {
+        let bind_host = options.bind_host.as_deref().map(to_cstring).transpose()?;
+        let auth_token = options.auth_token.as_deref().map(to_cstring).transpose()?;
+        let mut raw = unsafe { mbink_sys::mbink_devtools_default_http_options() };
+        raw.bind_host = bind_host.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.port = options.port;
+        raw.auth_token = auth_token.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
+        raw.require_auth = options.require_auth;
+
+        let mut info = mbink_sys::MBinkDevToolsHttpInfo {
+            port: 0,
+            url: std::ptr::null_mut(),
+            auth_token: std::ptr::null_mut(),
+        };
+        self.check_rc(unsafe {
+            mbink_sys::mbink_devtools_http_start(self.handle, &raw, &mut info)
+        })?;
+        let url = unsafe { string_from_raw_http_field(info.url) }?;
+        let token = unsafe { string_from_raw_http_field(info.auth_token) }?;
+        let port = info.port;
+        unsafe { mbink_sys::mbink_devtools_http_info_free(&mut info) };
+        Ok(DevToolsHttpSession {
+            url,
+            port,
+            auth_token: token,
+            require_auth: options.require_auth,
+            handle: self.handle,
+            next_id: 0,
+        })
+    }
+
+    pub fn devtools_http_stop(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_devtools_http_stop(self.handle) })?;
         Ok(self)
     }
 
@@ -992,4 +1145,62 @@ pub(crate) fn check_rc_raw(rc: i32) -> Result<()> {
     let message = unsafe { string_from_const_ptr(mbink_sys::mbink_last_error()) }
         .unwrap_or_else(|_| "unknown MBink error".to_string());
     Err(Error::Mbink { code: rc, message })
+}
+
+unsafe fn string_from_raw_http_field(ptr: *mut std::ffi::c_char) -> Result<String> {
+    if ptr.is_null() {
+        return Ok(String::new());
+    }
+    CStr::from_ptr(ptr)
+        .to_str()
+        .map(|s| s.to_owned())
+        .map_err(Error::Utf8)
+}
+
+fn post_jsonrpc(url: &str, auth_token: &str, payload: &Value) -> Result<Value> {
+    let (host, port, path) = parse_local_http_url(url)?;
+    let body = serde_json::to_string(payload)?;
+    let mut request = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+        body.as_bytes().len()
+    );
+    if !auth_token.is_empty() {
+        request.push_str("X-MBINK-DevTools-Token: ");
+        request.push_str(auth_token);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
+    request.push_str(&body);
+
+    let mut stream = TcpStream::connect((host.as_str(), port))
+        .map_err(|err| Error::Message(format!("devtools http connect failed: {err}")))?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| Error::Message(format!("devtools http request failed: {err}")))?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|err| Error::Message(format!("devtools http response failed: {err}")))?;
+    let body_start = response
+        .find("\r\n\r\n")
+        .map(|index| index + 4)
+        .ok_or_else(|| Error::Message("devtools http response missing headers".to_string()))?;
+    Ok(serde_json::from_str(&response[body_start..])?)
+}
+
+fn parse_local_http_url(url: &str) -> Result<(String, u16, String)> {
+    let rest = url
+        .strip_prefix("http://")
+        .ok_or_else(|| Error::Message("devtools url must use http://".to_string()))?;
+    let (authority, path) = rest
+        .split_once('/')
+        .map(|(authority, path)| (authority, format!("/{path}")))
+        .unwrap_or((rest, "/".to_string()));
+    let (host, port_text) = authority
+        .rsplit_once(':')
+        .ok_or_else(|| Error::Message("devtools url is missing a port".to_string()))?;
+    let port = port_text
+        .parse::<u16>()
+        .map_err(|err| Error::Message(format!("devtools url port is invalid: {err}")))?;
+    Ok((host.to_string(), port, path))
 }

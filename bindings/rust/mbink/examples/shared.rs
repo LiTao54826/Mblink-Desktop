@@ -7,10 +7,13 @@ fn main() -> mbink::Result<()> {
     let shared = app.shared("data")?;
     shared.set_int("count", 1)?;
     shared.set_string("title", "Shared state from Rust")?;
-    shared.set_json("user", &json!({
-        "name": "Alice",
-        "role": "admin"
-    }))?;
+    shared.set_json(
+        "user",
+        &json!({
+            "name": "Alice",
+            "role": "admin"
+        }),
+    )?;
 
     app.load_html(
         r#"

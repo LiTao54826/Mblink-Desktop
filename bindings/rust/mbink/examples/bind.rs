@@ -5,10 +5,7 @@ fn main() -> mbink::Result<()> {
     let mut app = App::new("MBink Rust Bind", 900, 600)?;
 
     app.bind("greet", |args| {
-        let name = args
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("world");
+        let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("world");
 
         Ok(json!({
             "message": format!("Hello, {name}!"),

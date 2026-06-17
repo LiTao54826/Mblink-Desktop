@@ -57,8 +57,9 @@
 #include "core/render/text/text_renderer.h"
 #include "core/utils/utf8_utils.h"
 #include "core/quickjs/quickjs_runtime.h"
-#include "core/devtools/devtools_manager.h"
-#include "core/devtools/inspector/element_picker.h"
+#include "core/devtools/devtools_bridge.h"
+#include "core/lexbor/style_manager.h"
+#include "core/render/animation/animation_timeline.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/objects/render_object.h"
 #include "include/core/SkFontTypes.h"
@@ -71,6 +72,7 @@
 #include <map>
 #include <chrono>
 #include <cstdlib>
+#include <cstdint>
 
 namespace mbink {
 
@@ -113,8 +115,8 @@ inline double GetBaselineTimeMs() {
 }
 
 Sint32 ClampIdleDelayMs(int64_t next_timer_delay_ms) {
-    constexpr Uint32 kDefaultIdleDelayMs = 4;
-    constexpr Sint32 kMaxTimerIdleDelayMs = 64;
+    constexpr Sint32 kDefaultIdleDelayMs = 64;
+    constexpr Sint32 kMaxTimerIdleDelayMs = 250;
     if (next_timer_delay_ms < 0) {
         return kDefaultIdleDelayMs;
     }
@@ -123,6 +125,166 @@ Sint32 ClampIdleDelayMs(int64_t next_timer_delay_ms) {
     }
     return static_cast<Sint32>(
         std::clamp<int64_t>(next_timer_delay_ms - 1, 1, kMaxTimerIdleDelayMs));
+}
+
+void MergeNextDelay(int64_t candidate_ms, int64_t& next_delay_ms) {
+    if (candidate_ms < 0) {
+        return;
+    }
+    if (next_delay_ms < 0 || candidate_ms < next_delay_ms) {
+        next_delay_ms = candidate_ms;
+    }
+}
+
+int64_t MillisecondsUntilTick(Uint64 target_tick) {
+    const Uint64 now = SDL_GetTicks();
+    if (target_tick <= now) {
+        return 0;
+    }
+    return static_cast<int64_t>(target_tick - now);
+}
+
+bool HasQueuedSdlEvents() {
+    return SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+}
+
+bool WindowManagerHasPendingRepaint() {
+    for (auto& window : WindowManager::Instance().GetAllWindows()) {
+        if (window && window->NeedsRepaint()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WindowManagerHasPendingUiTasks() {
+    for (auto& window : WindowManager::Instance().GetAllWindows()) {
+        if (window && window->HasPendingUiTasks()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WindowManagerHasActiveAnimations() {
+    for (auto& window : WindowManager::Instance().GetAllWindows()) {
+        if (!window) {
+            continue;
+        }
+        if (auto timeline = window->GetAnimationTimeline()) {
+            if (timeline->HasRunningTransitions()) {
+                return true;
+            }
+        }
+        auto document = window->GetDocument();
+        auto style_manager = document ? document->GetStyleManager() : nullptr;
+        if (style_manager &&
+            !style_manager->GetAnimationController().GetRunningAnimations().empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WindowManagerNeedsQuitCheck() {
+    bool has_window = false;
+    bool all_should_close = true;
+    for (const auto& window : WindowManager::Instance().GetAllWindows()) {
+        if (!window) {
+            continue;
+        }
+        has_window = true;
+        if (!window->ShouldClose()) {
+            all_should_close = false;
+            break;
+        }
+    }
+    return !has_window || all_should_close;
+}
+
+struct IdleWorkState {
+    bool has_queued_events = false;
+    bool has_ready_js_tasks = false;
+    bool has_ready_native_tasks = false;
+    bool has_frame_cadence_work = false;
+    bool has_animation_frame_work = false;
+    bool has_pending_repaint = false;
+    bool has_pending_ui_tasks = false;
+    bool has_pending_native_text_flush = false;
+    bool has_due_native_caret_blink = false;
+    bool has_active_animations = false;
+    bool has_window_lifecycle_work = false;
+    bool has_frame_deadline_work = false;
+    int64_t next_delay_ms = -1;
+
+    bool hasImmediateWork() const {
+        return has_queued_events ||
+               has_ready_js_tasks ||
+               has_ready_native_tasks ||
+               has_frame_cadence_work ||
+               has_pending_repaint ||
+               has_pending_ui_tasks ||
+               has_pending_native_text_flush ||
+               has_due_native_caret_blink ||
+               has_active_animations ||
+               has_window_lifecycle_work;
+    }
+};
+
+IdleWorkState CollectIdleWorkState(QuickJSRuntime* quickjs_runtime,
+                                   TaskScheduler* task_scheduler,
+                                   bool update_callback_needs_frame_cadence,
+                                   bool has_update_callback,
+                                   const std::shared_ptr<Element>& focus_element,
+                                   Uint64 last_cursor_blink_time) {
+    IdleWorkState state;
+    state.has_queued_events = HasQueuedSdlEvents();
+    state.has_ready_js_tasks = quickjs_runtime && quickjs_runtime->HasReadyTasks();
+    state.has_ready_native_tasks =
+        (task_scheduler && task_scheduler->HasReadyTasks()) ||
+        TaskScheduler::Instance().HasReadyTasks();
+    state.has_frame_cadence_work =
+        has_update_callback && update_callback_needs_frame_cadence;
+    state.has_animation_frame_work =
+        (task_scheduler && task_scheduler->HasPendingAnimationFrames()) ||
+        TaskScheduler::Instance().HasPendingAnimationFrames();
+    state.has_pending_repaint = WindowManagerHasPendingRepaint();
+    state.has_pending_ui_tasks = WindowManagerHasPendingUiTasks();
+    state.has_pending_native_text_flush =
+        NativeTextRepaintCoalescer::Instance().MillisecondsUntilNextFlush() == 0;
+    state.has_active_animations = WindowManagerHasActiveAnimations();
+    state.has_window_lifecycle_work = WindowManagerNeedsQuitCheck();
+
+    MergeNextDelay(quickjs_runtime ? quickjs_runtime->MillisecondsUntilNextTimer() : -1,
+                   state.next_delay_ms);
+    if (task_scheduler) {
+        MergeNextDelay(task_scheduler->MillisecondsUntilNextTask(), state.next_delay_ms);
+    }
+    MergeNextDelay(TaskScheduler::Instance().MillisecondsUntilNextTask(), state.next_delay_ms);
+    MergeNextDelay(NativeTextRepaintCoalescer::Instance().MillisecondsUntilNextFlush(),
+                   state.next_delay_ms);
+    if (state.has_animation_frame_work) {
+        MergeNextDelay(16, state.next_delay_ms);
+        state.has_frame_deadline_work = true;
+    }
+    if (focus_element) {
+        const std::string tag_name = focus_element->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            const int64_t caret_delay_ms = MillisecondsUntilTick(last_cursor_blink_time + 500);
+            state.has_due_native_caret_blink = (caret_delay_ms == 0);
+            MergeNextDelay(caret_delay_ms, state.next_delay_ms);
+        }
+    }
+
+    return state;
+}
+
+bool WaitForIdleWork(const IdleWorkState& state) {
+    if (state.hasImmediateWork()) {
+        return false;
+    }
+    SDL_WaitEventTimeout(nullptr, ClampIdleDelayMs(state.next_delay_ms));
+    return true;
 }
 
 bool MarkElementPaintDirty(Window* window, const std::shared_ptr<Element>& element) {
@@ -177,6 +339,7 @@ EventLoop::EventLoop()
     , selection_manager_(std::make_unique<SelectionManager>())
     , vsync_detected_(false)
 {
+    wake_event_type_ = SDL_RegisterEvents(1);
     // 初始化富文本编辑子系统（需要在 selection_manager_ 之后）
     contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
     contenteditable_controller_ = std::make_unique<ContentEditableController>(selection_manager_.get(), contenteditable_handler_.get());
@@ -232,6 +395,8 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     if (!task_scheduler_) {
         throw std::invalid_argument("TaskScheduler cannot be null");
     }
+
+    wake_event_type_ = SDL_RegisterEvents(1);
 
     // 初始化富文本编辑子系统（需要在 selection_manager_ 之后）
     contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
@@ -302,15 +467,64 @@ void EventLoop::Run() {
 
 void EventLoop::Stop() {
     should_quit_ = true;
+    Wake();
+}
+
+void EventLoop::Wake() {
+    if (wake_event_type_ == 0 || wake_event_type_ == static_cast<Uint32>(-1)) {
+        return;
+    }
+
+    bool expected = false;
+    if (!wake_pending_.compare_exchange_strong(expected, true)) {
+        return;
+    }
+
+    SDL_Event event{};
+    event.type = wake_event_type_;
+    if (!SDL_PushEvent(&event)) {
+        wake_pending_.store(false);
+    }
 }
 
 void EventLoop::RunOnce() {
+    static Uint64 last_cursor_blink_time = SDL_GetTicks();
+    static Element* last_blink_focus_element = nullptr;
+    static bool cursor_visible = true;
+    auto focus_element = focus_manager_->GetFocusElement();
+    bool did_front_idle_wait = false;
+
+    if (!should_quit_) {
+        auto idle_state = CollectIdleWorkState(
+            quickjs_runtime_,
+            task_scheduler_.get(),
+            update_callback_needs_frame_cadence_,
+            static_cast<bool>(update_callback_),
+            focus_element,
+            last_cursor_blink_time);
+        did_front_idle_wait = WaitForIdleWork(idle_state);
+        if (did_front_idle_wait) {
+            idle_state = CollectIdleWorkState(
+                quickjs_runtime_,
+                task_scheduler_.get(),
+                update_callback_needs_frame_cadence_,
+                static_cast<bool>(update_callback_),
+                focus_element,
+                last_cursor_blink_time);
+            if (!idle_state.hasImmediateWork() && !idle_state.has_frame_deadline_work) {
+                if (idle_callback_) {
+                    idle_callback_();
+                }
+                return;
+            }
+        }
+    }
+
     frame_controller_->BeginFrame();
 
     // 1. 处理所有 SDL 事件
-    bool has_events = false;
     try {
-        has_events = ProcessEvents();
+        ProcessEvents();
     } catch (const std::exception& e) {
         std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessEvents: " << e.what() << std::endl;
     } catch (...) {
@@ -400,10 +614,6 @@ void EventLoop::RunOnce() {
     // 如果这里再对 contenteditable 跑一套全局 blink + repaint，
     // 会把编辑器整块周期性拖入增量重绘链，容易与 gutter/chunk invalidation 打架，
     // 表现为获取焦点后随 caret blink 周期出现闪烁。
-    static Uint64 last_cursor_blink_time = SDL_GetTicks();
-    static Element* last_blink_focus_element = nullptr;
-    static bool cursor_visible = true;
-    auto focus_element = focus_manager_->GetFocusElement();
     if (focus_element) {
         std::string tag_name = focus_element->GetTagName();
         bool uses_native_caret_blink = (tag_name == "input" || tag_name == "textarea");
@@ -557,21 +767,14 @@ void EventLoop::RunOnce() {
     // 7.5 空闲时休眠以降低 CPU 占用
     // 当没有事件、没有任务、没有重绘需求时，休眠一小段时间
     // 这解决了 VSync 启用但没有渲染时的忙等待问题
-    const bool has_ready_js_tasks = quickjs_runtime_ && quickjs_runtime_->HasReadyTasks();
-    if (!has_events &&
-        !any_needs_repaint &&
-        !task_scheduler_->HasPendingTasks() &&
-        !has_ready_js_tasks) {
-        const int64_t next_js_timer_delay_ms =
-            quickjs_runtime_ ? quickjs_runtime_->MillisecondsUntilNextTimer() : -1;
-        const int64_t next_native_text_delay_ms =
-            NativeTextRepaintCoalescer::Instance().MillisecondsUntilNextFlush();
-        int64_t next_delay_ms = next_js_timer_delay_ms;
-        if (next_native_text_delay_ms >= 0 &&
-            (next_delay_ms < 0 || next_native_text_delay_ms < next_delay_ms)) {
-            next_delay_ms = next_native_text_delay_ms;
-        }
-        SDL_WaitEventTimeout(nullptr, ClampIdleDelayMs(next_delay_ms));
+    if (!did_front_idle_wait) {
+        WaitForIdleWork(CollectIdleWorkState(
+            quickjs_runtime_,
+            task_scheduler_.get(),
+            update_callback_needs_frame_cadence_,
+            static_cast<bool>(update_callback_),
+            focus_element,
+            last_cursor_blink_time));
     }
 
     // 8. 帧率控制
@@ -591,7 +794,12 @@ void EventLoop::SetIdleCallback(std::function<void()> callback) {
 }
 
 void EventLoop::SetUpdateCallback(std::function<void(float)> callback) {
-    update_callback_ = callback;
+    SetUpdateCallback(std::move(callback), true);
+}
+
+void EventLoop::SetUpdateCallback(std::function<void(float)> callback, bool needs_frame_cadence) {
+    update_callback_ = std::move(callback);
+    update_callback_needs_frame_cadence_ = needs_frame_cadence;
 }
 
 void EventLoop::SetRenderCallback(std::function<void()> callback) {
@@ -634,6 +842,13 @@ bool EventLoop::ProcessEvents() {
 
     while (SDL_PollEvent(&event)) {
         has_events = true;
+
+        if (wake_event_type_ != 0 &&
+            wake_event_type_ != static_cast<Uint32>(-1) &&
+            event.type == wake_event_type_) {
+            wake_pending_.store(false);
+            continue;
+        }
 
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
@@ -864,8 +1079,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     float logical_y = mouse_y / dpi_scale;
 
     // ===== 处理 DevTools 鼠标事件 =====
-    auto& devtools = DevToolsManager::GetInstance();
-    if (devtools.IsOpen()) {
+    if (DevToolsIsOpen()) {
         // 获取窗口尺寸
         int win_width, win_height;
         SDL_GetWindowSize(window->GetSDLWindow(), &win_width, &win_height);
@@ -874,31 +1088,35 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         
         // 获取 DevTools 面板区域
         float panel_x, panel_y, panel_width, panel_height;
-        devtools.GetPanelBounds(width, height, panel_x, panel_y, panel_width, panel_height);
+        const auto panel_bounds = DevToolsGetPanelBounds(width, height);
+        panel_x = panel_bounds.x;
+        panel_y = panel_bounds.y;
+        panel_width = panel_bounds.width;
+        panel_height = panel_bounds.height;
         
         // ===== 优先处理面板边界拖动 =====
-        bool is_dragging_border = devtools.IsDraggingPanelBorder();
-        bool on_panel_border = devtools.IsMouseOnPanelBorder(logical_x, logical_y, width, height);
+        bool is_dragging_border = DevToolsIsDraggingPanelBorder();
+        bool on_panel_border = DevToolsIsMouseOnPanelBorder(logical_x, logical_y, width, height);
         
         if (is_dragging_border || on_panel_border) {
             // 设置面板边界光标（根据停靠位置）- 对所有事件类型都设置
-            if (devtools.GetDockPosition() == DockPosition::Bottom) {
+            if (DevToolsGetDockPosition() == DevToolsDockPosition::Bottom) {
                 SetSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
             } else {
                 SetSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
             }
             
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-                devtools.HandlePanelBorderDrag(logical_x, logical_y, width, height, true);
+                DevToolsHandlePanelBorderDrag(logical_x, logical_y, width, height, true);
                 window->SetNeedsRepaint();
                 return;
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
-                devtools.HandlePanelBorderDrag(logical_x, logical_y, width, height, false);
+                DevToolsHandlePanelBorderDrag(logical_x, logical_y, width, height, false);
                 window->SetNeedsRepaint();
                 return;
             } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 if (is_dragging_border) {
-                    if (devtools.UpdatePanelBorderDrag(logical_x, logical_y, width, height)) {
+                    if (DevToolsUpdatePanelBorderDrag(logical_x, logical_y, width, height)) {
                         window->SetNeedsRepaint();
                     }
                 }
@@ -908,7 +1126,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
         
         // 检查是否正在拖动分隔线（即使鼠标不在面板区域内也要处理）
-        bool is_dragging = devtools.IsDraggingSplitter();
+        bool is_dragging = DevToolsIsDraggingSplitter();
         
         // 检查鼠标是否在 DevTools 面板区域内，或者正在拖动
         bool in_panel = (logical_x >= panel_x && logical_x < panel_x + panel_width &&
@@ -917,7 +1135,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         if (in_panel || is_dragging) {
             // 将事件传递给 DevTools
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                devtools.HandleMouseEvent(
+                DevToolsHandleMouseEvent(
                     static_cast<int>(logical_x - panel_x),
                     static_cast<int>(logical_y - panel_y),
                     event.button.button == SDL_BUTTON_LEFT ? 0 : 1,
@@ -925,7 +1143,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 );
                 window->SetNeedsRepaint();
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                devtools.HandleMouseEvent(
+                DevToolsHandleMouseEvent(
                     static_cast<int>(logical_x - panel_x),
                     static_cast<int>(logical_y - panel_y),
                     event.button.button == SDL_BUTTON_LEFT ? 0 : 1,
@@ -936,11 +1154,11 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 // 处理鼠标移动事件（用于 BoxModel 悬停高亮和分隔线拖动）
                 int rel_x = static_cast<int>(logical_x - panel_x);
                 int rel_y = static_cast<int>(logical_y - panel_y);
-                if (devtools.HandleMouseMove(rel_x, rel_y)) {
+                if (DevToolsHandleMouseMove(rel_x, rel_y)) {
                     window->SetNeedsRepaint();
                 }
                 // 设置分隔线光标
-                if (devtools.IsMouseOnSplitter(rel_x, rel_y) || devtools.IsDraggingSplitter()) {
+                if (DevToolsIsMouseOnSplitter(rel_x, rel_y) || DevToolsIsDraggingSplitter()) {
                     SetSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
                 } else {
                     SetSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
@@ -951,12 +1169,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             }
         } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
             // 鼠标不在面板区域内时，清除 Box Model 高亮
-            devtools.ClearBoxModelHover();
+            DevToolsClearBoxModelHover();
             window->SetNeedsRepaint();
         }
         
         // ===== 处理元素选择器模式 =====
-        if (devtools.IsPickerActive()) {
+        if (DevToolsIsPickerActive()) {
             // 确保渲染树已构建并且布局完成
             // 特别是在窗口最大化等尺寸变化后，必须确保使用最新的布局信息
             // 否则 hit testing 会使用旧的布局数据导致选择失败
@@ -974,7 +1192,11 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             if (root_render) {
                 // 获取主应用区域
                 float app_x, app_y, app_width, app_height;
-                devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+                const auto app_bounds = DevToolsGetMainAppBounds(width, height);
+                app_x = app_bounds.x;
+                app_y = app_bounds.y;
+                app_width = app_bounds.width;
+                app_height = app_bounds.height;
                 
                 // 检查是否在主应用区域内
                 if (logical_x >= app_x && logical_x < app_x + app_width &&
@@ -997,7 +1219,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                         }
                         
                         if (hit_result.IsValid() && hit_result.element) {
-                            devtools.GetElementPicker()->SetHoverElement(hit_result.element, hit_result.render_object);
+                            DevToolsSetPickerHover(hit_result.element.get(), hit_result.render_object.get());
                             window->SetNeedsRepaint();
                         }
                     }
@@ -1015,8 +1237,8 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                         
                         if (hit_result.IsValid() && hit_result.element) {
                             // 选中元素并停止选择器模式
-                            devtools.SelectElement(hit_result.element);
-                            devtools.StopElementPicker();
+                            DevToolsSelectElement(hit_result.element.get());
+                            DevToolsStopPicker();
                             window->SetNeedsRepaint();
                             return;  // 消费事件
                         }

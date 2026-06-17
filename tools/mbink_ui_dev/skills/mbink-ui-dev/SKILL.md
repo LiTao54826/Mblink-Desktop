@@ -7,7 +7,7 @@ description: Operate the MBink UI development toolchain through `mbink-ui-dev` C
 
 ## Overview
 
-Use `mbink-ui-dev` as the primary control surface for MBink UI development. Treat the latest progress described in `MBINK_UI_DEV_TOOL_DESIGN.md` as authoritative: P2 is complete, the P3 precision-control loop is now available, and ecosystem items such as HTTP+SSE transport, MCP notifications, and VS Code preview are still future work.
+Use `mbink-ui-dev` as the primary control surface for MBink UI development. Treat the latest progress described in `MBINK_UI_DEV_TOOL_DESIGN.md` as authoritative: P2 is complete, the P3 precision-control loop is available, and live UI analysis/control can also be exposed by the optional local Streamable HTTP MCP endpoint in `mbink_devtools.dll`. MCP notifications and VS Code preview are still future work.
 
 ## Layout and Sizing Defaults
 
@@ -97,7 +97,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Use MBink's native `<terminal>` and `<logview>` elements for terminal emulation and high-volume log display instead of browser or npm terminal/log widgets. Read [native-elements.md](references/native-elements.md) before using either element.
 - When unsure whether a JavaScript, DOM, Preact, host bridge, or native-element API is compatible, read [supported-api-reference.md](references/supported-api-reference.md) before using it.
 - Avoid browser or Node APIs that are not part of the verified runtime surface: `require`, `module.exports`, Node built-ins such as `fs` and `path`, `process`, `Buffer`, `localStorage`, `sessionStorage`, `indexedDB`, workers, WebSocket, full navigation/history/download behavior, native form submission, and `navigator.clipboard`.
-- Treat `reload --mode`, HTTP plus SSE transport, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed. `snapshot` supports opt-in screenshot output through `include_screenshot`; prefer file-mode PNG metadata over inline base64 unless the caller explicitly needs inline data.
+- Treat `reload --mode`, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed. `snapshot` supports opt-in screenshot output through `include_screenshot`; prefer file-mode PNG metadata over inline base64 unless the caller explicitly needs inline data. The optional runtime HTTP MCP endpoint is local-only and covers UI analysis/control, not project scaffolding or build/watch orchestration.
 - Read [compatibility-guidelines.md](references/compatibility-guidelines.md) before adding new framework dependencies, browser APIs, runtime-specific host features, or non-template syntax.
 
 ## Bootstrap Projects and Templates Deliberately
@@ -124,7 +124,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 
 - Use `resources/read` for stable, read-only project state such as `ui://snapshot`, `ui://console_logs`, `ui://build_status`, `project://file_tree`, `project://config`, and `project://file/{path}`.
 - Prefer session-scoped `active_project` in multi-step MCP work so later tool calls and resource reads stay aligned.
-- Use stdio MCP by default. Treat HTTP plus SSE transport, MCP notifications, additional ecosystem integrations, and VS Code side-panel preview as future-stage items, not current assumptions.
+- Use `mbink-ui-dev serve` stdio MCP by default for project-scoped work. Use the runtime HTTP MCP endpoint only when a C API host explicitly enables `mbink_devtools.dll` for live UI analysis/control. Treat MCP notifications, additional ecosystem integrations, and VS Code side-panel preview as future-stage items, not current assumptions.
 - When current behavior and long-term design differ, prefer the document's explicit "当前实现" notes over the future-facing design direction.
 
 ## Use This Reference When Needed

@@ -4,7 +4,7 @@ add_executable(esm_loader
     main_c_api.cpp
 )
 
-add_dependencies(esm_loader mbink_api)
+add_dependencies(esm_loader mbink_api mbink_devtools)
 
 target_include_directories(esm_loader PRIVATE
     ${CMAKE_SOURCE_DIR}

@@ -133,7 +133,7 @@ cargo run --manifest-path rust_host/Cargo.toml
 ```
 
 Use `mbink-ui-dev open .` for UI iteration and mock data. Use `mbink-ui-dev build` to compile the UI resource package and the final host artifact in one step. Use the host command only when validating the real Python, Rust, or Go binding integration.
-Distribute `mbink-ui-dev.exe` with the adjacent MBink runtime library (`mbink.dll` on Windows). Host-runtime init copies that runtime library into the generated Python, Go, or Rust project.
+Distribute `mbink-ui-dev.exe` with adjacent `mbink.dll` and `mbink_devtools.dll` on Windows. Host-runtime init copies only `mbink.dll` into the generated Python, Go, or Rust project; `mbink_devtools.dll` remains a development companion resolved from `MBINK_DEVTOOLS_PATH` or the runtime DLL directory when explicitly enabled.
 
 ## Authoring and Compatibility Rules
 
@@ -410,6 +410,8 @@ Default dev-oriented expectations include:
 
 ## MCP Transport and Configuration Snippets
 
+`mbink-ui-dev serve` is the default stdio MCP transport for project management, build/watch, files, logs, and UI control through the managed daemon:
+
 Generic server:
 
 ```json
@@ -438,9 +440,15 @@ Single fixed project:
 }
 ```
 
+Runtime HTTP MCP:
+
+- `mbink_devtools.dll` can expose a local Streamable HTTP MCP endpoint from a C API host when that host explicitly starts devtools HTTP.
+- The endpoint is localhost-only, validates local `Origin`, and requires `Authorization: Bearer <token>` or `X-MBINK-DevTools-Token`.
+- Its scope is live UI analysis/control: `snapshot_ui`, `query_element`, `inspect`, `click`, `input_text`, `scroll`, and `highlight`.
+- It does not replace `mbink-ui-dev serve` for init, build, watch, file, log, or project-resource operations.
+
 Future ecosystem direction:
 
-- HTTP plus SSE transport for IDE integrations
 - MCP notifications for build status and file change events
 - Additional project templates and host integration variants
 - Snapshot lazy-loading and depth controls for large trees

@@ -7,7 +7,13 @@ package mbink
 */
 import "C"
 
-import "unsafe"
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"sync/atomic"
+	"unsafe"
+)
 
 type State struct{ app *App }
 
@@ -54,6 +60,90 @@ func (a *App) Terminal(elementID string) (*Terminal, error) {
 
 func (a *App) DevtoolsOpen() error  { return checkRC(C.mbink_devtools_open(a.handle)) }
 func (a *App) DevtoolsClose() error { return checkRC(C.mbink_devtools_close(a.handle)) }
+
+func (a *App) EnableDevtools() error { return a.DevtoolsOpen() }
+
+func (a *App) EnableDevtoolsHttp(options DevToolsHttpOptions) (*DevToolsHttpSession, error) {
+	return a.DevtoolsHttpSession(options)
+}
+
+func (a *App) DevtoolsHttpSession(options DevToolsHttpOptions) (*DevToolsHttpSession, error) {
+	raw := C.mbink_devtools_default_http_options()
+	var bindHost *C.char
+	if options.BindHost != "" {
+		bindHost, _ = cString(options.BindHost)
+		defer C.free(unsafe.Pointer(bindHost))
+		raw.bind_host = bindHost
+	}
+	if options.Port != 0 {
+		raw.port = C.ushort(options.Port)
+	}
+	var authToken *C.char
+	if options.AuthToken != "" {
+		authToken, _ = cString(options.AuthToken)
+		defer C.free(unsafe.Pointer(authToken))
+		raw.auth_token = authToken
+	}
+	raw.require_auth = boolToC(!options.NoAuth)
+
+	var info C.MBinkDevToolsHttpInfo
+	if err := checkRC(C.mbink_devtools_http_start(a.handle, &raw, &info)); err != nil {
+		return nil, err
+	}
+	defer C.mbink_devtools_http_info_free(&info)
+	return &DevToolsHttpSession{
+		URL:         C.GoString(info.url),
+		Port:        uint16(info.port),
+		AuthToken:   C.GoString(info.auth_token),
+		RequireAuth: !options.NoAuth,
+		stop:        a.DevtoolsHttpStop,
+	}, nil
+}
+
+func (a *App) DevtoolsHttpStop() error {
+	return checkRC(C.mbink_devtools_http_stop(a.handle))
+}
+
+func (s *DevToolsHttpSession) Request(method string, params any) (map[string]any, error) {
+	id := atomic.AddInt64(&s.nextID, 1)
+	payload := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  method,
+	}
+	if params != nil {
+		payload["params"] = params
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, s.URL, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.AuthToken != "" {
+		req.Header.Set("X-MBINK-DevTools-Token", s.AuthToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *DevToolsHttpSession) Stop() error {
+	if s == nil || s.stop == nil {
+		return nil
+	}
+	return s.stop()
+}
 
 func (l *LogView) Append(level, source, message string) error {
 	lv, ld := cString(level)

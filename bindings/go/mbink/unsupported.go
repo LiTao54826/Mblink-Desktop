@@ -29,3 +29,15 @@ func CompileResources(string, string, string) error { return unsupported() }
 func LoadResourceFile(string, string, string) (*ResourceFile, error) {
 	return nil, unsupported()
 }
+func (a *App) EnableDevtools() error { return unsupported() }
+func (a *App) EnableDevtoolsHttp(DevToolsHttpOptions) (*DevToolsHttpSession, error) {
+	return nil, unsupported()
+}
+func (a *App) DevtoolsHttpSession(DevToolsHttpOptions) (*DevToolsHttpSession, error) {
+	return nil, unsupported()
+}
+func (a *App) DevtoolsHttpStop() error { return unsupported() }
+func (s *DevToolsHttpSession) Request(string, any) (map[string]any, error) {
+	return nil, unsupported()
+}
+func (s *DevToolsHttpSession) Stop() error { return unsupported() }

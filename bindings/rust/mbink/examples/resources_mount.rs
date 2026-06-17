@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use mbink::{App, compile_resources};
+use mbink::{compile_resources, App};
 
 fn main() -> mbink::Result<()> {
     let base = std::env::temp_dir().join("mbink-rust-resource-example");
@@ -37,4 +37,3 @@ fn main() -> mbink::Result<()> {
 fn path_str(path: &PathBuf) -> String {
     path.to_string_lossy().into_owned()
 }
-

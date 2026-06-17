@@ -1,6 +1,7 @@
 # DevTools模块 CMakeLists.txt
 
 set(DEVTOOLS_SOURCES
+    devtools_entry.cpp
     devtools_manager.cpp
     devtools_panel.cpp
     devtools_state.cpp
@@ -17,6 +18,8 @@ set(DEVTOOLS_SOURCES
     editor/attribute_editor.cpp
     search/element_search.cpp
     serializer/dom_serializer.cpp
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_snapshot.cpp
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader/ui_dev_control.cpp
 )
 
 set(DEVTOOLS_HEADERS
@@ -38,11 +41,12 @@ set(DEVTOOLS_HEADERS
     serializer/dom_serializer.h
 )
 
-add_library(mbink_devtools STATIC ${DEVTOOLS_SOURCES})
+add_library(mbink_devtools SHARED ${DEVTOOLS_SOURCES})
 
 target_include_directories(mbink_devtools PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader
     ${CMAKE_SOURCE_DIR}/third_party/quickjs
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
@@ -51,8 +55,12 @@ target_link_libraries(mbink_devtools PUBLIC
     mbink_dom
     mbink_render
     mbink_event
+    mbink_bridge
     mbink_utils
+    mbink_network
     mbink_lexbor
+    quickjs
+    nlohmann_json
 )
 
 # 链接Skia
@@ -61,6 +69,10 @@ if(TARGET skia)
 endif()
 
 # 匹配 Skia 的运行时库设置
+if(WIN32)
+    target_link_libraries(mbink_devtools PRIVATE ws2_32)
+endif()
+
 if(MSVC)
     target_compile_options(mbink_devtools PUBLIC
         $<$<CONFIG:Debug>:/MT>
@@ -70,3 +82,10 @@ if(MSVC)
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()
+
+set_target_properties(mbink_devtools PROPERTIES
+    OUTPUT_NAME "mbink_devtools"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
