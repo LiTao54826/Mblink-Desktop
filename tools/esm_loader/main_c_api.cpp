@@ -104,7 +104,10 @@ bool loadDevtoolsApi(DevtoolsApi* api, std::string* error) {
         if (ec || !fs::exists(path, ec)) {
             continue;
         }
-        HMODULE module = LoadLibraryW(path.wstring().c_str());
+        HMODULE module = LoadLibraryExW(
+            path.wstring().c_str(),
+            nullptr,
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
         if (!module) {
             last_error = "failed to load " + path.string();
             continue;

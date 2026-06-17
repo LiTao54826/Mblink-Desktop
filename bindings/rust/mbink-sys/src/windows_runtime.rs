@@ -1147,9 +1147,8 @@ fn devtools_dll_path() -> PathBuf {
         }
         if path.is_dir() {
             let candidate = path.join("mbink_devtools.dll");
-            return std::fs::canonicalize(&candidate).unwrap_or_else(|_| {
-                panic!("mbink_devtools.dll not found at {}", candidate.display())
-            });
+            return std::fs::canonicalize(&candidate)
+                .unwrap_or_else(|_| panic!("mbink_devtools.dll not found at {}", candidate.display()));
         }
         return std::fs::canonicalize(&path)
             .unwrap_or_else(|_| panic!("mbink_devtools.dll not found at {}", path.display()));

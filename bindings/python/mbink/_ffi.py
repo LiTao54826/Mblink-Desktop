@@ -164,16 +164,20 @@ def _devtools_library_names():
 
 def _find_devtools_dll(mbink_lib=None, path=None):
     if path:
-        return os.path.abspath(path)
+        if not os.path.isabs(path):
+            raise ValueError("devtools path must be absolute")
+        return os.path.realpath(path)
 
     names = _devtools_library_names()
     candidates = []
     env_path = os.environ.get("MBINK_DEVTOOLS_PATH", "")
     if env_path:
+        if not os.path.isabs(env_path):
+            raise ValueError("MBINK_DEVTOOLS_PATH must be absolute")
         if os.path.isdir(env_path):
-            candidates.extend(os.path.abspath(os.path.join(env_path, name)) for name in names)
+            candidates.extend(os.path.realpath(os.path.join(env_path, name)) for name in names)
         else:
-            candidates.append(os.path.abspath(env_path))
+            candidates.append(os.path.realpath(env_path))
 
     mbink_path = getattr(mbink_lib, "_mbink_dll_path", None)
     if mbink_path:
