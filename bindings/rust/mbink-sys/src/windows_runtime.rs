@@ -1142,10 +1142,17 @@ fn dll_path() -> PathBuf {
 fn devtools_dll_path() -> PathBuf {
     if let Some(path) = env::var_os("MBINK_DEVTOOLS_PATH") {
         let path = PathBuf::from(path);
-        if path.is_dir() {
-            return path.join("mbink_devtools.dll");
+        if !path.is_absolute() {
+            panic!("MBINK_DEVTOOLS_PATH must be an absolute path");
         }
-        return path;
+        if path.is_dir() {
+            let candidate = path.join("mbink_devtools.dll");
+            return std::fs::canonicalize(&candidate).unwrap_or_else(|_| {
+                panic!("mbink_devtools.dll not found at {}", candidate.display())
+            });
+        }
+        return std::fs::canonicalize(&path)
+            .unwrap_or_else(|_| panic!("mbink_devtools.dll not found at {}", path.display()));
     }
 
     let core_path = dll_path();

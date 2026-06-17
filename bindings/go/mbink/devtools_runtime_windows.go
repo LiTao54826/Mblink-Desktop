@@ -58,13 +58,25 @@ static int go_mbink_try_load_devtools_path(const wchar_t* path) {
     if (!path || !*path) {
         return 0;
     }
+    if (PathIsRelativeW(path)) {
+        return 0;
+    }
+    wchar_t full_path[32768];
     DWORD attrs = GetFileAttributesW(path);
-    wchar_t candidate[MAX_PATH];
+    wchar_t candidate[32768];
     if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-        swprintf(candidate, MAX_PATH, L"%ls\\mbink_devtools.dll", path);
+        swprintf(candidate, 32768, L"%ls\\mbink_devtools.dll", path);
         path = candidate;
     }
-    go_mbink_devtools_module = LoadLibraryW(path);
+    attrs = GetFileAttributesW(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        return 0;
+    }
+    DWORD full_len = GetFullPathNameW(path, 32768, full_path, NULL);
+    if (full_len == 0 || full_len >= 32768 || PathIsRelativeW(full_path)) {
+        return 0;
+    }
+    go_mbink_devtools_module = LoadLibraryExW(full_path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
     return go_mbink_devtools_module != NULL;
 }
 

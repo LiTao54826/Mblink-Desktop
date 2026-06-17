@@ -46,18 +46,35 @@ fs::path devtoolsLibraryName() {
 #endif
 }
 
-std::vector<fs::path> devtoolsLibraryCandidates(char** argv) {
+std::optional<fs::path> currentExecutableDirectory() {
+#ifdef _WIN32
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        DWORD len = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (len == 0) {
+            return std::nullopt;
+        }
+        if (len < buffer.size() - 1) {
+            buffer.resize(len);
+            return fs::path(buffer).parent_path();
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+#else
+    return std::nullopt;
+#endif
+}
+
+std::vector<fs::path> devtoolsLibraryCandidates() {
     std::vector<fs::path> candidates;
     if (const char* env_path = std::getenv("MBINK_DEVTOOLS_PATH"); env_path && *env_path) {
         fs::path path(env_path);
-        candidates.push_back(fs::is_directory(path) ? path / devtoolsLibraryName() : path);
-    }
-    if (argv && argv[0] && *argv[0]) {
-        std::error_code ec;
-        const auto exe_path = fs::absolute(fs::path(argv[0]), ec);
-        if (!ec) {
-            candidates.push_back(exe_path.parent_path() / devtoolsLibraryName());
+        if (path.is_absolute()) {
+            candidates.push_back(fs::is_directory(path) ? path / devtoolsLibraryName() : path);
         }
+    }
+    if (auto exe_dir = currentExecutableDirectory()) {
+        candidates.push_back(*exe_dir / devtoolsLibraryName());
     }
     return candidates;
 }
@@ -73,7 +90,7 @@ bool loadSymbol(DevtoolsApi* api, const char* name, Fn* out) {
     return *out != nullptr;
 }
 
-bool loadDevtoolsApi(char** argv, DevtoolsApi* api, std::string* error) {
+bool loadDevtoolsApi(DevtoolsApi* api, std::string* error) {
     if (!api) return false;
     if (api->module) return true;
 #ifndef _WIN32
@@ -81,7 +98,7 @@ bool loadDevtoolsApi(char** argv, DevtoolsApi* api, std::string* error) {
     return false;
 #else
     std::string last_error;
-    for (const auto& candidate : devtoolsLibraryCandidates(argv)) {
+    for (const auto& candidate : devtoolsLibraryCandidates()) {
         std::error_code ec;
         const auto path = fs::absolute(candidate, ec);
         if (ec || !fs::exists(path, ec)) {
@@ -489,7 +506,7 @@ int main(int argc, char** argv) {
     DevtoolsApi devtools;
     if (ui_dev_enabled) {
         std::string devtools_error;
-        if (!loadDevtoolsApi(argv, &devtools, &devtools_error)) {
+        if (!loadDevtoolsApi(&devtools, &devtools_error)) {
             std::cerr << "devtools runtime failed: " << devtools_error << "\n";
             mbink_destroy(app);
             mbink_cleanup();
