@@ -4,7 +4,23 @@ package mbink
 
 /*
 #include <stdlib.h>
+#include <stdbool.h>
 #include "mbink.h"
+
+typedef struct {
+    const char* runtime_epoch;
+    size_t max_nodes;
+    int max_depth;
+    const char* root_selector;
+    bool include_screenshot;
+    bool inline_screenshot;
+    const char* screenshot_file;
+} MBinkUiDevSnapshotOptions;
+
+extern MBinkUiDevSnapshotOptions go_mbink_ui_dev_default_snapshot_options_call(void);
+extern int go_mbink_ui_dev_snapshot_json_call(MBinkHandle h, const MBinkUiDevSnapshotOptions* o, char** out);
+extern int go_mbink_ui_dev_snapshot_file_call(MBinkHandle h, const char* p, const MBinkUiDevSnapshotOptions* o);
+extern int go_mbink_ui_dev_command_json_call(MBinkHandle h, const char* c, char** out);
 */
 import "C"
 

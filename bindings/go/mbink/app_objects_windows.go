@@ -3,7 +3,29 @@
 package mbink
 
 /*
+#include <stdlib.h>
+#include <stdbool.h>
 #include "mbink.h"
+
+typedef struct {
+    const char* bind_host;
+    unsigned short port;
+    const char* auth_token;
+    bool require_auth;
+} MBinkDevToolsHttpOptions;
+
+typedef struct {
+    unsigned short port;
+    char* url;
+    char* auth_token;
+} MBinkDevToolsHttpInfo;
+
+extern int go_mbink_devtools_open_call(MBinkHandle h);
+extern int go_mbink_devtools_close_call(MBinkHandle h);
+extern MBinkDevToolsHttpOptions go_mbink_devtools_default_http_options_call(void);
+extern int go_mbink_devtools_http_start_call(MBinkHandle h, const MBinkDevToolsHttpOptions* o, MBinkDevToolsHttpInfo* i);
+extern int go_mbink_devtools_http_stop_call(MBinkHandle h);
+extern void go_mbink_devtools_http_info_free_call(MBinkDevToolsHttpInfo* i);
 */
 import "C"
 

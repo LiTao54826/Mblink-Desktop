@@ -5,6 +5,7 @@ package mbink
 /*
 #include <stdlib.h>
 #include <stdbool.h>
+#include <wchar.h>
 #include <windows.h>
 #include "mbink.h"
 
@@ -144,16 +145,16 @@ resolve:
     return 0;
 }
 
-static int go_mbink_devtools_open_call(MBinkHandle h) { return go_mbink_devtools_open(h); }
-static int go_mbink_devtools_close_call(MBinkHandle h) { return go_mbink_devtools_close(h); }
-static MBinkDevToolsHttpOptions go_mbink_devtools_default_http_options_call(void) { return go_mbink_devtools_default_http_options(); }
-static int go_mbink_devtools_http_start_call(MBinkHandle h, const MBinkDevToolsHttpOptions* o, MBinkDevToolsHttpInfo* i) { return go_mbink_devtools_http_start(h, o, i); }
-static int go_mbink_devtools_http_stop_call(MBinkHandle h) { return go_mbink_devtools_http_stop(h); }
-static void go_mbink_devtools_http_info_free_call(MBinkDevToolsHttpInfo* i) { go_mbink_devtools_http_info_free(i); }
-static MBinkUiDevSnapshotOptions go_mbink_ui_dev_default_snapshot_options_call(void) { return go_mbink_ui_dev_default_snapshot_options(); }
-static int go_mbink_ui_dev_snapshot_json_call(MBinkHandle h, const MBinkUiDevSnapshotOptions* o, char** out) { return go_mbink_ui_dev_snapshot_json(h, o, out); }
-static int go_mbink_ui_dev_snapshot_file_call(MBinkHandle h, const char* p, const MBinkUiDevSnapshotOptions* o) { return go_mbink_ui_dev_snapshot_file(h, p, o); }
-static int go_mbink_ui_dev_command_json_call(MBinkHandle h, const char* c, char** out) { return go_mbink_ui_dev_command_json(h, c, out); }
+int go_mbink_devtools_open_call(MBinkHandle h) { return go_mbink_devtools_open(h); }
+int go_mbink_devtools_close_call(MBinkHandle h) { return go_mbink_devtools_close(h); }
+MBinkDevToolsHttpOptions go_mbink_devtools_default_http_options_call(void) { return go_mbink_devtools_default_http_options(); }
+int go_mbink_devtools_http_start_call(MBinkHandle h, const MBinkDevToolsHttpOptions* o, MBinkDevToolsHttpInfo* i) { return go_mbink_devtools_http_start(h, o, i); }
+int go_mbink_devtools_http_stop_call(MBinkHandle h) { return go_mbink_devtools_http_stop(h); }
+void go_mbink_devtools_http_info_free_call(MBinkDevToolsHttpInfo* i) { go_mbink_devtools_http_info_free(i); }
+MBinkUiDevSnapshotOptions go_mbink_ui_dev_default_snapshot_options_call(void) { return go_mbink_ui_dev_default_snapshot_options(); }
+int go_mbink_ui_dev_snapshot_json_call(MBinkHandle h, const MBinkUiDevSnapshotOptions* o, char** out) { return go_mbink_ui_dev_snapshot_json(h, o, out); }
+int go_mbink_ui_dev_snapshot_file_call(MBinkHandle h, const char* p, const MBinkUiDevSnapshotOptions* o) { return go_mbink_ui_dev_snapshot_file(h, p, o); }
+int go_mbink_ui_dev_command_json_call(MBinkHandle h, const char* c, char** out) { return go_mbink_ui_dev_command_json(h, c, out); }
 */
 import "C"
 
