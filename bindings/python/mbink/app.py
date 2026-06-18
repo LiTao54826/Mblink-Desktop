@@ -11,6 +11,7 @@ import inspect
 import warnings
 import asyncio
 import threading
+import time
 import urllib.request
 from .controls import LogView, Terminal
 from .resources import RESOURCE_FLAG_BYTECODE, load_resource_file
@@ -952,8 +953,31 @@ class DevToolsHttpSession:
             headers["X-MBINK-DevTools-Token"] = self.auth_token
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(self.url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode("utf-8"))
+        state = {"done": False, "result": None, "error": None}
+
+        def _worker():
+            try:
+                with urllib.request.urlopen(req) as response:
+                    state["result"] = json.loads(response.read().decode("utf-8"))
+            except BaseException as exc:
+                state["error"] = exc
+            finally:
+                state["done"] = True
+
+        worker = threading.Thread(
+            target=_worker,
+            daemon=True,
+            name="mbink-devtools-http-request",
+        )
+        worker.start()
+        while not state["done"]:
+            if self._app is not None and not self._app._destroyed:
+                self._app.poll()
+            time.sleep(0.002)
+        worker.join()
+        if state["error"] is not None:
+            raise state["error"]
+        return state["result"]
 
     def stop(self):
         self._app.devtools_http_stop()

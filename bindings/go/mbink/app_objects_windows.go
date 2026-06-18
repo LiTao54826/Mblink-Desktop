@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync/atomic"
+	"time"
 	"unsafe"
 )
 
@@ -110,6 +111,7 @@ func (a *App) DevtoolsHttpSession(options DevToolsHttpOptions) (*DevToolsHttpSes
 		Port:        uint16(info.port),
 		AuthToken:   C.GoString(info.auth_token),
 		RequireAuth: !options.NoAuth,
+		app:         a,
 		stop:        a.DevtoolsHttpStop,
 	}, nil
 }
@@ -143,16 +145,39 @@ func (s *DevToolsHttpSession) Request(method string, params any) (map[string]any
 	if s.AuthToken != "" {
 		req.Header.Set("X-MBINK-DevTools-Token", s.AuthToken)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
+
+	type requestResult struct {
+		value map[string]any
+		err   error
 	}
-	defer resp.Body.Close()
-	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+
+	done := make(chan requestResult, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			done <- requestResult{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			done <- requestResult{err: err}
+			return
+		}
+		done <- requestResult{value: out}
+	}()
+
+	for {
+		select {
+		case result := <-done:
+			return result.value, result.err
+		default:
+			if s.app != nil {
+				_, _ = s.app.Poll()
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
 	}
-	return out, nil
 }
 
 func (s *DevToolsHttpSession) Stop() error {

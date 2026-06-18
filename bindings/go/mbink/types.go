@@ -78,6 +78,7 @@ type DevToolsHttpSession struct {
 	Port        uint16
 	AuthToken   string
 	RequireAuth bool
+	app         *App
 	stop        func() error
 	nextID      int64
 }

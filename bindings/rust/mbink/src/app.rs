@@ -1,7 +1,10 @@
 use std::ffi::{CStr, CString};
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::sync::mpsc;
 use std::sync::Once;
+use std::thread;
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -111,7 +114,28 @@ impl DevToolsHttpSession {
         if let Some(params) = params {
             payload["params"] = params;
         }
-        post_jsonrpc(&self.url, &self.auth_token, &payload)
+
+        let url = self.url.clone();
+        let auth_token = self.auth_token.clone();
+        let (tx, rx) = mpsc::sync_channel(1);
+        thread::spawn(move || {
+            let _ = tx.send(post_jsonrpc(&url, &auth_token, &payload));
+        });
+
+        loop {
+            match rx.try_recv() {
+                Ok(result) => return result,
+                Err(mpsc::TryRecvError::Empty) => {
+                    unsafe { mbink_sys::mbink_poll_events(self.handle) };
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    return Err(Error::Message(
+                        "devtools http request worker stopped before returning".into(),
+                    ));
+                }
+            }
+        }
     }
 
     pub fn stop(self) -> Result<()> {

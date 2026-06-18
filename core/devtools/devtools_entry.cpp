@@ -1223,12 +1223,23 @@ int BridgeCommandJson(const DevToolsHostContext* context,
     const auto response_path = base / ("mbink-devtools-response-" + token + ".json");
 
     try {
+        auto command = nlohmann::json::parse(command_json, nullptr, false);
+        if (command.is_discarded() || !command.is_object()) {
+            SetHostString(out_response_json,
+                          R"({"ok":false,"error":{"code":"invalid_command","message":"ui-dev command must be a JSON object"}})");
+            return kMbinkOk;
+        }
+        if (!command.contains("id") || !command["id"].is_string() ||
+            command.value("id", std::string{}).empty()) {
+            command["id"] = token;
+        }
+
         {
             std::ofstream file(command_path, std::ios::binary | std::ios::trunc);
             if (!file) {
                 return kMbinkErrorUnknown;
             }
-            file << command_json;
+            file << command.dump();
         }
 
         bool ok = false;
