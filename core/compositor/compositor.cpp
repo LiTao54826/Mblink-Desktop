@@ -5,6 +5,7 @@
 
 #include "compositor.h"
 #include "core/render/objects/render_object.h"
+#include "core/render/objects/scrollbar_controller.h"
 #include "core/dom/element.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
@@ -835,29 +836,19 @@ static SkRect ComputeLocalOverflowClip(RenderObject* object) {
         content_height = object->CalculateContentHeight();
     }
 
-    const bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
-    const bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-    const float scrollbar_width = RenderObject::GetScrollbarWidth();
-    constexpr float kScrollTolerance = 1.0f;
+    const ScrollbarState scrollbar_state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        RenderObject::GetScrollbarWidth());
 
-    bool needs_v_scroll = allow_v_scroll &&
-        (overflow_y == "scroll" || content_height > visible_height + kScrollTolerance);
-
-    float content_area_width = (std::max)(0.0f, visible_width - (needs_v_scroll ? scrollbar_width : 0.0f));
-    bool needs_h_scroll = allow_h_scroll &&
-        (overflow_x == "scroll" || content_width > content_area_width + kScrollTolerance);
-    float content_area_height = (std::max)(0.0f, visible_height - (needs_h_scroll ? scrollbar_width : 0.0f));
-
-    if (needs_h_scroll && allow_v_scroll && !needs_v_scroll &&
-        content_height > content_area_height + kScrollTolerance) {
-        needs_v_scroll = true;
-        content_area_width = (std::max)(0.0f, visible_width - scrollbar_width);
-        needs_h_scroll = allow_h_scroll &&
-            (overflow_x == "scroll" || content_width > content_area_width + kScrollTolerance);
-        content_area_height = (std::max)(0.0f, visible_height - (needs_h_scroll ? scrollbar_width : 0.0f));
-    }
-
-    return SkRect::MakeXYWH(border_left, border_top, content_area_width, content_area_height);
+    return SkRect::MakeXYWH(border_left,
+                            border_top,
+                            scrollbar_state.content_area_width,
+                            scrollbar_state.content_area_height);
 }
 
 static bool CombineClip(const SkRect* inherited_clip,

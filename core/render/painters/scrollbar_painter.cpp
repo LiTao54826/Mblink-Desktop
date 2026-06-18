@@ -7,6 +7,7 @@
 
 #include "scrollbar_painter.h"
 #include "core/render/objects/render_object.h"
+#include "core/render/objects/scrollbar_controller.h"
 #include "include/core/SkRRect.h"
 #include <algorithm>
 
@@ -190,28 +191,20 @@ ScrollbarPaintParams ScrollbarPainter::CreateParams(
     std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     
-    bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-    bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+    ScrollbarState state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        params.visible_width,
+        params.visible_height,
+        overflow_x,
+        overflow_y,
+        kScrollbarWidth);
     
     // 判断是否需要滚动条
-    params.needs_v_scroll = allow_v_scroll && 
-        (content_height > params.visible_height || overflow_y == "scroll");
-    
-    float content_area_width = params.visible_width - 
-        (params.needs_v_scroll ? kScrollbarWidth : 0);
-    
-    params.needs_h_scroll = allow_h_scroll && 
-        (content_width > content_area_width || overflow_x == "scroll");
+    params.needs_v_scroll = state.needs_vertical;
+    params.needs_h_scroll = state.needs_horizontal;
     
     // 如果需要水平滚动条，重新检查垂直滚动条
-    if (params.needs_h_scroll) {
-        float content_area_height = params.visible_height - kScrollbarWidth;
-        if (allow_v_scroll && !params.needs_v_scroll && 
-            content_height > content_area_height) {
-            params.needs_v_scroll = true;
-        }
-    }
-    
     // CSS scrollbar-color 属性
     params.scrollbar_color_auto = style.scrollbar_color_auto;
     params.scrollbar_thumb_color = style.scrollbar_thumb_color;

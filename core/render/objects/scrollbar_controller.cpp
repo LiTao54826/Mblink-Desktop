@@ -12,6 +12,10 @@
 
 namespace mbink {
 
+namespace {
+constexpr float kScrollTolerance = 1.0f;
+}
+
 ScrollbarHitArea ScrollbarController::HitTestScrollbar(
     float local_x, float local_y,
     const ScrollbarHitTestParams& params) const {
@@ -30,11 +34,14 @@ ScrollbarHitArea ScrollbarController::HitTestScrollbar(
     float visible_height = params.visible_height - params.border_top - params.border_bottom;
 
     // 判断是否需要滚动条
-    bool needs_v_scroll = NeedsVerticalScrollbar(params.content_height, visible_height, 
-                                                  params.overflow_y);
-    float content_area_width = visible_width - (needs_v_scroll ? kScrollbarWidth : 0);
-    bool needs_h_scroll = NeedsHorizontalScrollbar(params.content_width, content_area_width,
-                                                    params.overflow_x);
+    ScrollbarState state = ComputeState(params.content_width,
+                                        params.content_height,
+                                        visible_width,
+                                        visible_height,
+                                        params.overflow_x,
+                                        params.overflow_y);
+    bool needs_v_scroll = state.needs_vertical;
+    bool needs_h_scroll = state.needs_horizontal;
 
     // 检测垂直滚动条区域（优先检测，因为它更常见）
     if (needs_v_scroll) {
@@ -90,10 +97,14 @@ bool ScrollbarController::UpdateDrag(float mouse_x, float mouse_y,
     float visible_height = params.visible_height - params.border_top - params.border_bottom;
 
     // 判断是否需要滚动条
-    bool needs_v_scroll = params.content_height > visible_height;
-    float content_area_width = visible_width - (needs_v_scroll ? kScrollbarWidth : 0);
-    bool needs_h_scroll = params.content_width > content_area_width;
-    float content_area_height = visible_height - (needs_h_scroll ? kScrollbarWidth : 0);
+    ScrollbarState state = ComputeState(params.content_width,
+                                        params.content_height,
+                                        visible_width,
+                                        visible_height,
+                                        "auto",
+                                        "auto");
+    float content_area_width = state.content_area_width;
+    float content_area_height = state.content_area_height;
 
     if (dragging_area_ == ScrollbarHitArea::HorizontalTrack ||
         dragging_area_ == ScrollbarHitArea::HorizontalThumb) {
@@ -151,7 +162,7 @@ bool ScrollbarController::NeedsHorizontalScrollbar(float content_width, float vi
         return true;
     }
     if (overflow_x == "auto") {
-        return content_width > visible_width;
+        return content_width > visible_width + kScrollTolerance;
     }
     return false;
 }
@@ -162,9 +173,44 @@ bool ScrollbarController::NeedsVerticalScrollbar(float content_height, float vis
         return true;
     }
     if (overflow_y == "auto") {
-        return content_height > visible_height;
+        return content_height > visible_height + kScrollTolerance;
     }
     return false;
+}
+
+ScrollbarState ScrollbarController::ComputeState(float content_width,
+                                                  float content_height,
+                                                  float visible_width,
+                                                  float visible_height,
+                                                  const std::string& overflow_x,
+                                                  const std::string& overflow_y,
+                                                  float scrollbar_width,
+                                                  float tolerance) {
+    ScrollbarState state;
+    state.allow_horizontal = overflow_x == "scroll" || overflow_x == "auto";
+    state.allow_vertical = overflow_y == "scroll" || overflow_y == "auto";
+    state.visible_width = std::max(0.0f, visible_width);
+    state.visible_height = std::max(0.0f, visible_height);
+
+    state.needs_horizontal =
+        state.allow_horizontal &&
+        (overflow_x == "scroll" || content_width > state.visible_width + tolerance);
+
+    state.needs_vertical =
+        state.allow_vertical &&
+        (overflow_y == "scroll" || content_height > state.visible_height + tolerance);
+
+    if (state.needs_horizontal && state.allow_vertical && !state.needs_vertical) {
+        float height_with_horizontal = std::max(0.0f, state.visible_height - scrollbar_width);
+        state.needs_vertical =
+            overflow_y == "scroll" || content_height > height_with_horizontal + tolerance;
+    }
+
+    state.content_area_width =
+        std::max(0.0f, state.visible_width - (state.needs_vertical ? scrollbar_width : 0.0f));
+    state.content_area_height =
+        std::max(0.0f, state.visible_height - (state.needs_horizontal ? scrollbar_width : 0.0f));
+    return state;
 }
 
 void ScrollbarController::CalculateThumbMetrics(float track_size, float content_size,

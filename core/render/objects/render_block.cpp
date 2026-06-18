@@ -1359,35 +1359,21 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         float visible_width = effective_width - box.border_left_width - box.border_right_width;
         float visible_height = effective_height - box.border_top_width - box.border_bottom_width;
 
-        bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-        bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+        ScrollbarState scrollbar_state = ScrollbarController::ComputeState(
+            content_width,
+            content_height,
+            visible_width,
+            visible_height,
+            overflow_x,
+            overflow_y,
+            scrollbar_width);
 
         // 使用容差值来避免浮点误差导致的滚动条误显示
         // 当内容高度和可见高度差异小于 1px 时，认为不需要滚动条
-        const float kScrollTolerance = 1.0f;
-
-        bool needs_v_scroll = allow_v_scroll &&
-            ((content_height > visible_height + kScrollTolerance) || overflow_y == "scroll");
-
-        float content_area_width = visible_width;
-        if (needs_v_scroll) {
-            content_area_width -= scrollbar_width;
-        }
-
-        bool needs_h_scroll = allow_h_scroll &&
-            ((content_width > content_area_width + kScrollTolerance) || overflow_x == "scroll");
-
-        float content_area_height = visible_height;
-        if (needs_h_scroll) {
-            content_area_height -= scrollbar_width;
-            if (allow_v_scroll && !needs_v_scroll &&
-                content_height > content_area_height + kScrollTolerance) {
-                needs_v_scroll = true;
-                content_area_width = visible_width - scrollbar_width;
-                needs_h_scroll = allow_h_scroll &&
-                    content_width > content_area_width + kScrollTolerance;
-            }
-        }
+        bool needs_v_scroll = scrollbar_state.needs_vertical;
+        bool needs_h_scroll = scrollbar_state.needs_horizontal;
+        float content_area_width = scrollbar_state.content_area_width;
+        float content_area_height = scrollbar_state.content_area_height;
 
         needs_scrollbar = needs_h_scroll || needs_v_scroll;
 
@@ -1396,8 +1382,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         //       需要自动调整scroll_y_以保持在有效范围内
         // 场景2：窗口最大化后不再需要滚动条，需要重置滚动位置
         // 注意：这里直接使用已计算的 content_width/height，避免再次调用 GetMaxScroll
-        float max_scroll_x = std::max(0.0f, content_width - content_area_width);
-        float max_scroll_y = std::max(0.0f, content_height - content_area_height);
+        float max_scroll_x = ScrollMaxForAxis(content_width, content_area_width, needs_h_scroll);
+        float max_scroll_y = ScrollMaxForAxis(content_height, content_area_height, needs_v_scroll);
 
         // 只在超出范围时调整（避免不必要的重绘标记）
         if (scroll_x_ > max_scroll_x || scroll_y_ > max_scroll_y) {
@@ -1636,22 +1622,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         std::string overflow_y_sb = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
 
         // 判断是否允许显示滚动条
-        bool allow_v_scroll = (overflow_y_sb == "scroll" || overflow_y_sb == "auto");
-        bool allow_h_scroll = (overflow_x_sb == "scroll" || overflow_x_sb == "auto");
+        ScrollbarState scrollbar_state = ScrollbarController::ComputeState(
+            content_width,
+            content_height,
+            visible_width,
+            visible_height,
+            overflow_x_sb,
+            overflow_y_sb,
+            scrollbar_width);
 
         // 使用与上面相同的逻辑判断是否需要滚动条
-        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y_sb == "scroll");
-        float content_area_width_sb = visible_width - (needs_v_scroll ? scrollbar_width : 0);
-        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width_sb || overflow_x_sb == "scroll");
+        bool needs_v_scroll = scrollbar_state.needs_vertical;
+        bool needs_h_scroll = scrollbar_state.needs_horizontal;
 
         // 如果需要水平滚动条，调整高度并重新检查
-        if (needs_h_scroll) {
-            float content_area_height_sb = visible_height - scrollbar_width;
-            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height_sb) {
-                needs_v_scroll = true;
-            }
-        }
-
         const float scrollbar_margin = 2.0f;
         const float corner_radius = 4.0f;
 

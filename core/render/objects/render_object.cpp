@@ -1025,8 +1025,16 @@ bool RenderObject::IsScrollable() const {
     // 检查内容是否超出可见区域（对于 body 元素使用视口尺寸）
     float visible_width = GetEffectiveVisibleWidth();
     float visible_height = GetEffectiveVisibleHeight();
-    bool scrollable = (allow_h_scroll && content_width_ > visible_width) ||
-                      (allow_v_scroll && content_height_ > visible_height);
+    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
+    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
+    ScrollbarState state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y);
+    bool scrollable = state.needs_horizontal || state.needs_vertical;
 
     return scrollable;
 }
@@ -1053,11 +1061,19 @@ float RenderObject::GetMaxScrollX() const {
     float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
 
     // 检查是否需要垂直滚动条
-    bool needs_v_scroll = content_height > visible_height;
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    ScrollbarState state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        scrollbar_width);
 
     // 可用内容宽度需要减去垂直滚动条宽度
-    float available_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
-    float max_scroll = std::max(0.0f, content_width - available_width);
+    float max_scroll = ScrollMaxForAxis(content_width, state.content_area_width, state.needs_horizontal);
 
     return max_scroll;
 }
@@ -1084,15 +1100,20 @@ float RenderObject::GetMaxScrollY() const {
     float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
 
     // 检查是否需要垂直滚动条（用于计算内容区域宽度）
-    bool needs_v_scroll = content_height > visible_height;
-    float available_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    ScrollbarState state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        scrollbar_width);
 
     // 检查是否需要水平滚动条
-    bool needs_h_scroll = content_width > available_width;
-
     // 可用内容高度需要减去水平滚动条高度
-    float available_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
-    float max_scroll = std::max(0.0f, content_height - available_height);
+    float max_scroll = ScrollMaxForAxis(content_height, state.content_area_height, state.needs_vertical);
 
     return max_scroll;
 }
@@ -1177,9 +1198,16 @@ RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, flo
     float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
 
     // 使用与 Paint 相同的逻辑判断是否需要滚动条
-    bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y == "scroll");
-    float content_area_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
-    bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width || overflow_x == "scroll");
+    ScrollbarState state = ScrollbarController::ComputeState(
+        content_width,
+        content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        scrollbar_width);
+    bool needs_v_scroll = state.needs_vertical;
+    bool needs_h_scroll = state.needs_horizontal;
 
     // 检测垂直滚动条区域（优先检测，因为它更常见）
     // 注意：local_x/local_y 是相对于元素的坐标，需要考虑 border

@@ -97,6 +97,18 @@ nlohmann::json CachedElementRect(const std::shared_ptr<mbink::Element>& element)
     return nlohmann::json{{"x", rect.x()}, {"y", rect.y()}, {"w", rect.width()}, {"h", rect.height()}};
 }
 
+nlohmann::json ElementScrollState(const std::shared_ptr<mbink::Element>& element) {
+    auto render_object = element ? element->GetRenderObject() : nullptr;
+    if (!render_object) {
+        return nlohmann::json{{"x", 0}, {"y", 0}, {"max_x", 0}, {"max_y", 0}};
+    }
+
+    return nlohmann::json{{"x", render_object->GetScrollX()},
+                          {"y", render_object->GetScrollY()},
+                          {"max_x", render_object->GetMaxScrollX()},
+                          {"max_y", render_object->GetMaxScrollY()}};
+}
+
 struct SnapshotTraversalState {
     size_t max_nodes = 2000;
     int max_depth = 64;
@@ -231,6 +243,7 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
             for (const auto& [k, v] : el->GetAllAttributes()) j["attrs"][k] = v;
             auto rect = CachedElementRect(el);
             j["rect"] = rect;
+            j["scroll"] = ElementScrollState(el);
             j["visible"] = rect.value("w", 0.0) > 0.0 && rect.value("h", 0.0) > 0.0;
         } else {
             j["rect"] = nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};

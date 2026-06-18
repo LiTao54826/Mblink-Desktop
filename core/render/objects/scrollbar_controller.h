@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <string>
 
 namespace mbink {
@@ -72,6 +73,21 @@ struct ScrollbarDragParams {
     float border_top = 0.0f;
     float border_bottom = 0.0f;
 };
+
+struct ScrollbarState {
+    bool allow_horizontal = false;
+    bool allow_vertical = false;
+    bool needs_horizontal = false;
+    bool needs_vertical = false;
+    float visible_width = 0.0f;
+    float visible_height = 0.0f;
+    float content_area_width = 0.0f;
+    float content_area_height = 0.0f;
+};
+
+inline float ScrollMaxForAxis(float content_size, float content_area_size, bool needs_scrollbar) {
+    return needs_scrollbar ? std::max(0.0f, content_size - content_area_size) : 0.0f;
+}
 
 /**
  * @brief 滚动条控制器
@@ -172,6 +188,20 @@ public:
      */
     static bool NeedsVerticalScrollbar(float content_height, float visible_height,
                                         const std::string& overflow_y);
+
+    /**
+     * @brief 统一计算滚动条状态
+     *
+     * 先根据内容与可视区域判断真实溢出，再考虑另一方向滚动条占位后的联动。
+     */
+    static ScrollbarState ComputeState(float content_width,
+                                       float content_height,
+                                       float visible_width,
+                                       float visible_height,
+                                       const std::string& overflow_x,
+                                       const std::string& overflow_y,
+                                       float scrollbar_width = kScrollbarWidth,
+                                       float tolerance = 1.0f);
 
 private:
     /**

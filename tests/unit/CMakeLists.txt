@@ -44,6 +44,7 @@ set(RENDER_TEST_SOURCES
     render/test_css_variables.cpp
     render/test_color.cpp
     render/test_transform.cpp
+    render/test_scrollbar_controller.cpp
 )
 
 # QuickJS 测试

@@ -11,6 +11,7 @@
 #include "core/compositor/property_tree/nodes/scroll_tree_node.h"
 #include "core/compositor/property_tree/property_tree_state.h"
 #include "core/render/objects/render_object.h"
+#include "core/render/objects/scrollbar_controller.h"
 #include <algorithm>
 #include <cmath>
 
@@ -83,10 +84,6 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
     std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     
-    // 判断是否允许滚动
-    bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-    bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
-    
     // 计算内容尺寸
     // 注意：如果缓存的内容尺寸为 0，需要动态计算
     // 这在首次注册滚动容器时很重要，因为 Paint 可能还没有被调用
@@ -100,47 +97,16 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
         info.content_height = container->CalculateContentHeight();
     }
     
-    // 计算是否需要滚动条（与Paint逻辑一致）
-    const float scrollbar_width = 12.0f;
-    bool needs_v_scroll = allow_v_scroll && (info.content_height > visible_height || overflow_y == "scroll");
-    
-    float content_area_width = visible_width;
-    if (needs_v_scroll) {
-        content_area_width -= scrollbar_width;
-    }
-    
-    bool needs_h_scroll = allow_h_scroll && (info.content_width > content_area_width || overflow_x == "scroll");
-    
-    float content_area_height = visible_height;
-    if (needs_h_scroll) {
-        content_area_height -= scrollbar_width;
-        // 重新检查是否需要垂直滚动条（水平滚动条可能导致需要垂直滚动条）
-        if (allow_v_scroll && !needs_v_scroll && info.content_height > content_area_height) {
-            needs_v_scroll = true;
-            content_area_width = visible_width - scrollbar_width;
-            // 重新检查水平滚动条
-            needs_h_scroll = allow_h_scroll && info.content_width > content_area_width;
-        }
-    }
-    
-    // 初始 viewport 为可见区域
-    info.viewport_width = visible_width;
-    info.viewport_height = visible_height;
-    
-    // 如果有垂直滚动条，视口宽度要减去滚动条宽度
-    if (needs_v_scroll) {
-        info.viewport_width -= scrollbar_width;
-    }
-    
-    // 重新检查水平滚动条
-    if (overflow_x == "scroll" || (overflow_x == "auto" && info.content_width > info.viewport_width)) {
-        needs_h_scroll = true;
-    }
-    
-    // 如果有水平滚动条，视口高度要减去滚动条宽度
-    if (needs_h_scroll) {
-        info.viewport_height -= scrollbar_width;
-    }
+    const ScrollbarState scrollbar_state = ScrollbarController::ComputeState(
+        info.content_width,
+        info.content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        RenderObject::GetScrollbarWidth());
+    info.viewport_width = scrollbar_state.content_area_width;
+    info.viewport_height = scrollbar_state.content_area_height;
 
     
     // 获取当前滚动位置
@@ -389,31 +355,19 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     float visible_width = effective_width - border_left - border_right;
     float visible_height = effective_height - border_top - border_bottom;
 
-    const float scrollbar_width = 12.0f;
-    bool needs_v_scroll = false;
-    bool needs_h_scroll = false;
-    
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
-    
-    if (overflow_y == "scroll" || (overflow_y == "auto" && info->content_height > visible_height)) {
-        needs_v_scroll = true;
-    }
-    
-    info->viewport_width = visible_width;
-    info->viewport_height = visible_height;
-    
-    if (needs_v_scroll) {
-        info->viewport_width -= scrollbar_width;
-    }
-    
-    if (overflow_x == "scroll" || (overflow_x == "auto" && info->content_width > info->viewport_width)) {
-        needs_h_scroll = true;
-    }
-    
-    if (needs_h_scroll) {
-        info->viewport_height -= scrollbar_width;
-    }
+
+    const ScrollbarState scrollbar_state = ScrollbarController::ComputeState(
+        info->content_width,
+        info->content_height,
+        visible_width,
+        visible_height,
+        overflow_x,
+        overflow_y,
+        RenderObject::GetScrollbarWidth());
+    info->viewport_width = scrollbar_state.content_area_width;
+    info->viewport_height = scrollbar_state.content_area_height;
     
     // 重新计算滚动范围
     CalculateScrollBounds(*info);
@@ -741,7 +695,11 @@ bool ScrollLayerManager::IsPositionFixed(RenderObject* obj) const {
 }
 
 void ScrollLayerManager::CalculateScrollBounds(ScrollContainerInfo& info) {
-    // 最大滚动范围 = 内容尺寸 - 视口尺寸
+    if (info.container) {
+        info.max_scroll_x = info.container->GetMaxScrollX();
+        info.max_scroll_y = info.container->GetMaxScrollY();
+        return;
+    }
     info.max_scroll_x = std::max(0.0f, info.content_width - info.viewport_width);
     info.max_scroll_y = std::max(0.0f, info.content_height - info.viewport_height);
 }

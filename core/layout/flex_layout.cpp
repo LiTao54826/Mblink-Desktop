@@ -584,7 +584,7 @@ static FlexAlgoConstants ComputeConstants(
     // For overflow: scroll, scrollbar_width is set in style parsing
     // For overflow: auto, scrollbar_width is set dynamically in ComputeNodeLayout
     float scrollbar_right = (style.overflow.y == Overflow::Scroll || style.scrollbar_width > 0.0f) ? style.scrollbar_width : 0.0f;
-    float scrollbar_bottom = (style.overflow.x == Overflow::Scroll) ? style.scrollbar_width : 0.0f;
+    float scrollbar_bottom = (style.overflow.x == Overflow::Scroll || style.scrollbar_height > 0.0f) ? style.scrollbar_height : 0.0f;
     constants.scrollbar_gutter = {scrollbar_right, scrollbar_bottom};
 
     // Content box inset = padding + border + scrollbar_gutter

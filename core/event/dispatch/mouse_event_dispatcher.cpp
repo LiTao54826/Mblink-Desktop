@@ -66,6 +66,35 @@ bool IsPrimaryEditorElement(const std::shared_ptr<Element>& element) {
     return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || tag_name == "logview";
 }
 
+bool IsSelectionSuppressedByInteractiveControl(const std::shared_ptr<Element>& element) {
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        auto current_element = std::dynamic_pointer_cast<Element>(current);
+        if (current_element) {
+            const std::string tag_name = current_element->GetTagName();
+            if (tag_name == "button" || tag_name == "select" || tag_name == "a") {
+                return true;
+            }
+            if (tag_name == "input") {
+                auto input = std::dynamic_pointer_cast<HTMLInputElement>(current_element);
+                if (!input) {
+                    return true;
+                }
+                const InputType type = input->GetInputType();
+                return type != InputType::Text &&
+                       type != InputType::Password &&
+                       type != InputType::Search &&
+                       type != InputType::Email &&
+                       type != InputType::Tel &&
+                       type != InputType::Url &&
+                       type != InputType::Number;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return false;
+}
+
 bool IsSelectionSuppressedByUserSelect(const std::shared_ptr<Element>& element) {
     std::shared_ptr<Node> current = element;
     while (current) {
@@ -2101,6 +2130,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                 root_render);
         } else if (selection_manager_ &&
                    !IsPrimaryEditorElement(hit_result.element) &&
+                   !IsSelectionSuppressedByInteractiveControl(hit_result.element) &&
                    !IsSelectionSuppressedByUserSelect(hit_result.element)) {
             UpdateSelectionFromClick(window, document, hit_result, logical_x, logical_y);
         }
@@ -2447,6 +2477,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                 selection_manager_ &&
                 document &&
                 !IsPrimaryEditorElement(hit_result.element) &&
+                !IsSelectionSuppressedByInteractiveControl(hit_result.element) &&
                 !hit_result.element->IsContentEditable() &&
                 !IsSelectionSuppressedByUserSelect(hit_result.element)) {
                 const auto text_hit = ResolveTextHit(hit_result, logical_x, logical_y);
@@ -2582,8 +2613,10 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
                  selection_manager_ &&
                  document &&
                  !IsPrimaryEditorElement(last_mousedown) &&
+                 !IsSelectionSuppressedByInteractiveControl(last_mousedown) &&
                  !last_mousedown->IsContentEditable() &&
                  !IsSelectionSuppressedByUserSelect(last_mousedown) &&
+                 !IsSelectionSuppressedByInteractiveControl(hit_result.element) &&
                  !IsSelectionSuppressedByUserSelect(hit_result.element)) {
             ExtendSelectionFromDrag(window, document, hit_result, logical_x, logical_y);
         }

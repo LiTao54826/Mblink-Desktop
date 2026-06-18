@@ -27,6 +27,7 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/objects/render_inline_block.h"
 #include "core/render/objects/render_inline_flex.h"
+#include "core/render/objects/scrollbar_controller.h"
 #include "core/render/objects/render_svg.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/text/font_manager.h"
@@ -2546,6 +2547,63 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
 // Private: Layout Computation
 //------------------------------------------------------------------------------
 
+bool NativeLayoutEngine::UpdateAutoScrollbarState(LayoutNode* node,
+                                                  const LayoutInput& inputs,
+                                                  const LayoutOutput& output) {
+    if (!node || !node->render_obj) {
+        return false;
+    }
+
+    const auto& computed = node->render_obj->GetComputedStyle();
+    const std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
+    const std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
+    if (overflow_x != "auto" && overflow_x != "scroll" &&
+        overflow_y != "auto" && overflow_y != "scroll") {
+        return false;
+    }
+
+    const bool had_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
+    const bool had_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
+    const float fallback_width = output.size.width;
+    const float fallback_height = inputs.available_space.height.IsDefinite()
+        ? inputs.available_space.height.value
+        : output.size.height;
+    const float container_width = inputs.known_dimensions.width.value_or(fallback_width);
+    const float container_height = inputs.known_dimensions.height.value_or(fallback_height);
+
+    if (computed.overflow_y != "scroll") {
+        node->style.scrollbar_width = 0.0f;
+    }
+    if (computed.overflow_x != "scroll") {
+        node->style.scrollbar_height = 0.0f;
+    }
+
+    if (container_width <= 0.0f || container_height <= 0.0f) {
+        const bool has_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
+        const bool has_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
+        return had_vertical_scrollbar != has_vertical_scrollbar ||
+               had_horizontal_scrollbar != has_horizontal_scrollbar;
+    }
+
+    const float scrollbar_width = RenderObject::GetScrollbarWidth();
+    const ScrollbarState state = ScrollbarController::ComputeState(
+        output.content_size.width,
+        output.content_size.height,
+        container_width,
+        container_height,
+        overflow_x,
+        overflow_y,
+        scrollbar_width);
+
+    node->style.scrollbar_width = state.needs_vertical ? scrollbar_width : 0.0f;
+    node->style.scrollbar_height = state.needs_horizontal ? scrollbar_width : 0.0f;
+
+    const bool has_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
+    const bool has_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
+    return had_vertical_scrollbar != has_vertical_scrollbar ||
+           had_horizontal_scrollbar != has_horizontal_scrollbar;
+}
+
 LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutInput& inputs) {
     LayoutNode* node = GetNode(node_id);
     if (!node) {
@@ -2679,194 +2737,24 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 output = ComputeBlockLayout(node_id, inputs);
             }
 
-            // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
-            // Skip for anonymous blocks (no render_obj)
-            // 统一滚动条处理：包括 root 节点
-            // **Feature: unified-scrollbar-system**
-            // **Validates: Requirements 1.1, 1.4, 3.1**
-            if (node->render_obj) {
-            const auto& computed = node->render_obj->GetComputedStyle();
-            std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
-            std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
-
-            // Only handle overflow: auto (overflow: scroll is handled in style parsing)
-            if (overflow_y == "auto" || overflow_x == "auto") {
-                // Check if we need to relayout with scrollbar space
-                bool needs_relayout = false;
-                float scrollbar_width = RenderObject::GetScrollbarWidth();
-
-                bool had_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
-                bool had_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
-                float checked_content_width = -1.0f;
-                float checked_effective_width = -1.0f;
-                float checked_content_height = -1.0f;
-                float checked_effective_height = -1.0f;
-
-                // Reset auto scrollbar state before recomputing it
-                if (computed.overflow_y != "scroll") {
-                    node->style.scrollbar_width = 0.0f;
-                }
-                if (computed.overflow_x != "scroll") {
-                    node->style.scrollbar_height = 0.0f;
-                }
-
-                // For overflow-y: auto, check if content height exceeds container height
-                // 对于 root 节点，使用 available_space.height 作为容器高度
-                // **Feature: unified-scrollbar-system**
-                // **Validates: Requirements 1.1, 1.4**
-                float fallback_height = inputs.available_space.height.IsDefinite() ?
-                    inputs.available_space.height.value : output.size.height;
-                float container_height = inputs.known_dimensions.height.value_or(fallback_height);
-                if (overflow_y == "auto" && container_height > 0) {
-                    float actual_content_height = output.content_size.height;
-                    float effective_container_height = container_height - node->style.scrollbar_height;
-                    checked_content_height = actual_content_height;
-                    checked_effective_height = effective_container_height;
-                    if (effective_container_height < 0) effective_container_height = 0;
-                    if (actual_content_height > effective_container_height) {
-                        // Need vertical scrollbar - update style and relayout
-                        node->style.scrollbar_width = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                // For overflow-x: auto, check if content width exceeds container width
-                float container_width = inputs.known_dimensions.width.value_or(output.size.width);
-                if (overflow_x == "auto" && container_width > 0) {
-                    float actual_content_width = output.content_size.width;
-                    // 考虑垂直滚动条占用的宽度
-                    float effective_container_width = container_width - node->style.scrollbar_width;
-                    checked_content_width = actual_content_width;
-                    checked_effective_width = effective_container_width;
-                    if (effective_container_width < 0) effective_container_width = 0;
-                    if (actual_content_width > effective_container_width) {
-                        // Need horizontal scrollbar - update style and relayout
-                        node->style.scrollbar_height = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                // Horizontal scrollbar may reduce available height and trigger vertical overflow
-                if (overflow_y == "auto" && container_height > 0 && node->style.scrollbar_height > 0.0f) {
-                    float actual_content_height = output.content_size.height;
-                    float effective_container_height = container_height - node->style.scrollbar_height;
-                    checked_content_height = actual_content_height;
-                    checked_effective_height = effective_container_height;
-                    if (effective_container_height < 0) effective_container_height = 0;
-                    if (actual_content_height > effective_container_height) {
-                        node->style.scrollbar_width = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                bool scrollbar_changed =
-                    (had_vertical_scrollbar != (node->style.scrollbar_width > 0.0f)) ||
-                    (had_horizontal_scrollbar != (node->style.scrollbar_height > 0.0f));
-                if (needs_relayout && scrollbar_changed) {
-                    // Clear cache and relayout with scrollbar space
-                    node->cache.Clear();
-
-                    // 滚动条空间由 ComputeBlockLayoutInner 中的 scrollbar_gutter 处理
-                    // 不需要在这里修改 known_dimensions，否则会导致双重减少
-                    // **Feature: unified-scrollbar-system**
-                    // **Validates: Requirements 1.5, 2.2**
-
-                    if (node->is_ifc_container) {
-                        output = ComputeIFCLayout(node_id, inputs);
-                    } else {
-                        output = ComputeBlockLayout(node_id, inputs);
-                    }
+            if (UpdateAutoScrollbarState(node, inputs, output)) {
+                node->cache.Clear();
+                if (node->is_ifc_container) {
+                    output = ComputeIFCLayout(node_id, inputs);
+                } else {
+                    output = ComputeBlockLayout(node_id, inputs);
                 }
             }
-            }  // end if (node->render_obj)
             break;
         }
 
         case Display::Flex: {
             output = ComputeFlexLayout(node_id, inputs);
 
-            // Handle overflow: auto - if content exceeds container, add scrollbar and relayout
-            // Skip for anonymous blocks (no render_obj)
-            if (node->render_obj) {
-            const auto& computed = node->render_obj->GetComputedStyle();
-            std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
-            std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
-
-            // Only handle overflow: auto (overflow: scroll is handled in style parsing)
-            if (overflow_y == "auto" || overflow_x == "auto") {
-                // Check if we need to relayout with scrollbar space
-                bool needs_relayout = false;
-                float scrollbar_width = RenderObject::GetScrollbarWidth();
-
-                bool had_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
-                bool had_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
-                float checked_content_width = -1.0f;
-                float checked_effective_width = -1.0f;
-                float checked_content_height = -1.0f;
-                float checked_effective_height = -1.0f;
-
-                // Reset auto scrollbar state before recomputing it
-                if (computed.overflow_y != "scroll") {
-                    node->style.scrollbar_width = 0.0f;
-                }
-                if (computed.overflow_x != "scroll") {
-                    node->style.scrollbar_height = 0.0f;
-                }
-
-                // For overflow-y: auto, check if content height exceeds container height
-                float fallback_height = inputs.available_space.height.IsDefinite() ?
-                    inputs.available_space.height.value : output.size.height;
-                float container_height = inputs.known_dimensions.height.value_or(fallback_height);
-                if (overflow_y == "auto" && container_height > 0) {
-                    float actual_content_height = output.content_size.height;
-                    float effective_container_height = container_height - node->style.scrollbar_height;
-                    checked_content_height = actual_content_height;
-                    checked_effective_height = effective_container_height;
-                    if (effective_container_height < 0) effective_container_height = 0;
-                    if (actual_content_height > effective_container_height) {
-                        // Need vertical scrollbar - update style and relayout
-                        node->style.scrollbar_width = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                // For overflow-x: auto, check if content width exceeds container width
-                float container_width = inputs.known_dimensions.width.value_or(output.size.width);
-                if (overflow_x == "auto" && container_width > 0) {
-                    float actual_content_width = output.content_size.width;
-                    float effective_container_width = container_width - node->style.scrollbar_width;
-                    checked_content_width = actual_content_width;
-                    checked_effective_width = effective_container_width;
-                    if (effective_container_width < 0) effective_container_width = 0;
-                    if (actual_content_width > effective_container_width) {
-                        // Need horizontal scrollbar - update style and relayout
-                        node->style.scrollbar_height = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                if (overflow_y == "auto" && container_height > 0 && node->style.scrollbar_height > 0.0f) {
-                    float actual_content_height = output.content_size.height;
-                    float effective_container_height = container_height - node->style.scrollbar_height;
-                    checked_content_height = actual_content_height;
-                    checked_effective_height = effective_container_height;
-                    if (effective_container_height < 0) effective_container_height = 0;
-                    if (actual_content_height > effective_container_height) {
-                        node->style.scrollbar_width = scrollbar_width;
-                        needs_relayout = true;
-                    }
-                }
-
-                bool scrollbar_changed =
-                    (had_vertical_scrollbar != (node->style.scrollbar_width > 0.0f)) ||
-                    (had_horizontal_scrollbar != (node->style.scrollbar_height > 0.0f));
-                if (needs_relayout && scrollbar_changed) {
-                    // Clear cache and relayout with scrollbar space
-                    node->cache.Clear();
-                    output = ComputeFlexLayout(node_id, inputs);
-                }
+            if (UpdateAutoScrollbarState(node, inputs, output)) {
+                node->cache.Clear();
+                output = ComputeFlexLayout(node_id, inputs);
             }
-            }  // end if (node->render_obj)
             break;
         }
 

@@ -338,6 +338,10 @@ private:
      */
     LayoutOutput ComputeNodeLayout(NodeId node_id, const LayoutInput& inputs);
 
+    bool UpdateAutoScrollbarState(LayoutNode* node,
+                                  const LayoutInput& inputs,
+                                  const LayoutOutput& output);
+
     /**
      * @brief Compute block layout for a node
      * @param node_id Node to layout
