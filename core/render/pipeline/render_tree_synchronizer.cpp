@@ -13,6 +13,7 @@
 #include "core/quickjs/dom_binding_map.h"
 #include "core/quickjs/bindings/js_element.h"
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -20,6 +21,95 @@
 
 namespace mbink {
 namespace {
+bool CssTextContainsProperty(const std::string& css_text, const std::string& property) {
+    size_t start = 0;
+    while (start < css_text.size()) {
+        size_t end = css_text.find(';', start);
+        std::string declaration = css_text.substr(
+            start,
+            end == std::string::npos ? std::string::npos : end - start);
+        size_t colon = declaration.find(':');
+        if (colon != std::string::npos) {
+            std::string name = declaration.substr(0, colon);
+            auto trim = [](std::string& value) {
+                const char* whitespace = " \t\n\r";
+                size_t first = value.find_first_not_of(whitespace);
+                if (first == std::string::npos) {
+                    value.clear();
+                    return;
+                }
+                size_t last = value.find_last_not_of(whitespace);
+                value = value.substr(first, last - first + 1);
+            };
+            trim(name);
+            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            if (name == property) {
+                return true;
+            }
+        }
+
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+
+bool StyleChangeCanAffectDescendantInheritance(const DirtyNodeTracker::StyleChange& change) {
+    static const std::unordered_set<std::string> inherited_properties = {
+        "color",
+        "font-family",
+        "font-size",
+        "font-weight",
+        "font-style",
+        "line-height",
+        "text-align",
+        "text-decoration",
+        "text-shadow",
+        "text-transform",
+        "vertical-align",
+        "letter-spacing",
+        "word-spacing",
+        "text-indent",
+        "white-space",
+        "word-break",
+        "visibility",
+        "cursor",
+        "direction",
+        "unicode-bidi",
+        "pointer-events",
+        "user-select",
+        "list-style-type",
+        "list-style-position",
+        "list-style-image",
+    };
+
+    if (change.property == "class" || change.property == "id") {
+        return true;
+    }
+    if (inherited_properties.find(change.property) != inherited_properties.end()) {
+        return true;
+    }
+    if (change.property != "style") {
+        return false;
+    }
+    if (change.old_value.find("--") != std::string::npos ||
+        change.new_value.find("--") != std::string::npos) {
+        return true;
+    }
+
+    for (const auto& property : inherited_properties) {
+        if (CssTextContainsProperty(change.old_value, property) ||
+            CssTextContainsProperty(change.new_value, property)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsNodeAttachedToDocument(Node* node) {
     while (node) {
         if (node->GetNodeType() == NodeType::DOCUMENT_NODE) {
@@ -409,10 +499,12 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         render_obj->InvalidatePaintCache();
 
         // style/class/id 变化可能影响整棵后代子树的变量继承与选择器匹配
-        if (change.property == "class" || change.property == "id") {
+        if (StyleChangeCanAffectDescendantInheritance(change)) {
             for (const auto& child : element->GetChildNodes()) {
                 if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
                     RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+                } else if (child && child->GetNodeType() == NodeType::TEXT_NODE) {
+                    RefreshTextStyleFromParent(child);
                 }
             }
         }
@@ -464,8 +556,66 @@ void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
     for (const auto& child : element->GetChildNodes()) {
         if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
             RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+        } else if (child && child->GetNodeType() == NodeType::TEXT_NODE) {
+            RefreshTextStyleFromParent(child);
         }
     }
+}
+
+void RenderTreeSynchronizer::RefreshTextStyleFromParent(std::shared_ptr<Node> text_node) {
+    if (!text_node || text_node->GetNodeType() != NodeType::TEXT_NODE) {
+        return;
+    }
+
+    auto render_obj = text_node->GetRenderObject();
+    if (!render_obj || render_obj->GetType() != RenderObjectType::TEXT) {
+        return;
+    }
+
+    ComputedStyle text_style = render_obj->GetComputedStyle();
+    if (auto parent_node = text_node->GetParentNode()) {
+        if (auto parent_render = parent_node->GetRenderObject()) {
+            const auto& parent_style = parent_render->GetComputedStyle();
+            text_style.color = parent_style.color;
+            text_style.font_family = parent_style.font_family;
+            text_style.font_size = parent_style.font_size;
+            text_style.font_weight = parent_style.font_weight;
+            text_style.font_style = parent_style.font_style;
+            text_style.line_height = parent_style.line_height;
+            text_style.text_align = parent_style.text_align;
+            text_style.text_decoration = parent_style.text_decoration;
+            text_style.text_shadow = parent_style.text_shadow;
+            text_style.text_transform = parent_style.text_transform;
+            text_style.vertical_align = parent_style.vertical_align;
+            text_style.letter_spacing = parent_style.letter_spacing;
+            text_style.word_spacing = parent_style.word_spacing;
+            text_style.text_indent = parent_style.text_indent;
+            text_style.white_space = parent_style.white_space;
+            text_style.word_break = parent_style.word_break;
+            text_style.visibility = parent_style.visibility;
+            text_style.cursor = parent_style.cursor;
+            text_style.direction = parent_style.direction;
+            text_style.unicode_bidi = parent_style.unicode_bidi;
+            text_style.pointer_events = parent_style.pointer_events;
+            text_style.user_select = parent_style.user_select;
+            text_style.list_style_type = parent_style.list_style_type;
+            text_style.list_style_position = parent_style.list_style_position;
+            text_style.list_style_image = parent_style.list_style_image;
+            text_style.css_variables.InheritFrom(&parent_style.css_variables);
+        }
+    }
+
+    render_obj->SetComputedStyle(text_style);
+
+    if (auto engine = layout_engine_) {
+        if (engine->HasElement(render_obj.get())) {
+            engine->UpdateStyle(render_obj.get(), text_style);
+        }
+    }
+
+    InvalidateAncestorLayout(render_obj.get());
+    render_obj->MarkNeedsPaint();
+    render_obj->InvalidatePaintCache();
 }
 
 

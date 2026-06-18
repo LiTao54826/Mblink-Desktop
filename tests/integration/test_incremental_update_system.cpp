@@ -309,5 +309,45 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLay
     EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
 }
 
+TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleAttributeRefreshesInheritedTextColor) {
+    auto doc = CreateDocument();
+    auto body = doc->GetBody();
+    auto button = doc->CreateElement("button");
+    button->SetAttribute("style", "background: #4a90d9; color: #fff;");
+    auto label = doc->CreateTextNode("All");
+    button->AppendChild(label);
+    body->AppendChild(button);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(button->GetRenderObject(), nullptr);
+    ASSERT_NE(label->GetRenderObject(), nullptr);
+    EXPECT_EQ(label->GetRenderObject()->GetComputedStyle().color, "#fff");
+
+    doc->GetDirtyTracker().Clear();
+    button->SetAttribute("style", "background: #fff; color: #555;");
+    ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    EXPECT_FALSE(requires_layout_tree_rebuild);
+    EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().color, "#555");
+    EXPECT_EQ(label->GetRenderObject()->GetComputedStyle().color, "#555");
+}
+
 } // namespace test
 } // namespace mbink

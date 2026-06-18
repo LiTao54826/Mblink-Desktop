@@ -1,4 +1,4 @@
 interface:
   display_name: "MBink UI Dev"
-  short_description: "MBink UI dev CLI, MCP, and precision UI workflows"
-  default_prompt: "Use $mbink-ui-dev to inspect, build, and precisely control an MBink UI project."
+  short_description: "MBink UI dev CLI, MCP, devtools, and C API parity"
+  default_prompt: "Use $mbink-ui-dev to build, inspect, and verify MBink UI behavior across devtools and C API hosts."

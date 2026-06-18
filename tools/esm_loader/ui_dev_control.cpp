@@ -153,13 +153,32 @@ const interactiveOf = (el) => { const t = ((el.tagName || '') + '').toLowerCase(
 const textPreviewOf = (el, full) => { const raw = el.textContent == null ? null : String(el.textContent); if (raw == null) return null; return full || raw.length <= 160 ? raw : raw.slice(0, 160); };
 const summaryOf = (el, fullText, light) => { const text = textPreviewOf(el, !!fullText); return { tag: ((el.tagName || '') + '').toLowerCase(), id: el.id || '', class_name: el.className || '', text, text_length: text == null ? 0 : text.length, attrs: attrsOf(el), rect: light ? lightRectOf() : rectOf(el), interactive: interactiveOf(el), visible: light ? true : visibleOf(el), value: el.value === undefined ? null : el.value, scroll: light ? { x: 0, y: 0, max_x: 0, max_y: 0 } : scrollOf(el) }; };
 const pickStyle = (el) => { const s = getComputedStyle(el); return { display: s.display || '', position: s.position || '', width: s.width || '', height: s.height || '', color: s.color || '', background_color: s.backgroundColor || '', opacity: s.opacity || '', overflow_x: s.overflowX || '', overflow_y: s.overflowY || '', z_index: s.zIndex || '', flex: s.flex || '' }; };
+const dispatchSimple = (el, type) => { if (typeof Event !== 'function') return false; try { el.dispatchEvent(new Event(type)); return true; } catch (_) { return false; } };
+const devClick = (el) => {
+  const tag = ((el.tagName || '') + '').toLowerCase();
+  const inputType = tag === 'input' ? (((el.type || el.getAttribute('type') || '') + '').toLowerCase()) : '';
+  const isCheckable = inputType === 'checkbox' || inputType === 'radio';
+  const beforeChecked = isCheckable ? !!el.checked : false;
+  if (el.click) el.click();
+  if (isCheckable && !!el.checked === beforeChecked) {
+    if (inputType === 'checkbox') {
+      el.checked = !beforeChecked;
+    } else if (!beforeChecked) {
+      el.checked = true;
+    }
+    if (!!el.checked !== beforeChecked) {
+      dispatchSimple(el, 'input');
+      dispatchSimple(el, 'change');
+    }
+  }
+};
 )JS";
     if (type == "query_element") {
         js << "const limit = Math.max(0, Number(" << JsonLiteral(cmd.value("limit", 50)) << " || 50)); const nodes = selector === 'body' && document.body ? [document.body] : selector === 'html' && document.documentElement ? [document.documentElement] : document.querySelectorAll(selector); const matches = []; const n = Math.min(nodes.length, limit); for (let i = 0; i < n; ++i) matches.push(summaryOf(nodes[i], false, false)); return { selector, count: nodes.length, returned: matches.length, truncated: nodes.length > matches.length, limit, matches };";
     } else if (type == "inspect") {
         js << "const el = q(); if (!el) throw new Error('element not found: ' + selector); return { selector, found: true, element: summaryOf(el, true), computed_style: pickStyle(el), outer_html: el.outerHTML === undefined ? null : String(el.outerHTML) };";
     } else if (type == "click") {
-        js << "const el = q(); if (!el) { if (!performAction) return stalePostAction(); throw new Error('element not found: ' + selector); } if (performAction) el.click(); return { selector, clicked: true, element: summaryOf(el, false), post_action_found: true };";
+        js << "const el = q(); if (!el) { if (!performAction) return stalePostAction(); throw new Error('element not found: ' + selector); } if (performAction) devClick(el); return { selector, clicked: true, element: summaryOf(el, false), post_action_found: true };";
     } else if (type == "input_text") {
         js << "const el = q(); if (!el) { if (!performAction) return stalePostAction(); throw new Error('element not found: ' + selector); } if (el.value === undefined) throw new Error('target does not support value: ' + selector); if (performAction) { const nextValue = " << JsonLiteral(cmd.value("text", std::string{})) << "; if (el.focus) el.focus(); el.value = nextValue; if (typeof Event === 'function') { try { el.dispatchEvent(new Event('input')); } catch (_) {} try { el.dispatchEvent(new Event('change')); } catch (_) {} } } return { selector, value: el.value === undefined ? null : el.value, element: summaryOf(el, false), post_action_found: true };";
     } else if (type == "scroll") {

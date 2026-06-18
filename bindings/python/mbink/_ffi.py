@@ -264,6 +264,8 @@ def _bind_functions(lib):
     lib.mbink_stop.argtypes = [H]
     lib.mbink_poll_events.restype = c_bool
     lib.mbink_poll_events.argtypes = [H]
+    lib.mbink_wait_events.restype = c_bool
+    lib.mbink_wait_events.argtypes = [H]
     lib.mbink_default_runtime_options.restype = MBinkRuntimeOptions
     lib.mbink_default_runtime_options.argtypes = []
     lib.mbink_configure_runtime.restype = c_int

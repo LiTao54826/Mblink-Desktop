@@ -35,6 +35,7 @@ struct Api {
     mbink_run: unsafe extern "C" fn(MBinkHandle),
     mbink_stop: unsafe extern "C" fn(MBinkHandle),
     mbink_poll_events: unsafe extern "C" fn(MBinkHandle) -> bool,
+    mbink_wait_events: unsafe extern "C" fn(MBinkHandle) -> bool,
     mbink_default_runtime_options: unsafe extern "C" fn() -> MBinkRuntimeOptions,
     mbink_configure_runtime: unsafe extern "C" fn(MBinkHandle, *const MBinkRuntimeOptions) -> c_int,
     mbink_load_embedded_runtime: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
@@ -294,6 +295,10 @@ unsafe fn load_api() -> Api {
     let mbink_stop = load!(b"mbink_stop\0", unsafe extern "C" fn(MBinkHandle));
     let mbink_poll_events = load!(
         b"mbink_poll_events\0",
+        unsafe extern "C" fn(MBinkHandle) -> bool
+    );
+    let mbink_wait_events = load!(
+        b"mbink_wait_events\0",
         unsafe extern "C" fn(MBinkHandle) -> bool
     );
     let mbink_default_runtime_options = load!(
@@ -887,6 +892,7 @@ unsafe fn load_api() -> Api {
         mbink_run,
         mbink_stop,
         mbink_poll_events,
+        mbink_wait_events,
         mbink_default_runtime_options,
         mbink_configure_runtime,
         mbink_load_embedded_runtime,
@@ -1235,6 +1241,9 @@ pub unsafe fn mbink_stop(handle: MBinkHandle) {
 }
 pub unsafe fn mbink_poll_events(handle: MBinkHandle) -> bool {
     (api().mbink_poll_events)(handle)
+}
+pub unsafe fn mbink_wait_events(handle: MBinkHandle) -> bool {
+    (api().mbink_wait_events)(handle)
 }
 pub unsafe fn mbink_default_runtime_options() -> MBinkRuntimeOptions {
     (api().mbink_default_runtime_options)()

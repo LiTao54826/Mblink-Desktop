@@ -208,14 +208,6 @@ target_link_libraries(mbink_render PUBLIC
     mbink_quickjs
 )
 
-# Link Yoga (if available)
-if(TARGET yogacore)
-    target_link_libraries(mbink_render PUBLIC yogacore)
-    message(STATUS "Render module: Linking Yoga")
-else()
-    message(WARNING "Render module: Yoga target not found")
-endif()
-
 # Link Skia (if enabled)
 if(TARGET skia)
     target_link_libraries(mbink_render PUBLIC skia)

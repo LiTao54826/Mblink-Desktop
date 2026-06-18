@@ -151,6 +151,7 @@ extern "C" {
     pub fn mbink_run(handle: MBinkHandle);
     pub fn mbink_stop(handle: MBinkHandle);
     pub fn mbink_poll_events(handle: MBinkHandle) -> bool;
+    pub fn mbink_wait_events(handle: MBinkHandle) -> bool;
     pub fn mbink_default_runtime_options() -> MBinkRuntimeOptions;
     pub fn mbink_configure_runtime(
         handle: MBinkHandle,

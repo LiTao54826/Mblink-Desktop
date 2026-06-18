@@ -1950,6 +1950,27 @@ bool mbink_poll_events(MBinkHandle handle) {
 
 // ========== 窗口属性 ==========
 
+bool mbink_wait_events(MBinkHandle handle) {
+    if (!handle) return false;
+    auto ctx = getContext(handle);
+    if (!ctx->eventLoop) return false;
+    if (!ctx->running && ctx->lifecycleState != MBINK_LIFECYCLE_STOPPED) {
+        ctx->running = true;
+        setLifecycle(ctx, MBINK_LIFECYCLE_RUNNING, "running");
+    }
+
+    flushRuntimeWork(ctx);
+
+    ctx->eventLoop->RunOnce();
+
+    const bool alive = !ctx->eventLoop->ShouldQuit();
+    if (!alive && ctx->lifecycleState == MBINK_LIFECYCLE_RUNNING) {
+        ctx->running = false;
+        setLifecycle(ctx, MBINK_LIFECYCLE_STOPPED, "event_loop_stopped");
+    }
+    return alive;
+}
+
 MBinkRuntimeOptions mbink_default_runtime_options(void) {
     MBinkRuntimeOptions options = {};
     options.runtime_epoch = nullptr;

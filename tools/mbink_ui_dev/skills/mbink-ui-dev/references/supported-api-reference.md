@@ -328,6 +328,23 @@ Use the generated `ui/bridge.js` and `hostApi`. Keep real host APIs and dev mock
 | `hostApi.trayAction(payload?)` | scaffolded baseline | Host-only behavior; `tool` runtime returns dev mock data. |
 | `globalThis.backend.<name>(payload)` | underlying bridge | Use through `hostApi`, not directly from visual components. |
 
+## Host Observation and Devtools APIs
+
+Use these host-side APIs when validating real C API hosts after the UI has passed the `mbink-ui-dev` mock/dev gate. Names are idiomatic per binding, but behavior should remain aligned with the C APIs in `core/api/mbink.h` and `core/devtools/mbink_devtools.h`.
+
+| Capability | C API source | Python | Rust | Go | Notes |
+|---|---|---|---|---|---|
+| Runtime epoch | `mbink_runtime_epoch` | `App.runtime_epoch()` | `App::runtime_epoch()` | `App.RuntimeEpoch()` | Use to confirm the observed runtime matches the loaded UI. |
+| Console observation | `mbink_observe_console_json` | `App.observe_console()` | `App::observe_console()` / `observe_console_json()` | `App.ObserveConsole()` / `ObserveConsoleJSON()` | Compare with `mbink-ui-dev logs` when checking parity. |
+| Error observation | `mbink_observe_errors_json` | `App.observe_errors()` | `App::observe_errors()` / `observe_errors_json()` | `App.ObserveErrors()` / `ObserveErrorsJSON()` | Use after every host interaction path. |
+| Lifecycle observation | `mbink_observe_lifecycle_json` | `App.observe_lifecycle()` | `App::observe_lifecycle()` / `observe_lifecycle_json()` | `App.ObserveLifecycle()` / `ObserveLifecycleJSON()` | Useful for close/load/runtime-state parity. |
+| Deterministic render flush | `mbink_render_frame` | C API only unless wrapped | `App::render_frame(passes)` | `App.RenderFrame(passes)` | Use before snapshot when deterministic observation matters. |
+| UI-dev snapshot JSON/file | `mbink_ui_dev_snapshot_json` / `mbink_ui_dev_snapshot_file` | `App.ui_dev_snapshot(...)` / `ui_dev_snapshot_file(...)` | `App::ui_dev_snapshot(...)` / `ui_dev_snapshot_file(...)` | `App.UiDevSnapshot(...)` / `UiDevSnapshotFile(...)` | Requires optional `mbink_devtools.dll`; prefer this over OS screenshots. |
+| UI-dev command | `mbink_ui_dev_command_json` | `App.ui_dev_command(...)` | `App::ui_dev_command(...)` | `App.UiDevCommand(...)` | Supports live `query_element`, `inspect`, `click`, `input_text`, `scroll`, and `highlight` command semantics. |
+| Runtime HTTP MCP | `mbink_devtools_http_start` / `mbink_devtools_http_stop` | `App.devtools_http_session(...)` | `App::devtools_http_session(...)` | `App.DevtoolsHttpSession(...)` | Local-only development endpoint for live UI analysis/control in an already-running host. |
+
+`mbink_devtools.dll` is optional and development-only. Binding packages should not vendor it; load it on demand from `MBINK_DEVTOOLS_PATH`, the adjacent `mbink.dll` directory, or the process/runtime search path.
+
 ## Explicitly Unsupported or Not a Current Contract
 
 Do not use these in MBink UI code unless the project adds a verified adapter and the change passes incremental runtime validation.

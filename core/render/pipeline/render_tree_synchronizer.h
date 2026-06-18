@@ -221,6 +221,12 @@ private:
      */
     void RefreshElementSubtreeStyles(StyleResolver& resolver, std::shared_ptr<Element> element);
 
+    /**
+     * @brief Refresh inherited style on a text node after an ancestor style change.
+     * @param text_node text DOM node whose RenderText inherits from its parent
+     */
+    void RefreshTextStyleFromParent(std::shared_ptr<Node> text_node);
+
 
 private:
     /// 文档

@@ -135,6 +135,7 @@ func (h AppHandle) Stop()          { C.mbink_stop(h.handle) }
 func (a *App) Stop()               { C.mbink_stop(a.handle) }
 func (a *App) Run()                { C.mbink_run(a.handle) }
 func (a *App) Poll() (bool, error) { return bool(C.mbink_poll_events(a.handle)), nil }
+func (a *App) Wait() (bool, error) { return bool(C.mbink_wait_events(a.handle)), nil }
 
 func (a *App) Close() {
 	if a == nil || a.handle == nil {

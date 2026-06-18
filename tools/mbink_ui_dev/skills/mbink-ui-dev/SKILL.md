@@ -1,13 +1,20 @@
 ---
 name: mbink-ui-dev
-description: Operate the MBink UI development toolchain through `mbink-ui-dev` CLI or MCP to initialize projects, open runtimes, inspect live snapshots, query and inspect UI elements, click or input or scroll or highlight the live UI, read or write project files, build, watch, reload the runtime, diagnose console or JS errors, and read MCP resources for MBink UI automation. Use when Codex needs to create, debug, test, or iterate on an MBink UI project, when a user mentions `mbink-ui-dev`, MBink UI snapshots, daemon or watch workflows, selector-based UI diagnosis, or when Claude Desktop or Cursor needs MCP access to an MBink UI project.
+description: Operate the MBink UI development toolchain through `mbink-ui-dev` CLI/MCP and the optional `mbink_devtools.dll` runtime HTTP MCP endpoint to initialize projects, open runtimes, inspect live snapshots/screenshots, query and inspect UI elements, click or input or scroll or highlight live UI, read/write project files, build/watch/reload, diagnose console or JS errors, and verify C API parity across `esm_loader`, Python, Rust, and Go bindings. Use when Codex needs to create, debug, test, or iterate on an MBink UI project, when a user mentions `mbink-ui-dev`, MBink UI snapshots, daemon/watch workflows, selector-based UI diagnosis, `mbink_devtools.dll`, runtime HTTP MCP, C API host parity, or MCP access from Claude Desktop/Cursor.
 ---
 
 # MBink UI Dev
 
 ## Overview
 
-Use `mbink-ui-dev` as the primary control surface for MBink UI development. Treat the latest progress described in `MBINK_UI_DEV_TOOL_DESIGN.md` as authoritative: P2 is complete, the P3 precision-control loop is available, and live UI analysis/control can also be exposed by the optional local Streamable HTTP MCP endpoint in `mbink_devtools.dll`. MCP notifications and VS Code preview are still future work.
+Use `mbink-ui-dev` as the primary project development surface for MBink UI. Treat the current architecture as split:
+
+- `mbink-ui-dev` owns project scaffolding, build/watch, managed runtime open/reload, files, logs, errors, snapshots, and stdio MCP.
+- `mbink.dll` owns the runtime core and public host behavior through the C API.
+- `mbink_devtools.dll` is an optional development plugin loaded on demand for live UI snapshot/control and local Streamable HTTP MCP from C API hosts.
+- `esm_loader`, Python, Rust, Go, and future bindings should expose the same observable behavior through `core/api/mbink.h` and `core/devtools/mbink_devtools.h`, not through language-specific shortcuts.
+
+MCP notifications and VS Code preview are still future work.
 
 ## Layout and Sizing Defaults
 
@@ -17,9 +24,11 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 ## Choose the Control Surface
 
 - Use the CLI when the agent has shell access and wants direct JSON responses.
-- Use MCP when the agent benefits from structured tools, resources, session-scoped `active_project`, or IDE integration.
+- Use `mbink-ui-dev serve` stdio MCP when the agent benefits from structured tools, resources, session-scoped `active_project`, or IDE integration for project work.
+- Use the runtime HTTP MCP endpoint only when a C API host explicitly enables `mbink_devtools.dll` for live UI analysis/control in `esm_loader`, Python, Rust, or Go.
 - Treat daemon state as project-scoped. Open the project first, then keep all observation, edit, build, and interaction steps routed through that same project.
 - In multi-project situations, pass `--project <abs-path>` or call `open_project` explicitly instead of guessing.
+- Do not use the `tool` runtime as proof of host-language behavior. Use it to finish UI shape and interactions, then verify the real host when Python, Rust, Go, tray, native controls, resources, or bindings are part of the task.
 
 ## Follow the Standard Development Loop
 
@@ -44,6 +53,26 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Do not start or modify host-language implementation for a feature while the mock UI is blank, failing to build, missing important selectors, or producing runtime JS errors.
 - After the UI validation gate passes, implement the narrow host API surface behind `ui/bridge.js`, then validate the real Python, Rust, or Go host runtime and finish with `mbink-ui-dev build`.
 - Keep mock and host API names aligned so the same UI test path can run before and after host integration.
+
+## Preserve C API Runtime Parity
+
+- Treat C API behavior as the source of truth for everything that must work in `esm_loader`, Python, Rust, Go, or later bindings.
+- If a host-language feature needs runtime support that is missing, add the narrow capability to `core/api/mbink.h` or the optional devtools plugin API in `core/devtools/mbink_devtools.h`, then update the bindings. Do not solve parity-critical behavior only inside `mbink-ui-dev`.
+- Keep wrapper names idiomatic, but keep JSON result fields, snapshot shape, command semantics, lifecycle/console/error observation, and interaction behavior aligned across all bindings.
+- Use `mbink_devtools.dll` only as a development companion. It is shipped next to `mbink-ui-dev.exe` and `esm_loader.exe`, and host bindings load it on demand from `MBINK_DEVTOOLS_PATH`, the `mbink.dll` directory, or the process search path. Generated host packages should not vendor it.
+- For Python, Rust, or Go validation, prefer binding helpers such as UI-dev snapshot/control methods or `devtools_http_session` over Windows screenshots or ad hoc visual inspection.
+
+## Develop Host Code Incrementally
+
+- For Python, Go, and Rust, edit one small host slice at a time and run the real host after each slice.
+- Use `mbink-ui-dev build` for the shared UI and generated artifact, then run the host entrypoint for the runtime you are changing.
+- Prefer these host loops:
+  - Python: `python host/main.py`
+  - Go: `go run ./host`
+  - Rust: `cargo run --manifest-path rust_host/Cargo.toml`
+- After each host change, verify with the same selectors and actions used in `tool`: `snapshot` or `ui_dev_snapshot`, `query_element`, `inspect`, a representative `click` or `input_text`, then `logs` and `errors`.
+- If the host exposes `mbink_devtools.dll`, use `ui_dev_snapshot`, `ui_dev_command`, or `devtools_http_session` so the loop stays on the same C API/devtools path.
+- When a change only works in `tool`, fix the host adapter or missing C API instead of treating the mock as correct.
 
 ## Prefer Async Host Calls
 
@@ -97,7 +126,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Use MBink's native `<terminal>` and `<logview>` elements for terminal emulation and high-volume log display instead of browser or npm terminal/log widgets. Read [native-elements.md](references/native-elements.md) before using either element.
 - When unsure whether a JavaScript, DOM, Preact, host bridge, or native-element API is compatible, read [supported-api-reference.md](references/supported-api-reference.md) before using it.
 - Avoid browser or Node APIs that are not part of the verified runtime surface: `require`, `module.exports`, Node built-ins such as `fs` and `path`, `process`, `Buffer`, `localStorage`, `sessionStorage`, `indexedDB`, workers, WebSocket, full navigation/history/download behavior, native form submission, and `navigator.clipboard`.
-- Treat `reload --mode`, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed. `snapshot` supports opt-in screenshot output through `include_screenshot`; prefer file-mode PNG metadata over inline base64 unless the caller explicitly needs inline data. The optional runtime HTTP MCP endpoint is local-only and covers UI analysis/control, not project scaffolding or build/watch orchestration.
+- Treat `reload --mode`, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed. `snapshot` supports opt-in screenshot output through `include_screenshot`; prefer file-mode PNG metadata over inline base64 unless the caller explicitly needs inline data. The optional runtime HTTP MCP endpoint is local-only and covers UI analysis/control, not project scaffolding, file IO, logs, resources, build, watch, or daemon orchestration.
 - Read [compatibility-guidelines.md](references/compatibility-guidelines.md) before adding new framework dependencies, browser APIs, runtime-specific host features, or non-template syntax.
 
 ## Bootstrap Projects and Templates Deliberately
@@ -107,7 +136,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Choose a canonical purpose (`minimal`, `showcase`, `desktop-app`) and runtime (`tool`, `python`, `rust`, `go`). Bare `init` defaults to `minimal/tool`; legacy `--template` names are compatibility-only.
 - Open the new project immediately after init and verify the initial runtime with a snapshot.
 - Templates are embedded into `mbink-ui-dev.exe` at build time, so distribution does not depend on shipping a separate `tools/mbink_ui_dev/templates` directory.
-- Distribute `mbink-ui-dev.exe` with the adjacent MBink runtime library (`mbink.dll` on Windows); host-runtime init copies that one runtime library into the generated Python, Go, or Rust project.
+- Distribute `mbink-ui-dev.exe` with adjacent `mbink.dll` and development-only `mbink_devtools.dll` on Windows. Host-runtime init copies only `mbink.dll` into generated Python, Go, or Rust projects; `mbink_devtools.dll` remains a local development companion loaded on demand.
 - Runtime templates vendor their MBink binding files, and init copies the runtime library, so generated Python, Go, and Rust projects are self-contained and do not depend on `MBINK_REPO_ROOT`.
 - Use `mbink-ui-dev build` as the release path. It compiles the UI into `app.mbrp` and then builds the selected host artifact in one command.
 - Runtime starters share the canonical UI under `ui/app.js`, add `ui/bridge.js` mock fallback, and generate runnable host adapters such as `host/main.py`, `host/main.go`, or `rust_host/src/main.rs` when a host runtime is selected.
@@ -125,7 +154,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Use `resources/read` for stable, read-only project state such as `ui://snapshot`, `ui://console_logs`, `ui://build_status`, `project://file_tree`, `project://config`, and `project://file/{path}`.
 - Prefer session-scoped `active_project` in multi-step MCP work so later tool calls and resource reads stay aligned.
 - Use `mbink-ui-dev serve` stdio MCP by default for project-scoped work. Use the runtime HTTP MCP endpoint only when a C API host explicitly enables `mbink_devtools.dll` for live UI analysis/control. Treat MCP notifications, additional ecosystem integrations, and VS Code side-panel preview as future-stage items, not current assumptions.
-- When current behavior and long-term design differ, prefer the document's explicit "当前实现" notes over the future-facing design direction.
+- When current behavior and long-term design differ, prefer explicit current-implementation notes over future-facing design direction.
 
 ## Use This Reference When Needed
 

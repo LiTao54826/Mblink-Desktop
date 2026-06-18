@@ -61,6 +61,19 @@ function run() {
   const pollEvents = extractFunction(cApiSrc, 'bool mbink_poll_events');
   assert(pollEvents.includes('RunOnceNonBlocking()') && !pollEvents.includes('RunOnce();'),
     'mbink_poll_events must not perform the blocking idle wait used by EventLoop::Run');
+  const waitEvents = extractFunction(cApiSrc, 'bool mbink_wait_events');
+  assert(waitEvents.includes('RunOnce()') && !waitEvents.includes('RunOnceNonBlocking()'),
+    'mbink_wait_events must expose the blocking idle-wait step for C API hosts');
+
+  const esmLoaderSrc = fs.readFileSync(path.join(process.cwd(), 'tools', 'esm_loader', 'main_c_api.cpp'), 'utf8');
+  assert(esmLoaderSrc.includes('while (mbink_wait_events(app))') &&
+         !esmLoaderSrc.includes('while (mbink_poll_events(app))'),
+    'esm_loader must use the blocking C API event step instead of a busy poll loop');
+  assert(!esmLoaderSrc.includes('ui_dev_enabled ? 2 : 8'),
+    'esm_loader must not hide idle spinning behind fixed millisecond sleeps');
+  assert(esmLoaderSrc.includes('next_command_check') &&
+         esmLoaderSrc.includes('std::chrono::milliseconds(250)'),
+    'esm_loader command-file probing must be throttled when the runtime is idle');
 
   const collectIdle = extractFunction(eventLoopSrc, 'IdleWorkState CollectIdleWorkState');
   assert(collectIdle.includes('WindowManagerHasPendingUiTasks()') &&

@@ -144,6 +144,7 @@ MBINK_API void mbink_stop(MBinkHandle handle);
 
 /** 单次事件循环迭代（高级用法） */
 MBINK_API bool mbink_poll_events(MBinkHandle handle);
+MBINK_API bool mbink_wait_events(MBinkHandle handle);
 MBINK_API MBinkRuntimeOptions mbink_default_runtime_options(void);
 MBINK_API int mbink_configure_runtime(MBinkHandle handle,
                                       const MBinkRuntimeOptions* options);

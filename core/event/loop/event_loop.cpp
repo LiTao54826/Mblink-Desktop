@@ -73,6 +73,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstdint>
+#include <string>
 
 namespace mbink {
 
@@ -283,8 +284,57 @@ bool WaitForIdleWork(const IdleWorkState& state) {
     if (state.hasImmediateWork()) {
         return false;
     }
-    SDL_WaitEventTimeout(nullptr, ClampIdleDelayMs(state.next_delay_ms));
+    SDL_Event event{};
+    if (SDL_WaitEventTimeout(&event, ClampIdleDelayMs(state.next_delay_ms))) {
+        SDL_PushEvent(&event);
+    }
     return true;
+}
+
+bool IsIdleTraceEnabled() {
+    static const bool enabled = (std::getenv("MBINK_IDLE_TRACE") != nullptr);
+    return enabled;
+}
+
+std::string DescribeIdleWorkState(const IdleWorkState& state) {
+    std::ostringstream out;
+    bool first = true;
+    auto append = [&](const char* name, bool value) {
+        if (!value) return;
+        if (!first) out << ",";
+        out << name;
+        first = false;
+    };
+    append("queued_events", state.has_queued_events);
+    append("ready_js_tasks", state.has_ready_js_tasks);
+    append("ready_native_tasks", state.has_ready_native_tasks);
+    append("frame_cadence", state.has_frame_cadence_work);
+    append("animation_frame", state.has_animation_frame_work);
+    append("pending_repaint", state.has_pending_repaint);
+    append("pending_ui_tasks", state.has_pending_ui_tasks);
+    append("native_text_flush", state.has_pending_native_text_flush);
+    append("native_caret_blink", state.has_due_native_caret_blink);
+    append("active_animations", state.has_active_animations);
+    append("window_lifecycle", state.has_window_lifecycle_work);
+    append("frame_deadline", state.has_frame_deadline_work);
+    if (first) out << "none";
+    out << " next_delay_ms=" << state.next_delay_ms;
+    return out.str();
+}
+
+void TraceIdleWorkState(const char* phase, const IdleWorkState& state) {
+    if (!IsIdleTraceEnabled()) {
+        return;
+    }
+    static Uint64 last_log_ms = 0;
+    const Uint64 now = SDL_GetTicks();
+    if (now - last_log_ms < 1000) {
+        return;
+    }
+    last_log_ms = now;
+    std::cerr << "[mbink idle trace] phase=" << phase
+              << " immediate=" << (state.hasImmediateWork() ? 1 : 0)
+              << " reasons=" << DescribeIdleWorkState(state) << std::endl;
 }
 
 bool MarkElementPaintDirty(Window* window, const std::shared_ptr<Element>& element) {
@@ -510,6 +560,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
             static_cast<bool>(update_callback_),
             focus_element,
             last_cursor_blink_time);
+        TraceIdleWorkState("front-before-wait", idle_state);
         did_front_idle_wait = WaitForIdleWork(idle_state);
         if (did_front_idle_wait) {
             idle_state = CollectIdleWorkState(
@@ -519,6 +570,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
                 static_cast<bool>(update_callback_),
                 focus_element,
                 last_cursor_blink_time);
+            TraceIdleWorkState("front-after-wait", idle_state);
             if (!idle_state.hasImmediateWork() && !idle_state.has_frame_deadline_work) {
                 if (idle_callback_) {
                     idle_callback_();
@@ -776,13 +828,15 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
     // 当没有事件、没有任务、没有重绘需求时，休眠一小段时间
     // 这解决了 VSync 启用但没有渲染时的忙等待问题
     if (allow_idle_wait && !did_front_idle_wait) {
-        WaitForIdleWork(CollectIdleWorkState(
+        auto idle_state = CollectIdleWorkState(
             quickjs_runtime_,
             task_scheduler_.get(),
             update_callback_needs_frame_cadence_,
             static_cast<bool>(update_callback_),
             focus_element,
-            last_cursor_blink_time));
+            last_cursor_blink_time);
+        TraceIdleWorkState("tail-before-wait", idle_state);
+        WaitForIdleWork(idle_state);
     }
 
     // 8. 帧率控制

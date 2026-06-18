@@ -1,6 +1,6 @@
 # MBink UI Dev Reference
 
-Read this file when exact command names, MCP mappings, templates, routing rules, reload semantics, or ecosystem integrations matter. This reference follows the latest documented progress: P2 is complete, P3 precision UI control is available, and P4 ecosystem work remains future-facing.
+Read this file when exact command names, MCP mappings, templates, routing rules, reload semantics, C API host parity, or ecosystem integrations matter. Current project work is split between `mbink-ui-dev` for project development, `mbink.dll` for runtime behavior, and optional `mbink_devtools.dll` for development-only live UI analysis/control.
 
 ## Output Rules
 
@@ -8,6 +8,15 @@ Read this file when exact command names, MCP mappings, templates, routing rules,
 - Treat CLI stderr as human-readable logs.
 - Treat exit code `0` as success.
 - Prefer parsing tool output instead of scraping stderr text.
+
+## Architecture and Distribution Boundaries
+
+- `mbink-ui-dev` is the primary development surface for scaffold/init, project config, daemon lifecycle, build/watch, file IO, logs/errors, snapshots, precision UI control, and stdio MCP.
+- `mbink.dll` is the runtime core. Runtime behavior that must work in `esm_loader`, Python, Rust, Go, or future bindings belongs in the public C API in `core/api/mbink.h`.
+- `mbink_devtools.dll` is an optional development plugin. It provides DevTools panel integration, UI-dev snapshot/control C APIs, and local Streamable HTTP MCP for already-running C API hosts.
+- Development distributions should place `mbink_devtools.dll` next to `mbink-ui-dev.exe`, `esm_loader.exe`, and `mbink.dll`. Generated host projects and binding packages should copy/vendor `mbink.dll` as needed, but should not vendor `mbink_devtools.dll`.
+- Bindings should load `mbink_devtools.dll` on demand from `MBINK_DEVTOOLS_PATH`, the loaded `mbink.dll` directory, or the process/runtime search path.
+- Do not use the frontend-only `tool` runtime as final evidence for Python, Rust, Go, tray, native controls, or resource-package behavior. Use `tool` to shape the UI quickly, then verify through the real host binding.
 
 ## CLI Surface
 
@@ -56,6 +65,20 @@ mbink-ui-dev highlight ...
 
 For precision-control work, prefer MCP tool schemas when exact argument structure matters.
 
+## `esm_loader` Development Hooks
+
+Use `esm_loader` when verifying the thin C API runtime path directly. The development hooks are opt-in and require the adjacent or resolvable `mbink_devtools.dll`.
+
+```bash
+esm_loader app.js --ui-dev-snapshot-file snapshot.json
+esm_loader app.js --ui-dev-snapshot-file snapshot.json --ui-dev-snapshot-include-screenshot --ui-dev-screenshot-file snapshot.png
+esm_loader app.js --ui-dev-command-file command.json --ui-dev-response-file response.json
+esm_loader app.js --ui-dev-console-file console.json --ui-dev-errors-file errors.json --ui-dev-lifecycle-file lifecycle.json
+esm_loader app.js --devtools-http-mcp --devtools-http-port 0
+```
+
+Useful snapshot options include `--ui-dev-runtime-epoch`, `--ui-dev-snapshot-max-nodes`, `--ui-dev-snapshot-max-depth`, `--ui-dev-snapshot-root-selector`, `--ui-dev-snapshot-include-screenshot`, `--ui-dev-snapshot-inline-screenshot`, and `--ui-dev-screenshot-file`.
+
 ## Recommended CLI Sequences
 
 ### UI-First Then Host Integration
@@ -86,7 +109,39 @@ After that gate passes, add or modify the real Python, Rust, or Go host adapter 
 mbink-ui-dev build --project /abs/path/my-app
 ```
 
-Manual host commands are only for targeted binding checks after UI validation has passed.
+Manual host commands are only for targeted binding checks after UI validation has passed. When validating a host runtime, use the binding's UI-dev snapshot/control helpers or `devtools_http_session` so the evidence comes from the same C API/devtools path that `mbink-ui-dev` uses.
+
+### C API Host Parity Check
+
+Use this sequence when a change touches `esm_loader`, C API runtime behavior, `mbink_devtools.dll`, or Python/Rust/Go bindings:
+
+1. Verify the same UI through `mbink-ui-dev open`, `build`, `snapshot`, `query_element`, `inspect`, representative interactions, `logs`, and `errors`.
+2. Verify `esm_loader` with UI-dev snapshot/control files and observation files.
+3. Verify the target binding through its UI-dev snapshot/control helper:
+   - Python: `App.ui_dev_snapshot(...)`, `App.ui_dev_command(...)`, or `App.devtools_http_session(...)`
+   - Rust: `App::ui_dev_snapshot(...)`, `App::ui_dev_command(...)`, or `App::devtools_http_session(...)`
+   - Go: `App.UiDevSnapshot(...)`, `App.UiDevCommand(...)`, or `App.DevtoolsHttpSession(...)`
+4. Compare snapshot shape, key text/control presence, geometry, console/error observation, lifecycle state, and interaction results. Wrapper names may differ by language; behavior and JSON fields should not.
+5. If a capability is missing from a binding, add it through the shared C API or devtools plugin API first, then expose the idiomatic wrapper.
+
+### Python, Go, and Rust Write-Debug Loop
+
+Use this loop for normal host-language app development:
+
+1. Keep `mbink-ui-dev build --watch --project /abs/path/my-app` running when iterating on shared UI files.
+2. Make one UI or host change at a time. For UI changes, reload or reopen with `mbink-ui-dev`, then verify with snapshot/query/inspect/interactions.
+3. For host changes, run the real host entrypoint:
+   - Python: `python host/main.py`
+   - Go: `go run ./host`
+   - Rust: `cargo run --manifest-path rust_host/Cargo.toml`
+4. In that host process, enable development observation through the binding when needed:
+   - Python: `app.ui_dev_snapshot(...)`, `app.ui_dev_command(...)`, or `app.devtools_http_session(...)`
+   - Go: `app.UiDevSnapshot(...)`, `app.UiDevCommand(...)`, or `app.DevtoolsHttpSession(...)`
+   - Rust: `app.ui_dev_snapshot(...)`, `app.ui_dev_command(...)`, or `app.devtools_http_session(...)`
+5. Reuse the same stable selectors and interaction commands from the `tool` runtime so differences identify a real parity issue.
+6. Stop and fix the first mismatch between `tool`, `esm_loader`, and the host binding before adding the next slice.
+
+For long-running manual debugging, start the host with HTTP MCP enabled and connect the agent to that endpoint for live `snapshot_ui`, `query_element`, `inspect`, `click`, `input_text`, `scroll`, and `highlight`. Use `mbink-ui-dev serve` only for project-level operations such as files, build/watch, logs/resources, and daemon state.
 
 ### Existing Project Iteration
 
@@ -133,7 +188,7 @@ cargo run --manifest-path rust_host/Cargo.toml
 ```
 
 Use `mbink-ui-dev open .` for UI iteration and mock data. Use `mbink-ui-dev build` to compile the UI resource package and the final host artifact in one step. Use the host command only when validating the real Python, Rust, or Go binding integration.
-Distribute `mbink-ui-dev.exe` with adjacent `mbink.dll` and `mbink_devtools.dll` on Windows. Host-runtime init copies only `mbink.dll` into the generated Python, Go, or Rust project; `mbink_devtools.dll` remains a development companion resolved from `MBINK_DEVTOOLS_PATH` or the runtime DLL directory when explicitly enabled.
+Distribute `mbink-ui-dev.exe` with adjacent `mbink.dll` and `mbink_devtools.dll` on Windows. Host-runtime init copies only `mbink.dll` into the generated Python, Go, or Rust project; `mbink_devtools.dll` remains a development companion resolved from `MBINK_DEVTOOLS_PATH`, the runtime DLL directory, or the process search path when explicitly enabled.
 
 ## Authoring and Compatibility Rules
 
@@ -145,7 +200,7 @@ Read [compatibility-guidelines.md](compatibility-guidelines.md) before adding ne
 - The current scaffold pattern is `import { h, render } from 'preact'` plus `h(...)`. JSX is supported by esbuild, but default JSX settings require `h` and `Fragment` in scope unless `mbink.config.json` changes them.
 - TypeScript and TSX are transpiled only; `mbink-ui-dev build` is not a type checker.
 - Do not use Node built-ins, CommonJS, storage APIs, workers, WebSocket, full browser navigation/download/form-submit behavior, `navigator.clipboard`, Shadow DOM, custom elements, or unverified browser-only libraries without explicit runtime verification.
-- In `tool` runtime, host APIs are dev mocks. Real tray/native/resource behavior requires `python`, `rust`, or `go` host runtimes.
+- In `tool` runtime, host APIs are dev mocks. Real tray/native/resource behavior requires `python`, `rust`, or `go` host runtimes and should be verified through the same UI-dev snapshot/control path when possible.
 - Use MBink native `<terminal>` and `<logview>` for terminal and log UI. Read [native-elements.md](native-elements.md) for supported methods and caveats.
 
 ## Write Command Guidance
@@ -443,9 +498,11 @@ Single fixed project:
 Runtime HTTP MCP:
 
 - `mbink_devtools.dll` can expose a local Streamable HTTP MCP endpoint from a C API host when that host explicitly starts devtools HTTP.
+- Start it through `esm_loader --devtools-http-mcp`, Python `App.devtools_http_session(...)`, Rust `App::devtools_http_session(...)`, Go `App.DevtoolsHttpSession(...)`, or the underlying `mbink_devtools_http_start` C API.
 - The endpoint is localhost-only, validates local `Origin`, and requires `Authorization: Bearer <token>` or `X-MBINK-DevTools-Token`.
 - Its scope is live UI analysis/control: `snapshot_ui`, `query_element`, `inspect`, `click`, `input_text`, `scroll`, and `highlight`.
-- It does not replace `mbink-ui-dev serve` for init, build, watch, file, log, or project-resource operations.
+- `snapshot_ui` over HTTP supports `max_nodes`, `max_depth`, `root_selector`, and `include_screenshot`; inline screenshots are not supported over HTTP MCP.
+- It does not replace `mbink-ui-dev serve` for init, build, watch, file, log, error, daemon, or project-resource operations.
 
 Future ecosystem direction:
 

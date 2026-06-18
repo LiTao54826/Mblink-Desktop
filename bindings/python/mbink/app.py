@@ -155,6 +155,11 @@ class App:
         self._ensure_alive()
         return bool(self._lib.mbink_poll_events(self._handle))
 
+    def wait(self) -> bool:
+        """Block until one event-loop step completes; returns True while alive."""
+        self._ensure_alive()
+        return bool(self._lib.mbink_wait_events(self._handle))
+
     def _cleanup(self):
         if self._destroyed:
             return

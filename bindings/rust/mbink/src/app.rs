@@ -4,7 +4,6 @@ use std::net::TcpStream;
 use std::sync::mpsc;
 use std::sync::Once;
 use std::thread;
-use std::time::Duration;
 
 use serde_json::Value;
 
@@ -126,8 +125,7 @@ impl DevToolsHttpSession {
             match rx.try_recv() {
                 Ok(result) => return result,
                 Err(mpsc::TryRecvError::Empty) => {
-                    unsafe { mbink_sys::mbink_poll_events(self.handle) };
-                    thread::sleep(Duration::from_millis(2));
+                    unsafe { mbink_sys::mbink_wait_events(self.handle) };
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     return Err(Error::Message(
@@ -334,6 +332,10 @@ impl App {
 
     pub fn poll(&self) -> Result<bool> {
         Ok(unsafe { mbink_sys::mbink_poll_events(self.handle) })
+    }
+
+    pub fn wait(&self) -> Result<bool> {
+        Ok(unsafe { mbink_sys::mbink_wait_events(self.handle) })
     }
 
     pub fn load_html(&self, html: &str) -> Result<&Self> {

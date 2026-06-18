@@ -243,6 +243,8 @@ struct Options {
 
 struct UiDevRuntimeState {
     std::optional<fs::file_time_type> last_command_write_time;
+    std::chrono::steady_clock::time_point next_command_check =
+        (std::chrono::steady_clock::time_point::min)();
     std::chrono::steady_clock::time_point next_observability_flush =
         (std::chrono::steady_clock::time_point::min)();
 };
@@ -384,6 +386,10 @@ void handleCommandFile(MBinkHandle handle,
                        std::string* last_command_id,
                        UiDevRuntimeState* state) {
     if (!hasCommandChannel(options) || !state) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < state->next_command_check) return;
+    state->next_command_check = now + std::chrono::milliseconds(250);
+
     std::error_code ec;
     if (!fs::exists(options.command_file, ec) || ec) return;
 
@@ -542,7 +548,7 @@ int main(int argc, char** argv) {
 
     auto start = std::chrono::steady_clock::now();
     std::string last_command_id;
-    while (mbink_poll_events(app)) {
+    while (mbink_wait_events(app)) {
         if (ui_dev_enabled) {
             handleCommandFile(app, options, devtools, &last_command_id, &ui_dev_state);
             maybeWriteObservabilityFiles(app, options, &ui_dev_state);
@@ -556,8 +562,6 @@ int main(int argc, char** argv) {
                 break;
             }
         }
-        const auto sleep_ms = ui_dev_enabled ? 2 : 8;
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
     }
 
     maybeWriteObservabilityFiles(app, options, &ui_dev_state, true);
