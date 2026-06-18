@@ -697,8 +697,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化 FBO 管理器（用于 GPU 增量渲染）
     if (actual_backend_ == RenderBackend::OPENGL && gr_context_) {
-        int physical_width, physical_height;
-        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+        int physical_width = 0;
+        int physical_height = 0;
+        GetPhysicalSize(&physical_width, &physical_height);
 
         fbo_manager_ = std::make_unique<FBOManager>();
         if (!fbo_manager_->Initialize(physical_width, physical_height, gr_context_.get())) {
@@ -716,8 +717,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化视口尺寸（使用 DPI 缩放后的逻辑尺寸）
     // 这确保 position: fixed 元素在首次布局时能正确使用视口尺寸
-    int physical_width, physical_height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    int physical_width = 0;
+    int physical_height = 0;
+    GetPhysicalSize(&physical_width, &physical_height);
     float dpi_scale = GetDisplayScale();
     float logical_width = static_cast<float>(physical_width) / dpi_scale;
     float logical_height = static_cast<float>(physical_height) / dpi_scale;
@@ -1056,15 +1058,18 @@ bool Window::CaptureCurrentFramePng(std::vector<uint8_t>* bytes,
 
     if (gr_context_) gr_context_->flush();
 
-    int physical_width = 0;
-    int physical_height = 0;
-    GetPhysicalSize(&physical_width, &physical_height);
-    if (physical_width <= 0 || physical_height <= 0) {
+    const SkImageInfo surface_info = surface_->imageInfo();
+    int capture_width = surface_info.width();
+    int capture_height = surface_info.height();
+    if (capture_width <= 0 || capture_height <= 0) {
+        GetPhysicalSize(&capture_width, &capture_height);
+    }
+    if (capture_width <= 0 || capture_height <= 0) {
         if (error) *error = "window surface has invalid size";
         return false;
     }
 
-    SkImageInfo info = SkImageInfo::MakeN32Premul(physical_width, physical_height);
+    SkImageInfo info = SkImageInfo::MakeN32Premul(capture_width, capture_height);
     SkBitmap bitmap;
     if (!bitmap.tryAllocPixels(info)) {
         if (error) *error = "failed to allocate screenshot bitmap";
@@ -1094,8 +1099,8 @@ bool Window::CaptureCurrentFramePng(std::vector<uint8_t>* bytes,
 
     const auto* begin = static_cast<const uint8_t*>(data->data());
     bytes->assign(begin, begin + data->size());
-    if (width) *width = physical_width;
-    if (height) *height = physical_height;
+    if (width) *width = capture_width;
+    if (height) *height = capture_height;
     return true;
 }
 
@@ -1201,15 +1206,25 @@ void Window::OnResize() {
     if (!sdl_window_) return;
 
     // 获取客户区大小（像素，不包括标题栏和边框）
-    int width, height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    int width = 0;
+    int height = 0;
+    GetPhysicalSize(&width, &height);
+    if (width <= 0 || height <= 0) {
+        return;
+    }
 
     // 对外统一维护为 CSS 逻辑尺寸，SDL 内部窗口尺寸则按 display content scale 放大
     int window_width = 0, window_height = 0;
     SDL_GetWindowSize(sdl_window_, &window_width, &window_height);
     const float content_scale = GetWindowContentScale(sdl_window_);
-    config_.width = ScaleWindowUnitsToCss(window_width, content_scale);
-    config_.height = ScaleWindowUnitsToCss(window_height, content_scale);
+    if (window_width > 0 && window_height > 0) {
+        config_.width = ScaleWindowUnitsToCss(window_width, content_scale);
+        config_.height = ScaleWindowUnitsToCss(window_height, content_scale);
+    } else {
+        const float display_scale = GetDisplayScale();
+        config_.width = ScaleWindowUnitsToCss(width, display_scale);
+        config_.height = ScaleWindowUnitsToCss(height, display_scale);
+    }
 
     // 重新创建Skia渲染表面（使用客户区像素大小）
     if (actual_backend_ == RenderBackend::OPENGL) {
@@ -1409,8 +1424,12 @@ void Window::CreateSkiaSurface() {
     }
 
     // 获取窗口大小（像素）
-    int width, height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    int width = 0;
+    int height = 0;
+    GetPhysicalSize(&width, &height);
+    if (width <= 0 || height <= 0) {
+        throw std::runtime_error("Cannot create Skia surface: window surface has invalid size");
+    }
 
     // 创建OpenGL帧缓冲信息
     gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
@@ -1449,8 +1468,12 @@ void Window::InitCPURendering() {
     // CPU 软件渲染模式 - 使用 DisplayBackend 进行无闪烁显示
 
     // 使用物理像素大小创建渲染表面（支持高 DPI）
-    int width, height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    int width = 0;
+    int height = 0;
+    GetPhysicalSize(&width, &height);
+    if (width <= 0 || height <= 0) {
+        throw std::runtime_error("Cannot create CPU rendering surface: window surface has invalid size");
+    }
 
     // 创建 Skia Raster 表面（CPU 渲染）- 使用物理像素大小
     // 注意：使用 BGRA 格式以匹配显示后端
@@ -1644,7 +1667,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 if (gr_context_) {
                     int width = 0;
                     int height = 0;
-                    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+                    GetPhysicalSize(&width, &height);
                     gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
                     gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
                     gr_context_->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
@@ -1812,7 +1835,7 @@ bool Window::RestoreResizeBurstCacheLimitIfReady() {
     if (gr_context_ && sdl_window_) {
         int width = 0;
         int height = 0;
-        SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+        GetPhysicalSize(&width, &height);
         gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
         gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
     }
@@ -1914,8 +1937,9 @@ void Window::Render() {
     // =========================================================================
     // 获取视口尺寸
     // =========================================================================
-    int physical_width, physical_height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    int physical_width = 0;
+    int physical_height = 0;
+    GetPhysicalSize(&physical_width, &physical_height);
     float dpi_scale = GetDisplayScale();
     // 使用浮点数保持精度，避免截断导致的白边问题
     float logical_width = physical_width / dpi_scale;
@@ -2079,8 +2103,9 @@ void Window::Render() {
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (layout_engine_ && cached_render_tree_) {
         // 获取窗口尺寸
-        int physical_width, physical_height;
-        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+        int physical_width = 0;
+        int physical_height = 0;
+        GetPhysicalSize(&physical_width, &physical_height);
         float dpi_scale = GetDisplayScale();
         float width = static_cast<float>(physical_width) / dpi_scale;
         float height = static_cast<float>(physical_height) / dpi_scale;
@@ -3021,7 +3046,8 @@ float Window::GetDisplayScale() const {
     int logical_width, logical_height;
     SDL_GetWindowSize(sdl_window_, &logical_width, &logical_height);
 
-    int physical_width, physical_height;
+    int physical_width = 0;
+    int physical_height = 0;
     SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
 
     if (logical_width > 0 && physical_width != logical_width) {
@@ -3054,17 +3080,29 @@ int Window::LogicalToPhysicalPixels(int value) const {
 }
 
 void Window::GetPhysicalSize(int* width, int* height) const {
+    int physical_width = 0;
+    int physical_height = 0;
+
     if (sdl_window_) {
-        int physical_width = 0;
-        int physical_height = 0;
         SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-        if (width) *width = physical_width;
-        if (height) *height = physical_height;
-        return;
+        if (physical_width <= 0 || physical_height <= 0) {
+            int window_width = 0;
+            int window_height = 0;
+            SDL_GetWindowSize(sdl_window_, &window_width, &window_height);
+            if (window_width > 0 && window_height > 0) {
+                physical_width = window_width;
+                physical_height = window_height;
+            }
+        }
     }
 
-    if (width) *width = LogicalToPhysicalPixels(config_.width);
-    if (height) *height = LogicalToPhysicalPixels(config_.height);
+    if (physical_width <= 0 || physical_height <= 0) {
+        physical_width = LogicalToPhysicalPixels(config_.width);
+        physical_height = LogicalToPhysicalPixels(config_.height);
+    }
+
+    if (width) *width = physical_width;
+    if (height) *height = physical_height;
 }
 
 RenderBackend Window::GetActualBackend() const {
@@ -3173,8 +3211,9 @@ void Window::ForceLayoutSync() {
     }
 
     // 获取视口尺寸
-    int physical_width, physical_height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    int physical_width = 0;
+    int physical_height = 0;
+    GetPhysicalSize(&physical_width, &physical_height);
     float dpi_scale = GetDisplayScale();
     float width = static_cast<float>(physical_width) / dpi_scale;
     float height = static_cast<float>(physical_height) / dpi_scale;
@@ -3331,8 +3370,9 @@ void Window::EnsureRenderTree() {
     }
 
     // 获取窗口尺寸
-    int physical_width, physical_height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    int physical_width = 0;
+    int physical_height = 0;
+    GetPhysicalSize(&physical_width, &physical_height);
 
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();

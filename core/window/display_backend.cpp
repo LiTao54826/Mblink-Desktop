@@ -743,6 +743,7 @@ bool PaintModeDisplayBackend::CreateBuffer(int width, int height) {
     bitmap_bits_ = bits;
     bitmap_width_ = width;
     bitmap_height_ = height;
+    buffer_has_full_content_ = false;
 
     return true;
 }
@@ -763,6 +764,7 @@ void PaintModeDisplayBackend::DestroyBuffer() {
     bitmap_bits_ = nullptr;
     bitmap_width_ = 0;
     bitmap_height_ = 0;
+    buffer_has_full_content_ = false;
 }
 
 void PaintModeDisplayBackend::Present(const void* pixels, int width, int height, int stride) {
@@ -772,13 +774,20 @@ void PaintModeDisplayBackend::Present(const void* pixels, int width, int height,
 
 void PaintModeDisplayBackend::PresentPartial(const void* pixels, int width, int height, int stride,
                                               int dirty_x, int dirty_y, int dirty_width, int dirty_height) {
-    if (!hwnd_ || !bitmap_bits_) return;
+    if (!hwnd_ || !pixels || width <= 0 || height <= 0 || stride <= 0) return;
 
     // 如果尺寸变化，重建缓冲区
-    if (width != bitmap_width_ || height != bitmap_height_) {
+    if (!bitmap_bits_ || width != bitmap_width_ || height != bitmap_height_) {
         if (!CreateBuffer(width, height)) {
             return;
         }
+    }
+
+    if (!buffer_has_full_content_) {
+        dirty_x = 0;
+        dirty_y = 0;
+        dirty_width = width;
+        dirty_height = height;
     }
 
     // 边界检查
@@ -804,6 +813,9 @@ void PaintModeDisplayBackend::PresentPartial(const void* pixels, int width, int 
         memcpy(dst, src, copy_width);
         src += stride;
         dst += dst_stride;
+    }
+    if (dirty_x == 0 && dirty_y == 0 && dirty_width == width && dirty_height == height) {
+        buffer_has_full_content_ = true;
     }
 
     // 只更新脏区域到窗口

@@ -164,7 +164,7 @@ target_include_directories(mbink_ui_dev PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/third_party
 )
-add_dependencies(mbink_ui_dev esm_loader generate_embedded_ui_dev_templates)
+add_dependencies(mbink_ui_dev esm_loader mbink_devtools generate_embedded_ui_dev_templates)
 
 target_link_libraries(mbink_ui_dev PRIVATE
     mbink_resource_package

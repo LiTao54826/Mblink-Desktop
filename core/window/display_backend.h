@@ -317,6 +317,7 @@ private:
     bool CreateBuffer(int width, int height);
     void DestroyBuffer();
 
+    bool buffer_has_full_content_ = false;
     void* hwnd_ = nullptr;           // HWND
     void* hdc_mem_ = nullptr;        // HDC (内存设备上下文)
     void* hbitmap_ = nullptr;        // HBITMAP (DIB 位图)
