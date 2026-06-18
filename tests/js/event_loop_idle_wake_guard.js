@@ -53,9 +53,9 @@ function run() {
          runOnceInternal.includes('idle_callback_') &&
          runOnceInternal.includes('!idle_state.has_frame_deadline_work'),
     'RunOnceInternal must only block/return early when idle and not waiting for rAF');
-  assert(runOnceInternal.includes('if (!did_front_idle_wait)') &&
+  assert(runOnceInternal.includes('if (allow_idle_wait && !did_front_idle_wait)') &&
          runOnceInternal.includes('WaitForIdleWork(CollectIdleWorkState('),
-    'RunOnceInternal should keep the tail idle sleep for the blocking EventLoop::Run path');
+    'RunOnceInternal should keep the tail idle sleep only for the blocking EventLoop::Run path');
   const cApiPath = path.join(process.cwd(), 'core', 'api', 'mbink.cpp');
   const cApiSrc = fs.readFileSync(cApiPath, 'utf8');
   const pollEvents = extractFunction(cApiSrc, 'bool mbink_poll_events');

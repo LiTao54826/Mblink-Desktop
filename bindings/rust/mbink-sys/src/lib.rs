@@ -4,6 +4,9 @@
 
 use std::ffi::{c_char, c_int, c_void};
 
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+use std::{env, path::PathBuf, sync::OnceLock};
+
 #[cfg(all(target_os = "windows", mbink_runtime_load))]
 mod windows_runtime;
 
@@ -231,16 +234,6 @@ extern "C" {
         event_name: *const c_char,
         data_json: *const c_char,
     ) -> c_int;
-    pub fn mbink_devtools_open(handle: MBinkHandle) -> c_int;
-    pub fn mbink_devtools_close(handle: MBinkHandle) -> c_int;
-    pub fn mbink_devtools_default_http_options() -> MBinkDevToolsHttpOptions;
-    pub fn mbink_devtools_http_start(
-        handle: MBinkHandle,
-        options: *const MBinkDevToolsHttpOptions,
-        out_info: *mut MBinkDevToolsHttpInfo,
-    ) -> c_int;
-    pub fn mbink_devtools_http_stop(handle: MBinkHandle) -> c_int;
-    pub fn mbink_devtools_http_info_free(info: *mut MBinkDevToolsHttpInfo);
     pub fn mbink_observe_set_callback(
         handle: MBinkHandle,
         callback: MBinkObserveCallback,
@@ -250,23 +243,6 @@ extern "C" {
     pub fn mbink_observe_errors_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
     pub fn mbink_observe_lifecycle_json(handle: MBinkHandle, out_json: *mut *mut c_char) -> c_int;
     pub fn mbink_observe_clear(handle: MBinkHandle, kind: MBinkObserveKind) -> c_int;
-    pub fn mbink_ui_dev_default_snapshot_options() -> MBinkUiDevSnapshotOptions;
-    pub fn mbink_ui_dev_snapshot_json(
-        handle: MBinkHandle,
-        options: *const MBinkUiDevSnapshotOptions,
-        out_json: *mut *mut c_char,
-    ) -> c_int;
-    pub fn mbink_ui_dev_snapshot_file(
-        handle: MBinkHandle,
-        output_path: *const c_char,
-        options: *const MBinkUiDevSnapshotOptions,
-    ) -> c_int;
-    pub fn mbink_ui_dev_command_json(
-        handle: MBinkHandle,
-        command_json: *const c_char,
-        out_response_json: *mut *mut c_char,
-    ) -> c_int;
-
     pub fn mbink_state_create_null(handle: MBinkHandle, name: *const c_char) -> c_int;
     pub fn mbink_state_create_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int;
     pub fn mbink_state_create_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int;
@@ -548,4 +524,272 @@ extern "C" {
 
     pub fn mbink_copy_string(str_: *const c_char) -> *mut c_char;
     pub fn mbink_free(ptr: *mut c_void);
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+struct DevtoolsApi {
+    _lib: libloading::Library,
+    mbink_devtools_open: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_devtools_close: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_devtools_default_http_options: unsafe extern "C" fn() -> MBinkDevToolsHttpOptions,
+    mbink_devtools_http_start: unsafe extern "C" fn(
+        MBinkHandle,
+        *const MBinkDevToolsHttpOptions,
+        *mut MBinkDevToolsHttpInfo,
+    ) -> c_int,
+    mbink_devtools_http_stop: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_devtools_http_info_free: unsafe extern "C" fn(*mut MBinkDevToolsHttpInfo),
+    mbink_ui_dev_default_snapshot_options: unsafe extern "C" fn() -> MBinkUiDevSnapshotOptions,
+    mbink_ui_dev_snapshot_json: unsafe extern "C" fn(
+        MBinkHandle,
+        *const MBinkUiDevSnapshotOptions,
+        *mut *mut c_char,
+    ) -> c_int,
+    mbink_ui_dev_snapshot_file:
+        unsafe extern "C" fn(MBinkHandle, *const c_char, *const MBinkUiDevSnapshotOptions) -> c_int,
+    mbink_ui_dev_command_json:
+        unsafe extern "C" fn(MBinkHandle, *const c_char, *mut *mut c_char) -> c_int,
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+static DEVTOOLS_API: OnceLock<DevtoolsApi> = OnceLock::new();
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+fn devtools_api() -> &'static DevtoolsApi {
+    DEVTOOLS_API.get_or_init(|| unsafe { load_devtools_api() })
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+unsafe fn load_devtools_api() -> DevtoolsApi {
+    let path = devtools_library_path();
+    let lib = libloading::Library::new(&path).unwrap_or_else(|err| {
+        panic!(
+            "failed to load mbink_devtools dynamic library at {}: {err}",
+            path.display()
+        )
+    });
+
+    macro_rules! load {
+        ($name:literal, $ty:ty) => {{
+            *lib.get::<$ty>($name).unwrap_or_else(|err| {
+                panic!(
+                    "failed to load symbol {} from {}: {err}",
+                    String::from_utf8_lossy($name),
+                    path.display()
+                )
+            })
+        }};
+    }
+
+    let mbink_devtools_open = load!(
+        b"mbink_devtools_open\0",
+        unsafe extern "C" fn(MBinkHandle) -> c_int
+    );
+    let mbink_devtools_close = load!(
+        b"mbink_devtools_close\0",
+        unsafe extern "C" fn(MBinkHandle) -> c_int
+    );
+    let mbink_devtools_default_http_options = load!(
+        b"mbink_devtools_default_http_options\0",
+        unsafe extern "C" fn() -> MBinkDevToolsHttpOptions
+    );
+    let mbink_devtools_http_start = load!(
+        b"mbink_devtools_http_start\0",
+        unsafe extern "C" fn(
+            MBinkHandle,
+            *const MBinkDevToolsHttpOptions,
+            *mut MBinkDevToolsHttpInfo,
+        ) -> c_int
+    );
+    let mbink_devtools_http_stop = load!(
+        b"mbink_devtools_http_stop\0",
+        unsafe extern "C" fn(MBinkHandle) -> c_int
+    );
+    let mbink_devtools_http_info_free = load!(
+        b"mbink_devtools_http_info_free\0",
+        unsafe extern "C" fn(*mut MBinkDevToolsHttpInfo)
+    );
+    let mbink_ui_dev_default_snapshot_options = load!(
+        b"mbink_ui_dev_default_snapshot_options\0",
+        unsafe extern "C" fn() -> MBinkUiDevSnapshotOptions
+    );
+    let mbink_ui_dev_snapshot_json = load!(
+        b"mbink_ui_dev_snapshot_json\0",
+        unsafe extern "C" fn(
+            MBinkHandle,
+            *const MBinkUiDevSnapshotOptions,
+            *mut *mut c_char,
+        ) -> c_int
+    );
+    let mbink_ui_dev_snapshot_file = load!(
+        b"mbink_ui_dev_snapshot_file\0",
+        unsafe extern "C" fn(MBinkHandle, *const c_char, *const MBinkUiDevSnapshotOptions) -> c_int
+    );
+    let mbink_ui_dev_command_json = load!(
+        b"mbink_ui_dev_command_json\0",
+        unsafe extern "C" fn(MBinkHandle, *const c_char, *mut *mut c_char) -> c_int
+    );
+
+    DevtoolsApi {
+        _lib: lib,
+        mbink_devtools_open,
+        mbink_devtools_close,
+        mbink_devtools_default_http_options,
+        mbink_devtools_http_start,
+        mbink_devtools_http_stop,
+        mbink_devtools_http_info_free,
+        mbink_ui_dev_default_snapshot_options,
+        mbink_ui_dev_snapshot_json,
+        mbink_ui_dev_snapshot_file,
+        mbink_ui_dev_command_json,
+    }
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+fn devtools_library_path() -> PathBuf {
+    let names = devtools_library_names();
+
+    if let Some(path) = env::var_os("MBINK_DEVTOOLS_PATH") {
+        let path = PathBuf::from(path);
+        if !path.is_absolute() {
+            panic!("MBINK_DEVTOOLS_PATH must be an absolute path");
+        }
+        if path.is_dir() {
+            return first_existing_in_dir(&path, &names).unwrap_or_else(|| {
+                panic!(
+                    "mbink_devtools dynamic library not found in {}",
+                    path.display()
+                )
+            });
+        }
+        return std::fs::canonicalize(&path).unwrap_or_else(|_| {
+            panic!(
+                "mbink_devtools dynamic library not found at {}",
+                path.display()
+            )
+        });
+    }
+
+    for dir in devtools_search_dirs() {
+        if let Some(candidate) = first_existing_in_dir(&dir, &names) {
+            return candidate;
+        }
+    }
+
+    PathBuf::from(names[0])
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+fn devtools_library_names() -> [&'static str; 1] {
+    if cfg!(target_os = "windows") {
+        ["mbink_devtools.dll"]
+    } else if cfg!(target_os = "macos") {
+        ["libmbink_devtools.dylib"]
+    } else {
+        ["libmbink_devtools.so"]
+    }
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+fn devtools_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    if let Some(path) = env::var_os("MBINK_DLL_PATH") {
+        let path = PathBuf::from(path);
+        if path.is_absolute() {
+            if path.is_dir() {
+                dirs.push(path);
+            } else if let Some(parent) = path.parent() {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+
+    if let Some(path) = env::var_os("MBINK_LIB_DIR") {
+        dirs.push(PathBuf::from(path));
+    }
+
+    if let Some(exe_dir) = env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+    {
+        dirs.push(exe_dir);
+    }
+
+    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runtime"));
+    dirs
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+fn first_existing_in_dir(dir: &PathBuf, names: &[&str]) -> Option<PathBuf> {
+    names
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.exists())
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_open(handle: MBinkHandle) -> c_int {
+    (devtools_api().mbink_devtools_open)(handle)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_close(handle: MBinkHandle) -> c_int {
+    (devtools_api().mbink_devtools_close)(handle)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_default_http_options() -> MBinkDevToolsHttpOptions {
+    (devtools_api().mbink_devtools_default_http_options)()
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_http_start(
+    handle: MBinkHandle,
+    options: *const MBinkDevToolsHttpOptions,
+    out_info: *mut MBinkDevToolsHttpInfo,
+) -> c_int {
+    (devtools_api().mbink_devtools_http_start)(handle, options, out_info)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_http_stop(handle: MBinkHandle) -> c_int {
+    (devtools_api().mbink_devtools_http_stop)(handle)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_devtools_http_info_free(info: *mut MBinkDevToolsHttpInfo) {
+    (devtools_api().mbink_devtools_http_info_free)(info)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_ui_dev_default_snapshot_options() -> MBinkUiDevSnapshotOptions {
+    (devtools_api().mbink_ui_dev_default_snapshot_options)()
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_ui_dev_snapshot_json(
+    handle: MBinkHandle,
+    options: *const MBinkUiDevSnapshotOptions,
+    out_json: *mut *mut c_char,
+) -> c_int {
+    (devtools_api().mbink_ui_dev_snapshot_json)(handle, options, out_json)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_ui_dev_snapshot_file(
+    handle: MBinkHandle,
+    output_path: *const c_char,
+    options: *const MBinkUiDevSnapshotOptions,
+) -> c_int {
+    (devtools_api().mbink_ui_dev_snapshot_file)(handle, output_path, options)
+}
+
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
+pub unsafe fn mbink_ui_dev_command_json(
+    handle: MBinkHandle,
+    command_json: *const c_char,
+    out_response_json: *mut *mut c_char,
+) -> c_int {
+    (devtools_api().mbink_ui_dev_command_json)(handle, command_json, out_response_json)
 }
