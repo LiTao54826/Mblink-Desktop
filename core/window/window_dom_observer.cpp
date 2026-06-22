@@ -425,19 +425,8 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                 parent_ro->MarkNeedsLayout(true);
             }
 
-            // 关键修复：如果父节点是 fixed 元素，触发渲染树重建
-            // 因为 fixed 元素的子元素变化会影响层的边界
-            if (parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto parent_elem = std::dynamic_pointer_cast<Element>(parent->shared_from_this());
-                if (parent_elem && parent_elem->GetRenderObject()) {
-                    const auto& parent_style = parent_elem->GetRenderObject()->GetComputedStyle();
-                    if (parent_style.position == "fixed") {
-                        window_->InvalidateRenderTree();
-                        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
-                        return;
-                    }
-                }
-            }
+            // Fixed parents can update through the synchronizer; avoid forcing a
+            // full render-tree rebuild for every internal dialog child removal.
         }
 
         // 2. 增量更新：标记需要重绘
@@ -745,42 +734,28 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                 return;
             }
 
-            // 基于区域大小判断是否需要全量重建
+            // Structural changes are synchronized during render. Avoid the old
+            // area heuristic here because fixed dialogs can cover a large part of
+            // the viewport even when only a small internal subtree changed.
             if (tracker.GetStructuralChangeCount() > 0) {
-                // 计算变化区域的总面积
-                float total_change_area = 0.0f;
-                int width = 800, height = 600;
-                window_->GetSize(&width, &height);
-                float viewport_area = static_cast<float>(width * height);
-
                 for (const auto& change : tracker.GetStructuralChanges()) {
-                    auto parent = change.parent;
-                    if (parent) {
-                        if (auto render_obj = parent->GetRenderObject()) {
-                            const auto& layout = render_obj->GetLayoutInfo();
-                            total_change_area += layout.width * layout.height;
-                        } else {
-                            // 没有渲染对象，估算一个默认大小
-                            total_change_area += 100.0f * 50.0f;
+                    if (auto parent = change.parent) {
+                        parent->SetNeedsLayout();
+                        if (auto parent_ro = parent->GetRenderObject()) {
+                            parent_ro->MarkNeedsLayout(true);
+                            parent_ro->MarkNeedsPaint();
+                        }
+                    }
+                    if (auto old_parent = change.old_parent) {
+                        old_parent->SetNeedsLayout();
+                        if (auto old_parent_ro = old_parent->GetRenderObject()) {
+                            old_parent_ro->MarkNeedsLayout(true);
+                            old_parent_ro->MarkNeedsPaint();
                         }
                     }
                 }
-
-                // 如果变化区域小于视口的 50%，使用增量更新
-                if (viewport_area > 0 && total_change_area < viewport_area * 0.5f) {
-                    // 标记受影响的节点需要重新布局
-                    for (const auto& change : tracker.GetStructuralChanges()) {
-                        auto parent = change.parent;
-                        if (parent) {
-                            if (auto parent_ro = parent->GetRenderObject()) {
-                                parent_ro->MarkNeedsLayout(true);
-                                parent_ro->MarkNeedsPaint();
-                            }
-                        }
-                    }
-                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
-                    return;
-                }
+                window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
+                return;
             }
         }
 

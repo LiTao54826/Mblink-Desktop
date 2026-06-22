@@ -110,6 +110,89 @@ TEST_F(EventLoopTest, RenderCallbackRunsAfterWindowRender) {
     EXPECT_FALSE(callback_saw_pending_repaint);
 }
 
+TEST_F(EventLoopTest, FixedDialogBatchMutationKeepsRenderTreeCached) {
+    WindowConfig config;
+    config.width = 800;
+    config.height = 600;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    auto body = document->GetBody();
+    ASSERT_TRUE(body);
+
+    auto dialog = document->CreateElement("div");
+    dialog->SetAttribute("id", "dialog");
+    dialog->SetStyle("position", "fixed");
+    dialog->SetStyle("left", "40px");
+    dialog->SetStyle("top", "40px");
+    dialog->SetStyle("width", "520px");
+    dialog->SetStyle("height", "360px");
+
+    auto content = document->CreateElement("div");
+    content->SetAttribute("id", "dialog-content");
+    dialog->AppendChild(content);
+    body->AppendChild(dialog);
+
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    window->Render();
+
+    auto cached_tree = window->GetCachedRenderTree();
+    ASSERT_TRUE(cached_tree);
+
+    document->BeginBatch();
+    for (int i = 0; i < 3; ++i) {
+        auto row = document->CreateElement("div");
+        row->AppendChild(document->CreateTextNode("row"));
+        content->AppendChild(row);
+    }
+    document->EndBatch();
+
+    EXPECT_EQ(window->GetCachedRenderTree(), cached_tree);
+    EXPECT_TRUE(window->NeedsRepaint());
+}
+
+TEST_F(EventLoopTest, FixedDialogTextRemovalKeepsRenderTreeCached) {
+    WindowConfig config;
+    config.width = 800;
+    config.height = 600;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    auto body = document->GetBody();
+    ASSERT_TRUE(body);
+
+    auto dialog = document->CreateElement("div");
+    dialog->SetStyle("position", "fixed");
+    dialog->SetStyle("left", "40px");
+    dialog->SetStyle("top", "40px");
+    dialog->SetStyle("width", "520px");
+    dialog->SetStyle("height", "360px");
+    auto label = document->CreateTextNode("loading");
+    dialog->AppendChild(label);
+    body->AppendChild(dialog);
+
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    window->Render();
+
+    auto cached_tree = window->GetCachedRenderTree();
+    ASSERT_TRUE(cached_tree);
+
+    dialog->RemoveChild(label);
+
+    EXPECT_EQ(window->GetCachedRenderTree(), cached_tree);
+    EXPECT_TRUE(window->NeedsRepaint());
+}
+
 TEST_F(EventLoopTest, GetTaskScheduler) {
     auto& scheduler = event_loop_->GetTaskScheduler();
     // 应该返回有效的调度器引用
