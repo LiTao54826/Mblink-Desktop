@@ -195,14 +195,19 @@ void FormElementPainter::PaintTextInput(HTMLInputElement* input,
         input->SetScrollLeft(viewport.scroll_left);
     }
 
+    const float text_height = std::max(0.0f, -font_metrics.fAscent + font_metrics.fDescent);
+    const float text_box_top = box.content_y + (box.content_height - text_height) / 2.0f;
     float text_x = input_text_viewport::TextOriginX(box.content_x, viewport);
-    float text_y = box.content_y + (box.content_height - font_metrics.fDescent + font_metrics.fAscent) / 2 - font_metrics.fAscent;
+    float text_y = text_box_top - font_metrics.fAscent;
 
     canvas_->save();
-    canvas_->clipRect(SkRect::MakeXYWH(box.content_x,
-                                       box.content_y,
-                                       viewport.visible_width,
-                                       box.content_height));
+    const float clip_top = std::min(box.content_y, text_box_top - 1.0f);
+    const float clip_bottom = std::max(box.content_y + box.content_height,
+                                       text_box_top + text_height + 1.0f);
+    canvas_->clipRect(SkRect::MakeLTRB(box.content_x,
+                                       clip_top,
+                                       box.content_x + viewport.visible_width,
+                                       clip_bottom));
 
     if (!model.display_text.empty()) {
         PaintInputTextLayer(model, text_x, text_y, font, params);

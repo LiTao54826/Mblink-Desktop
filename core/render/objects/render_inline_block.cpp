@@ -38,6 +38,33 @@
 
 namespace mbink {
 
+namespace {
+
+bool IsTextEditableInputElement(const std::shared_ptr<Node>& node) {
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(node);
+    return input && input->SupportsTextEditing();
+}
+
+float MeasureInputContentLineHeight(const ComputedStyle& style) {
+    FontDescriptor desc;
+    desc.family = style.font_family;
+    desc.size = style.font_size;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    const float glyph_height = std::max(0.0f, -font_metrics.fAscent + font_metrics.fDescent);
+    const float css_line_height = style.line_height > 0.0f
+        ? style.line_height * style.font_size
+        : style.font_size * 1.2f;
+    return std::max(glyph_height, css_line_height);
+}
+
+}  // namespace
+
 
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
@@ -168,20 +195,10 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
                 // 有子元素内容
                 layout_info_.height = content_height + padding_top + padding_bottom + border_top + border_bottom;
             } else {
-                // 没有子元素（如 input, select 元素），基于 font-size 计算
-                // 检查是否是 text/password 类型的 input 元素
-                bool is_text_input = false;
-                auto node = GetNode();
-                if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto element = std::static_pointer_cast<Element>(node);
-                    if (element->GetTagName() == "input") {
-                        std::string type = element->GetAttribute("type");
-                        is_text_input = (type.empty() || type == "text" || type == "password" || type == "number");
-                    }
-                }
-
-                // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
-                float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
+                // Empty inline-block controls use their intrinsic text/control height.
+                float content_line_height = IsTextEditableInputElement(GetNode())
+                    ? MeasureInputContentLineHeight(style)
+                    : (style.font_size * 1.2f);
                 layout_info_.height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
             }
         }
@@ -544,20 +561,10 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
             // 有子元素内容
             height = content_height + padding_top + padding_bottom + border_top + border_bottom;
         } else {
-            // 没有子元素（如 input, select 元素），基于 font-size 计算
-            // 检查是否是 text/password 类型的 input 元素
-            bool is_text_input = false;
-            auto node = GetNode();
-            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto element = std::static_pointer_cast<Element>(node);
-                if (element->GetTagName() == "input") {
-                    std::string type = element->GetAttribute("type");
-                    is_text_input = (type.empty() || type == "text" || type == "password" || type == "number");
-                }
-            }
-
-            // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
-            float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
+            // Empty inline-block controls use their intrinsic text/control height.
+            float content_line_height = IsTextEditableInputElement(GetNode())
+                ? MeasureInputContentLineHeight(style)
+                : (style.font_size * 1.2f);
             height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
         }
     }
@@ -1080,11 +1087,14 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         float text_x = input_text_viewport::TextOriginX(box.content_x, viewport);
 
         canvas->save();
-        SkRect text_clip_rect = SkRect::MakeXYWH(
+        float clip_top = std::min(box.content_y, text_box_top - 1.0f);
+        float clip_bottom = std::max(box.content_y + box.content_height,
+                                     text_box_top + text_height + 1.0f);
+        SkRect text_clip_rect = SkRect::MakeLTRB(
             box.content_x,
-            std::max(box.content_y, text_box_top - 1.0f),
-            viewport.visible_width,
-            std::min(box.content_height, text_height + 2.0f)
+            clip_top,
+            box.content_x + viewport.visible_width,
+            clip_bottom
         );
         canvas->clipRect(text_clip_rect);
 

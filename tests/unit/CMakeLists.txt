@@ -45,6 +45,7 @@ set(RENDER_TEST_SOURCES
     render/test_color.cpp
     render/test_transform.cpp
     render/test_scrollbar_controller.cpp
+    render/test_input_intrinsic_size.cpp
 )
 
 # QuickJS 测试

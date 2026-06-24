@@ -20,6 +20,8 @@ MCP notifications and VS Code preview are still future work.
 
 - Treat all width and height values as logical pixels, including app window size, viewport size, element rects, spacing, and default template dimensions. Do not design against physical pixels or inflate layouts for high-DPI displays.
 - MBink UI is primarily a desktop-app framework. Make the outermost `body` or root shell fill the full window by default, keep `body` non-scrollable unless page-level scrolling is genuinely required, and place scrollbars inside the content regions that need them.
+- For dense desktop screens, give tables, toolbars, tabs, and fixed-format controls explicit min widths, column widths, or grid constraints so labels, checkbox columns, and badges cannot collapse into misleading but technically present DOM nodes.
+- Scope broad form-control CSS carefully. A global `input { width: 100% }` can break table checkboxes, radio controls, and compact toolbar inputs; give `input[type="checkbox"]` and other tiny controls explicit dimensions.
 
 ## Choose the Control Surface
 
@@ -42,6 +44,14 @@ MCP notifications and VS Code preview are still future work.
 8. Reload through `reload` after builds. Current documented behavior is fixed `restart_runtime`, even though the design keeps `css` and `remount` and `restart` as future semantics.
 9. Use `click`, `input_text`, `scroll`, and `highlight` to validate interactions or spotlight the exact element under review.
 10. Re-run `snapshot_ui`, `query_element`, `get_console_logs`, and `get_js_errors` to verify the effect.
+
+## Common UI Combination Showcase Workflow
+
+- When building or changing a reusable UI surface, create or update a compact showcase that combines the common states a real app will use: shell navigation, toolbar actions, tabs or segmented controls, table/list/card views, forms, validation, disabled controls, loading, empty, error, modal, toast, and scrollable regions.
+- Give every important region and interactive control a stable selector. Good baseline targets include the root shell, search/input fields, primary action button, table, row selector, state preview, modal/dialog, toast stack, and at least one scroll container.
+- Validate both data and pixels. A selector can query successfully while the screenshot still shows a collapsed table, clipped text, or an oversized checkbox; screenshot review is required for layout-sensitive controls.
+- Exercise representative actions through UI-dev commands: one text input, one button click that changes state, one tab or segmented-control change, one modal open/close path, and one scroll operation.
+- Record every issue found during the loop in the example notes with the symptom, root cause, fix, and whether it was app CSS, dev tooling, C API/devtools, binding parity, or framework/runtime behavior.
 
 ## Build UI First, Then Integrate Host Code
 
@@ -91,6 +101,7 @@ MCP notifications and VS Code preview are still future work.
 - During the visual check, verify layout fit, text size, text alignment, colors, element positions, element sizes, spacing, and state colors against the CSS intent. Do not continue to the next slice while the snapshot structure or screenshot appearance contradicts the expected CSS result.
 - Treat text overflow as a validation failure in compact controls: buttons, tabs, badges, and similar elements must keep their labels inside their bounds, and any longer copy must have an explicit wrap, truncate, or resize strategy before approval.
 - When a visual issue clearly contradicts valid CSS or expected MBink behavior, diagnose and fix the MBink framework first instead of hiding the problem with project-specific CSS workarounds. Temporary UI-side workarounds are acceptable only to isolate the failure, and should be removed after the framework fix lands.
+- Classify the issue before fixing: app CSS mistakes belong in the app or example; missing snapshot/control behavior belongs in `mbink_devtools.dll` or the UI-dev command path; runtime behavior that must match across `esm_loader`, Python, Rust, and Go belongs behind the shared C API/devtools C API plus binding updates; valid CSS/DOM/rendering failures belong in the framework with a regression test.
 - When a slice introduces a framework compatibility issue, blank UI, selector failure, layout regression, or JS error, stop at that slice and fix it before continuing.
 - Introduce risky syntax, browser APIs, CSS features, native elements, third-party dependencies, or host bridge calls in the smallest isolated component that can prove compatibility.
 - Keep each validation target stable with IDs or data attributes so the failure can be traced to the last added slice instead of a large unverified rewrite.

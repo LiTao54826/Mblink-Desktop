@@ -1,0 +1,21 @@
+{
+  "name": "ui_combinations_showcase",
+  "entry": "app.js",
+  "runtime": "tool",
+  "window": {
+    "title": "UI Combinations Showcase",
+    "width": 1180,
+    "height": 760,
+    "resizable": true
+  },
+  "dev": {
+    "watch": true,
+    "debounce_ms": 100,
+    "auto_reload": true
+  },
+  "mcp": {
+    "transport": "stdio",
+    "snapshot_include_screenshot": true,
+    "snapshot_max_depth": 24
+  }
+}
