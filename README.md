@@ -1,125 +1,200 @@
 <p align="center">
-  <img src="./assets/logo.svg" alt="MBink Logo" width="140" />
+  <img src="./assets/logo.svg" alt="MBink logo" width="140" />
 </p>
 
 # MBink
 
-C++ desktop UI / application framework.
-C++ 桌面 UI / 应用框架。
+English | [中文](README.zh-CN.md)
 
-## Highlights | 特点
+MBink is a Windows-first desktop UI framework and tooling stack for building small and medium desktop apps with a lightweight native runtime, modern JS UI, and AI-friendly development workflows.
 
-- CMake-based build
-  基于 CMake 的构建系统
-- Core modules for DOM, event, layout, render, compositor, windowing, scripting, and networking
-  包含 DOM、事件、布局、渲染、合成、窗口、脚本与网络等核心模块
-- Unified C API via `core/api/mbink.h`
-  通过 `core/api/mbink.h` 提供统一 C API
-- Python binding integrated in the top-level build
-  Python binding 已接入顶层构建
-- Tooling targets for bundling and ESM loading
-  包含应用打包与 ESM 加载工具目标
+## What MBink is
 
-## Status | 当前状态
+- A shared runtime centered on `mbink.dll`
+- A thin manual runner in `esm_loader.exe`
+- An AI-first development surface in `mbink-ui-dev.exe`
+- Python integration today, plus early Rust and Go bindings in the tree
 
-| Area | Status | 说明 |
-|---|---|---|
-| Build system | CMake | 主构建系统 |
-| Core source tree | `core/` | 核心源码目录 |
-| Public C API | `core/api/mbink.h` | 对外 C 接口 |
-| Python binding | Integrated | 已接入构建 |
-| Go / Rust bindings | Implemented packages | 已有绑定包实现 |
-| Node.js binding | Placeholder directory | 当前仅占位目录 |
-| Browser compatibility | Partial, Chrome/Blink-oriented runtime layer | 当前为偏 Chrome/Blink 风格的基础兼容层，不能宣称完整浏览器兼容 |
-| Test targets | Available with `MBINK_BUILD_TESTS=ON` | 通过选项启用 |
-| Platform validation | Windows evidence is strongest | Windows 痕迹最完整 |
+## What MBink is not
 
-## Browser Compatibility | 浏览器兼容性
+- Not a complete browser
+- Not a WebView wrapper
+- Not a polished cross-platform release yet
 
-Current code shows a basic browser runtime compatibility layer with `window`, `navigator`, DOM query APIs, limited DOM polyfills, form / anchor base behavior, layout, and networking primitives.
-当前代码体现的是一套基础浏览器运行时兼容层，包含 `window`、`navigator`、DOM 查询 API、有限 DOM polyfills、表单 / 锚点基础行为、布局与网络基础能力。
+MBink is aimed at desktop apps that want a smaller, more controllable runtime and a development loop that works well for both humans and AI agents.
 
-It should not be described as fully compatible with Chrome / Firefox / Safari / Edge, nor as full Web platform parity.
-当前不应描述为已完整兼容 Chrome / Firefox / Safari / Edge，也不应宣称已达到完整 Web 平台一致性。
+## Current UI compatibility target
 
-See | 详见：[docs/BROWSER_COMPATIBILITY.md](docs/BROWSER_COMPATIBILITY.md)
+MBink currently centers its JS UI compatibility around the lightweight official Preact ESM path:
 
-## Repository Layout | 仓库结构
+- `preact`
+- `preact/hooks`
+- `preact/jsx-runtime`
+- `preact/jsx-dev-runtime`
+
+This is the clearest supported lane today for small and medium desktop apps.
+
+Those official Preact modules are not just examples in the tree. They are registered as embedded runtime modules in the MBink runtime path, so the verified default experience is based on direct ESM imports such as:
+
+- `import { h, render } from 'preact'`
+- `import { useState } from 'preact/hooks'`
+- `import { jsx } from 'preact/jsx-runtime'`
+
+Other framework layers may partly work, but they are not a supported compatibility target yet. Do not assume full React support or compatibility with large browser-oriented scaffolds unless the repository documents that with fresh verification evidence.
+
+## Imports and package model
+
+MBink supports real ESM `import`-based UI code. The runtime and tooling can handle:
+
+- local relative imports inside your project
+- the embedded official Preact modules above
+- some simple third-party packages after bundling and runtime verification
+
+What this does not mean:
+
+- the UI runtime is not Node.js
+- CommonJS (`require`, `module.exports`) is not the default path
+- Node built-ins such as `fs`, `path`, `process`, and `Buffer` are not a supported UI contract
+- large browser-oriented React scaffolds should not be assumed to work
+
+For the current supported API surface, read [docs/SKILLS.md](docs/SKILLS.md), [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md), and the supported API references those pages point to.
+
+## Why it is interesting
+
+- `mbink-ui-dev` gives you a practical loop for `open`, `build`, `snapshot`, `query`, `inspect`, `click`, and `serve`
+- `mbink.dll` stays the core runtime surface across tools and bindings
+- `esm_loader` gives you a direct manual lane for running a single entry file without hiding the DLL/runtime shape
+- The repository already contains runnable examples for app shells, todo apps, log views, native controls, and desktop-style layouts
+
+## What it looks like
+
+The screenshots below were captured from real `mbink-ui-dev` sessions on Windows.
+
+![MBink todo_app_js example](docs/assets/todo_app_js.png)
+![MBink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
+![MBink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
+![MBink html_demo example](docs/assets/html_demo.png)
+
+## Quick Start
+
+From the repository root on Windows:
+
+```powershell
+cmake -B build
+cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+```
+
+What this gives you:
+
+- a real MBink runtime window for `examples/todo_app_js`
+- a structured UI snapshot you can inspect from the CLI
+- an optional PNG screenshot written by the same runtime path when you add `--include-screenshot`
+
+If you prefer the manual DLL-facing lane:
+
+```powershell
+build\bin\Release\esm_loader.exe examples\todo_app_js\app.js
+```
+
+Start with the full guide in [docs/QUICKSTART.md](docs/QUICKSTART.md).
+
+## AI-First Workflow
+
+MBink is designed so an AI agent can work through the same development surface a human uses:
+
+- shell/CLI agents can drive `mbink-ui-dev.exe` directly
+- MCP-capable clients can use `mbink-ui-dev.exe serve`
+- direct C API hosts can expose live UI analysis through the optional `mbink_devtools.dll`
+
+The repository ships a reusable skill at [tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md](tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md).
+
+Start with [docs/SKILLS.md](docs/SKILLS.md) for the skillbook layout and how to use it with AI agents, then read [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md) for the recommended workflow.
+
+## Manual Runtime Model
+
+If you want to understand the project surface without the dev tooling layer, start here:
+
+- `mbink.dll`: the shared runtime
+- `esm_loader.exe`: the thinnest manual host in this repository
+- `mbink-ui-dev.exe`: project tooling, snapshots, build/watch, MCP, and inspection
+- `mbink_devtools.dll`: optional development companion for UI snapshots, control, and runtime HTTP MCP
+
+Read [docs/BINDINGS.md](docs/BINDINGS.md) and [docs/C_API_RUNTIME_PARITY.md](docs/C_API_RUNTIME_PARITY.md) for the runtime model.
+
+## Example Apps
+
+Good starting points in `examples/`:
+
+- `todo_app_js`: smallest verified `mbink-ui-dev` example for quick checks
+- `modern_desktop_demo`: desktop-style app shell and layout demo
+- `terminal_logview_demo`: MBink native terminal/logview elements
+- `component_demo`: smaller UI component combinations
+- `official_preact_jsx_dev`: a tracked reference for the official Preact ESM path
+
+## Project Status
+
+MBink is in an early but usable repository stage:
+
+- Windows has the strongest build and runtime evidence
+- the dev tooling and example workflow are more mature than the public packaging story
+- Python is the clearest binding to read first
+- Rust and Go bindings exist, but public onboarding is still secondary
+- Node.js should still be treated as a placeholder, not a supported binding
+
+The goal of this repository is not "ship a full browser." It is to make modern desktop app development more efficient, lightweight, and inspectable.
+
+## Project Reality
+
+MBink is primarily maintained as a personal project.
+
+Because development time and testing capacity are limited, not every example, platform, binding, framework combination, or edge case can be verified one by one before public release.
+
+That is why the public docs stay close to fresh, repository-local evidence and keep steering readers toward the Windows-first, Preact-centered paths that have actually been checked.
+
+If a path is not clearly documented with current verification evidence, treat it as experimental rather than promised support.
+
+## Support the Author
+
+If MBink is useful to you, sponsorship helps fund time for:
+
+- testing more examples and workflows
+- improving documentation and onboarding
+- fixing compatibility issues
+- maintaining tools and bindings
+
+You can add a public sponsor QR image at `docs/assets/sponsor_qr.png` and reference it from this section when it is ready.
+
+## Docs
+
+- [docs/QUICKSTART.md](docs/QUICKSTART.md)
+- [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md)
+- [docs/SKILLS.md](docs/SKILLS.md)
+- [docs/BUILD.md](docs/BUILD.md)
+- [docs/BINDINGS.md](docs/BINDINGS.md)
+- [docs/C_API_RUNTIME_PARITY.md](docs/C_API_RUNTIME_PARITY.md)
+- [docs/BROWSER_COMPATIBILITY.md](docs/BROWSER_COMPATIBILITY.md)
+- [docs/README.md](docs/README.md)
+
+## Repository Layout
 
 ```text
-core/        Core modules / 核心模块
-bindings/    Language bindings / 语言绑定
-examples/    Examples and demos / 示例与演示
-tests/       Test targets and test assets / 测试与测试资产
-tools/       Tooling targets / 工具目标
-scripts/     Build and helper scripts / 构建与辅助脚本
-docs/        Project documentation / 项目文档
-third_party/ Third-party dependencies / 第三方依赖
+core/        Runtime, DOM, layout, render, and public C API
+tools/       mbink-ui-dev, esm_loader, and build tooling
+bindings/    Python, Rust, and Go bindings
+examples/    Runnable examples and validation targets
+docs/        Project documentation
+tests/       Test and regression assets
 ```
 
-## Build | 构建
+## Contributing
 
-```bash
-cmake -B build
-cmake --build build --config Release
-```
+Start with [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-### Build with Tests | 构建并运行测试
+If you use AI coding tools in this repository, the canonical automation/contributor guidance lives in [AGENTS.md](AGENTS.md).
 
-```bash
-cmake -B build -DMBINK_BUILD_TESTS=ON
-cmake --build build --config Release
-ctest --test-dir build --output-on-failure
-```
-
-See also | 参考：
-
-- [docs/BUILD.md](docs/BUILD.md)
-- [docs/TESTING.md](docs/TESTING.md)
-
-## Examples | 示例
-
-- `tools/mbink_ui_dev/` is the canonical starter path for new projects.
-- `mbink-ui-dev init <dir> --purpose <minimal|showcase|desktop-app> --runtime <tool|python|rust|go>` generates slim purpose-first templates.
-- Host runtimes generate runnable starters: `python host/main.py`, `go run ./host`, or `cargo run --manifest-path rust_host/Cargo.toml`.
-- `examples/modern_desktop_demo/`
-- `examples/component_demo/`
-- `examples/html_demo/`
-- `examples/preact_demo/`
-- `examples/terminal_logview_demo/`
-
-## Bindings | 绑定
-
-| Language | Status | 说明 |
-|---|---|---|
-| Python | Implemented | 已实现 |
-| Go | Implemented | 已实现，位于 `bindings/go/mbink` |
-| Rust | Implemented | 已实现，位于 `bindings/rust/mbink` |
-| Node.js | Placeholder | 占位 |
-
-See | 详见：[docs/BINDINGS.md](docs/BINDINGS.md) · [bindings/go/README.md](bindings/go/README.md) · [bindings/rust/README.md](bindings/rust/README.md)
-
-## Documentation | 文档
-
-- [docs/README.md](docs/README.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/BUILD.md](docs/BUILD.md)
-- [docs/TESTING.md](docs/TESTING.md)
-- [docs/BINDINGS.md](docs/BINDINGS.md)
-- [docs/BROWSER_COMPATIBILITY.md](docs/BROWSER_COMPATIBILITY.md)
-- [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
-- [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [ROADMAP.md](ROADMAP.md)
-- [SECURITY.md](SECURITY.md)
-- [SUPPORT.md](SUPPORT.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-
-## Contributing | 贡献
-
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
-
-## License | 许可证
+## License
 
 MIT. See [LICENSE](LICENSE).

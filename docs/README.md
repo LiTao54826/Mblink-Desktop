@@ -1,52 +1,56 @@
-# Documentation | 文档
+# Documentation
 
-## Index | 索引
+English | [中文](README.zh-CN.md)
 
-- [Project README | 项目首页](../README.md)
-- [Architecture | 架构](ARCHITECTURE.md)
-- [Build | 构建](BUILD.md)
-- [Testing | 测试](TESTING.md)
-- [Bindings | 绑定](BINDINGS.md)
-- [Browser Compatibility | 浏览器兼容性](BROWSER_COMPATIBILITY.md)
-- [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
-- [Known Issues | 已知问题](KNOWN_ISSUES.md)
-- [Contributing | 贡献](CONTRIBUTING.md)
-- [MBink UI Dev Tool Design | MBink UI 开发工具设计](MBINK_UI_DEV_TOOL_DESIGN.md)
-- [DOM Bindings Migration Plan | DOM 绑定迁移方案](DOM_BINDINGS_MIGRATION.md)
+This folder is the public documentation index for MBink.
 
+## Start here
 
-- [Changelog | 变更记录](../CHANGELOG.md)
-- [Roadmap | 路线图](../ROADMAP.md)
-- [Security Policy | 安全策略](../SECURITY.md)
-- [Support | 支持](../SUPPORT.md)
-- [Code of Conduct | 行为准则](../CODE_OF_CONDUCT.md)
+1. [Project README](../README.md)
+2. [Quick Start](QUICKSTART.md)
+3. [AI Workflow](AI_WORKFLOW.md)
+4. [Skills Guide](SKILLS.md)
+5. [Build](BUILD.md)
+6. [Bindings](BINDINGS.md)
 
-## Recommended Reading Order | 推荐阅读顺序
+## What it looks like
 
-1. [Project README | 项目首页](../README.md)
-2. [Build | 构建](BUILD.md)
-3. [Architecture | 架构](ARCHITECTURE.md)
-4. [Testing | 测试](TESTING.md)
-5. [Bindings | 绑定](BINDINGS.md)
-6. [Browser Compatibility | 浏览器兼容性](BROWSER_COMPATIBILITY.md)
-7. [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
-8. [Known Issues | 已知问题](KNOWN_ISSUES.md)
-9. [Contributing | 贡献](CONTRIBUTING.md)
-10. [Changelog | 变更记录](../CHANGELOG.md)
-11. [Roadmap | 路线图](../ROADMAP.md)
+Real runtime screenshots from multiple examples:
 
-## Documentation Rules | 文档规则
+![MBink todo_app_js example](assets/todo_app_js.png)
+![MBink modern_desktop_demo example](assets/modern_desktop_demo.png)
+![MBink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
+![MBink html_demo example](assets/html_demo.png)
 
-- Source code and build scripts take precedence over documentation
-  如果文档与代码冲突，以代码和构建脚本为准
-- Unverified capabilities must be marked clearly
-  未验证能力必须明确标注
-- Placeholder directories must not be described as supported features
-  占位目录不能描述为已支持功能
-- Historical plans and summary notes are not treated as current project state
-  历史计划和总结不应当作当前项目状态
+## Core guides
 
+- [Quick Start](QUICKSTART.md)
+- [AI Workflow](AI_WORKFLOW.md)
+- [Skills Guide](SKILLS.md)
+- [Build](BUILD.md)
+- [Bindings](BINDINGS.md)
+- [C API Runtime Parity](C_API_RUNTIME_PARITY.md)
+- [Architecture](ARCHITECTURE.md)
+- [Testing](TESTING.md)
 
+## Runtime boundaries and limitations
 
+- [Browser Compatibility](BROWSER_COMPATIBILITY.md)
+- [Known Limitations](KNOWN_LIMITATIONS.md)
+- [Known Issues](KNOWN_ISSUES.md)
 
+## Project meta
 
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](../CHANGELOG.md)
+- [Security](../SECURITY.md)
+- [Support](../SUPPORT.md)
+- [Code of Conduct](../CODE_OF_CONDUCT.md)
+
+## Documentation rules
+
+- Code and real command output win over docs when they conflict.
+- Keep Windows-first wording unless a claim has been verified on other platforms.
+- Do not describe placeholders as supported features.
+- Do not describe MBink as a complete browser.
+- Prefer concrete command examples over abstract status language.

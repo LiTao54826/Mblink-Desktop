@@ -1,81 +1,102 @@
-# Bindings | 绑定
+# Bindings
 
-## Status | 状态
+English | [中文](BINDINGS.zh-CN.md)
 
-| Language | Status | Evidence | 说明 |
-|---|---|---|---|
-| Python | Integrated | `bindings/python/CMakeLists.txt`, `setup.py`, `mbink/_ffi.py`, Python package files | 已接入构建 |
-| Go | Implemented | `bindings/go/go.mod`, `bindings/go/mbink/*.go`, `go test ./...` | 已实现 Go 绑定 |
-| Rust | Implemented | `bindings/rust/README.md`, `bindings/rust/mbink`, `bindings/rust/mbink-sys` | 已实现 Rust 绑定 |
-| Node.js | Placeholder | Directory exists, no verified implementation | 占位目录 |
+MBink is organized around one shared runtime and multiple host surfaces.
 
-## Python Binding | Python 绑定
+## The runtime model first
 
-Current verified facts | 当前可确认事实：
+Before thinking in terms of language bindings, think in terms of runtime layers:
 
-- built on `ctypes + C ABI`
-  基于 `ctypes + C ABI`
-- runtime library target: `core/api/mbink_api`
-  运行时目标：`core/api/mbink_api`
-- Python package layer exists
-  存在 Python 包装层
-- enabled in the top-level CMake build
-  已接入顶层 CMake 构建
+- `mbink.dll` is the shared runtime core
+- `esm_loader.exe` is the clearest manual host in this repository
+- `mbink-ui-dev.exe` is the project-development tool surface
+- `mbink_devtools.dll` is a development-only companion for snapshot/control and runtime HTTP MCP
 
-Python binding currently consists of | 当前形态包括：
+That means bindings are best understood as host adapters around the same runtime, not separate runtimes.
 
-- a shared runtime library loaded through `ctypes`
-  一个通过 `ctypes` 加载的共享运行时库
-- Python wrapper and FFI helper code
-  Python 包装层与 FFI 辅助代码
+## Current binding status
 
-## Go Binding | Go 绑定
+| Binding | Current state | Notes |
+|---|---|---|
+| Python | Best public onboarding path after `esm_loader` | Integrated in top-level build and easiest to read |
+| Rust | Real binding packages exist | Better treated as secondary onboarding today |
+| Go | Real binding packages exist | Windows-oriented and still secondary onboarding |
+| Node.js | Placeholder only | Do not describe as supported |
 
-Current verified facts | 当前可确认事实：
+## Recommended order for new readers
 
-- Go package exists at `bindings/go/mbink`
-  Go 包位于 `bindings/go/mbink`
-- implemented with `cgo + core/api/mbink.h + bindings/go/mbink.lib`
-  基于 `cgo + core/api/mbink.h + bindings/go/mbink.lib` 实现
-- current implementation is Windows-oriented
-  当前实现面向 Windows
-- package exposes `App`, `State`, `Shared`, `LogView`, `Terminal`, resource helpers, and callback/event bindings
-  提供 `App`、`State`、`Shared`、`LogView`、`Terminal`、资源辅助与回调/事件绑定
-- verified by `go test ./...`
-  已通过 `go test ./...` 验证
-- examples available under `bindings/go/examples`
-  示例位于 `bindings/go/examples`
-- usage and run instructions documented in `bindings/go/README.md`
-  使用与运行方式见 `bindings/go/README.md`
+1. `mbink-ui-dev`
+2. `esm_loader`
+3. Python
+4. Rust or Go as needed
 
-## Rust Binding | Rust 绑定
+This order matches the parts of the repo that are easiest to understand and most grounded in current workflow evidence.
 
-Current verified facts | 当前可确认事实：
+## Python
 
-- Rust binding package exists at `bindings/rust/mbink`
-  Rust 绑定包位于 `bindings/rust/mbink`
-- raw FFI layer exists at `bindings/rust/mbink-sys`
-  原始 FFI 层位于 `bindings/rust/mbink-sys`
-- repository contains README and runnable examples for Rust bindings
-  仓库中包含 Rust 绑定 README 与可运行示例
+Python is the clearest language binding to read first because:
 
-## Other Bindings | 其他绑定
+- it is integrated into the top-level CMake build
+- it uses a direct `ctypes + C ABI` model
+- the repository contains multiple runnable Python examples
 
-Current repository state for Node.js | 当前 Node.js 仓库状态：
+Start here:
 
-- placeholder directory exists
-  存在占位目录
-- no verified implementation should be claimed
-  不应宣称已有可验证实现
-- no supported status should be documented
-  不应写成已支持状态
+- [../bindings/python/README.md](../bindings/python/README.md)
 
-## Notes | 说明
+Repository facts that matter:
 
-- naming still contains `MBink` / `mbink` compatibility layers
-  命名仍保留 `MBink` / `mbink` 兼容层
-- binding naming and versioning still need cleanup
-  绑定命名和版本信息仍需整理
+- runtime artifacts are copied into `bindings/python/mbink/bin/`
+- the package loads `mbink.dll` through `ctypes`
+- UI-dev snapshot/control and HTTP MCP can be enabled through the optional devtools path
 
+## Rust
 
+Rust bindings live in:
 
+- `bindings/rust/mbink-sys`
+- `bindings/rust/mbink`
+
+They are useful if you want:
+
+- raw FFI and safe wrapper layers
+- explicit dynamic library control
+- a more idiomatic host integration than Python
+
+Start with:
+
+- [../bindings/rust/README.md](../bindings/rust/README.md)
+
+## Go
+
+Go bindings live in:
+
+- `bindings/go/mbink`
+
+They are currently Windows-oriented and are a reasonable option if you want:
+
+- cgo-based host integration
+- a direct native host model
+
+Start with:
+
+- [../bindings/go/README.md](../bindings/go/README.md)
+
+## Devtools and parity
+
+Across Python, Rust, and Go, the important development-only rule is the same:
+
+- `mbink_devtools.dll` should be loaded on demand
+- it should not be treated as the production runtime
+- observable runtime behavior should stay aligned with the shared C API surface
+
+Read [C API Runtime Parity](C_API_RUNTIME_PARITY.md) for the contract this repository is aiming to preserve.
+
+## What not to claim yet
+
+Do not overstate the binding story:
+
+- Node.js is not a verified supported binding
+- cross-platform parity should not be implied without fresh evidence
+- the presence of source directories is not the same as stable public support

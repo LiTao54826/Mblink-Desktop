@@ -47,7 +47,7 @@
 - `requestAnimationFrame / cancelAnimationFrame`
 - `window` / `self` / `globalThis` 指向统一全局对象
 
-说明：当前实现以兼容壳为主，多个能力仍带 `TODO`，不是完整浏览器级行为。
+说明：当前实现以兼容壳为主，多个能力仍是占位或有限支持，不是完整浏览器级行为。
 
 ### 3. DOM 查询与选择器
 来源：`core/quickjs/document_bindings_impl.cpp`、`core/dom/bindings/dom_bindings.cpp`、`core/dom/selection/README.md`
@@ -125,8 +125,8 @@
 
 ## Partially Implemented / Limited | 部分实现或有限支持
 
-- `console.*`：当前主要通过 `print()` 兜底，原生日志桥接仍是 `TODO`
-- Timer API：当前 JS 侧有兼容实现，原生定时器桥接仍是 `TODO`
+- `console.*`：当前主要通过 `print()` 兜底，原生日志桥接尚未完整打通
+- Timer API：当前 JS 侧有兼容实现，原生定时器桥接尚未完整打通
 - `requestAnimationFrame`：当前是基于 `setTimeout(16)` 的临时实现
 - `Element.prototype.matches`：当前只支持简单选择器（`#id`、`.class`、tag）
 - `getElementById / getElementsByClassName / getElementsByTagName`：当前通过 `querySelector` / `querySelectorAll` 兜底，不是独立原生实现

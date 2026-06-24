@@ -26,8 +26,8 @@ The project is still being prepared as an open-source repository, so historical 
   将 `docs/CONTRIBUTING.md` 重写为贡献清单页
 - rewrote `docs/KNOWN_LIMITATIONS.md` and `docs/KNOWN_ISSUES.md` into concise reference pages
   将 `docs/KNOWN_LIMITATIONS.md` 与 `docs/KNOWN_ISSUES.md` 重写为简洁参考页
-- added `CHANGELOG.md`, `ROADMAP.md`, `SECURITY.md`, `SUPPORT.md`, and `CODE_OF_CONDUCT.md`
-  新增 `CHANGELOG.md`、`ROADMAP.md`、`SECURITY.md`、`SUPPORT.md` 与 `CODE_OF_CONDUCT.md`
+- added `CHANGELOG.md`, `SECURITY.md`, `SUPPORT.md`, and `CODE_OF_CONDUCT.md`
+  新增 `CHANGELOG.md`、`SECURITY.md`、`SUPPORT.md` 与 `CODE_OF_CONDUCT.md`
 
 ## Notes | 说明
 

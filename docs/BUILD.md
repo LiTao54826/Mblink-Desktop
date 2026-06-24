@@ -1,21 +1,59 @@
-# Build | 构建
+# Build
 
-## Build System | 构建系统
+English | [中文](BUILD.zh-CN.md)
 
-- Primary build system: `CMake`
-  主构建系统：`CMake`
-- Top-level modules currently wired into the build:
-  当前已接入顶层构建的模块：
-  - `core/`
-  - `bindings/python/`
-  - `tools/app_bundler/`
-  - `tools/esm_loader/`
-  - `tests/` (disabled by default / 默认关闭)
-- Not enabled in the default top-level build:
-  默认未接入顶层构建：
-  - `tools/app_loader/`
+This page documents the current public build surface for MBink with Windows-first wording.
 
-## CMake Options | CMake 选项
+## Build system
+
+MBink uses CMake at the repository root.
+
+Important top-level build surfaces already wired into `CMakeLists.txt` include:
+
+- `core/`
+- `bindings/python/`
+- `tools/app_bundler/`
+- `tools/esm_loader/`
+- `tools/mbink_ui_dev/`
+- `tests/` when enabled
+
+## Common commands
+
+Configure:
+
+```powershell
+cmake -B build
+```
+
+Build the main tools used by public onboarding:
+
+```powershell
+cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+```
+
+Build a broader default Release tree:
+
+```powershell
+cmake --build build --config Release
+```
+
+## Key outputs
+
+The docs and examples in this repository mainly assume these Windows outputs:
+
+- `build\bin\Release\mbink-ui-dev.exe`
+- `build\bin\Release\esm_loader.exe`
+- `build\bin\Release\mbink.dll`
+
+Depending on what you build, you may also see:
+
+- `build\bin\Release\mbink_devtools.dll`
+
+For `mbink-ui-dev` project build/open workflows that use the `esbuild` builder, a usable `esbuild` binary must also be available on `PATH` or inside the project `node_modules`.
+
+## CMake options
+
+Common top-level options include:
 
 - `MBINK_BUILD_PYTHON_BINDING=ON`
 - `MBINK_BUILD_RUST_BINDING=OFF`
@@ -24,52 +62,53 @@
 - `MBINK_BUILD_TESTS=OFF`
 - `MBINK_ENABLE_LTO=OFF`
 
-## Configure and Build | 配置与构建
+Treat those as current repository defaults, not long-term API promises.
 
-```bash
-cmake -B build
-cmake --build build --config Release
-```
+## Tests
 
-## Build with Tests | 构建并运行测试
+Enable tests explicitly:
 
-```bash
+```powershell
 cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure -C Release
 ```
 
-## Python Binding Build | Python 绑定构建
+Be careful with claims here: in the current active `build/` tree for this workspace, `ctest --test-dir build -N -C Release` reported zero discovered tests. So public docs should present test commands as available workflow, not as guaranteed passing proof for every local build directory.
 
-Dependencies | 依赖：
+## Tool-focused build
 
-- Python 3
+If your goal is the AI-first development loop, the most relevant target pair is:
 
-Current build behavior | 当前构建行为：
+```powershell
+cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+```
 
-- `mbink_api` is built as a shared library
-  `mbink_api` 以共享库形式构建
-- build outputs are copied to `bindings/python/mbink/bin/`
-  构建产物会复制到 `bindings/python/mbink/bin/`
-- Python package loads the runtime through `ctypes`
-  Python 包通过 `ctypes` 加载运行时库
+That gives you:
 
-## Third-Party Dependencies | 第三方依赖
+- `mbink-ui-dev` for project open/build/snapshot/query/MCP
+- `esm_loader` for the thinnest manual host path
 
-- QuickJS
-- SDL3
-- Skia
-- Lexbor
-- nlohmann/json
-- GoogleTest
+## Runtime shape
 
-## Limitations | 限制
+The runtime model is:
 
-- Windows has the most complete build evidence in the repository
-  仓库中 Windows 构建痕迹最完整
-- Other platforms still require verification
-  其他平台仍需验证
-- Presence of a directory does not imply supported platform or binding status
-  目录存在不代表平台或绑定已受支持
+- `mbink.dll` is the shared runtime
+- `esm_loader.exe` is a thin manual host
+- `mbink-ui-dev.exe` is the higher-level development tool surface
 
+Read [C API Runtime Parity](C_API_RUNTIME_PARITY.md) for the contract behind that split.
 
+## Python packaging note
+
+The Python package loads the runtime through `ctypes`, and current build behavior copies runtime artifacts into:
+
+- `bindings/python/mbink/bin/`
+
+Read [../bindings/python/README.md](../bindings/python/README.md) for the practical Python path.
+
+## Platform note
+
+Windows currently has the strongest verified build and runtime evidence in this repository.
+
+Other platforms may contain useful source structure or binding work, but they should still be described as needing verification unless you have fresh proof.

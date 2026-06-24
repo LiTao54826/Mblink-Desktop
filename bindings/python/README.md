@@ -1,46 +1,101 @@
-# Python Binding | Python 绑定
+# MBink Python Binding
 
-## Overview | 概览
+The Python binding is the easiest language binding to understand after `mbink-ui-dev` and `esm_loader`.
 
-This page describes the Python binding state that can be confirmed from the current repository and build scripts.
-本文档只描述当前仓库和构建脚本中可确认的 Python 绑定状态。
+## What it is
 
-## Current Status | 当前状态
+- a `ctypes + C ABI` wrapper around `mbink.dll`
+- the only binding clearly integrated into the top-level CMake build
+- a good reference if you want to see MBink as a host runtime instead of only as a dev tool
 
-Python is the only binding with repository-visible implementation and top-level build integration.
-Python 是当前唯一同时具备可见实现和顶层构建接入的绑定。
+## Current repository shape
 
-Evidence | 可确认依据：
+Important files and folders:
 
-- `bindings/python/CMakeLists.txt`
-- `bindings/python/mbink/_ffi.py`
-- `bindings/python/mbink/app.py`
-- Python package directory under `bindings/python/`
-- top-level CMake enables `MBINK_BUILD_PYTHON_BINDING`
+- `bindings/python/mbink/`
+- `bindings/python/setup.py`
+- `bindings/python/examples/`
+- `bindings/python/mbink/bin/mbink.dll`
 
-## Directory Layout | 目录结构
+## Build/runtime relationship
 
-- `mbink/` — ctypes package entry / Python 包入口
-- `setup.py` — packaging entry / 打包入口
+After building the repository, runtime artifacts are copied into:
 
-## Non-Claims | 不应直接承诺的内容
+- `bindings/python/mbink/bin/`
 
-The current repository state does not justify claims that:
-当前仓库状态不足以直接宣称：
+That means the Python package can load the local MBink runtime without inventing a separate runtime story.
 
-- all platforms are fully validated / 所有平台都已完整验证
-- the API is fully stabilized / API 已完全稳定
-- naming is fully unified with repository branding / 命名已和仓库品牌完全统一
+## Basic build path
 
-## Build | 构建
+From the repository root:
 
-```bash
+```powershell
 cmake -B build
+cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+```
+
+If you specifically want the Python-integrated build surface as well:
+
+```powershell
 cmake --build build --config Release
 ```
 
-See also | 另见：
+## Install shape
 
-- `docs/BINDINGS.md`
-- `docs/BUILD.md`
-- `docs/C_API_RUNTIME_PARITY.md`
+From `bindings/python/`:
+
+```powershell
+py -3 -m pip install -e .
+```
+
+`py -3` is the safest command shape to use in this Windows workspace.
+
+## Smallest way to read the API
+
+Look at:
+
+- `mbink/__init__.py`
+- `mbink/app.py`
+
+The main host entry point is `App`.
+
+## Example path
+
+One practical example is:
+
+- `bindings/python/examples/todo_app/main.py`
+
+From `bindings/python/examples/todo_app/` you can run:
+
+```powershell
+py -3 main.py
+```
+
+That example is useful because it shows:
+
+- `App(...)`
+- shared state
+- Python-to-JS data updates
+- JS-to-Python calls through `@app.bind(...)`
+
+## Devtools and AI-adjacent helpers
+
+The Python binding can also expose the same development-only inspection path used elsewhere in the repository:
+
+- `App.ui_dev_snapshot(...)`
+- `App.ui_dev_command(...)`
+- `App.devtools_http_session(...)`
+
+Those APIs depend on the optional `mbink_devtools.dll` path rather than changing the core runtime model.
+
+## What this README does not claim
+
+- not all platforms are equally verified
+- the API should not yet be described as fully stabilized
+- Python is the clearest binding today, but it is still part of an early-stage repository
+
+## Related docs
+
+- [../../docs/BINDINGS.md](../../docs/BINDINGS.md)
+- [../../docs/BUILD.md](../../docs/BUILD.md)
+- [../../docs/C_API_RUNTIME_PARITY.md](../../docs/C_API_RUNTIME_PARITY.md)
