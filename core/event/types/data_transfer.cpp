@@ -10,6 +10,8 @@
 #include "data_transfer.h"
 #include <algorithm>
 #include <cctype>
+#include <iterator>
+#include <utility>
 
 namespace mbink {
 
@@ -69,6 +71,7 @@ void DataTransfer::ClearData(const std::string& format) {
         // 清除所有数据
         data_.clear();
         format_order_.clear();
+        files_.clear();
     } else {
         // 清除特定格式的数据
         std::string normalized = NormalizeFormat(format);
@@ -89,7 +92,34 @@ bool DataTransfer::HasData(const std::string& format) const {
 
 std::vector<std::string> DataTransfer::GetTypes() const {
     // 返回按插入顺序排列的格式列表
-    return format_order_;
+    auto types = format_order_;
+    if (!files_.empty() && std::find(types.begin(), types.end(), "Files") == types.end()) {
+        types.push_back("Files");
+    }
+    return types;
+}
+
+void DataTransfer::SetFiles(FileList files) {
+    files_ = std::move(files);
+}
+
+void DataTransfer::SetFilesFromPaths(const std::vector<std::string>& paths) {
+    files_.clear();
+    for (const auto& path : paths) {
+        if (path.empty()) {
+            continue;
+        }
+
+        auto file = BuildFileInfoFromPath(path);
+        if (file.is_directory) {
+            auto directory_files = BuildFileListFromDirectoryPath(file.path);
+            files_.insert(files_.end(),
+                          std::make_move_iterator(directory_files.begin()),
+                          std::make_move_iterator(directory_files.end()));
+        } else if (!file.path.empty()) {
+            files_.push_back(std::move(file));
+        }
+    }
 }
 
 void DataTransfer::SetEffectAllowed(DragEffect effect) {

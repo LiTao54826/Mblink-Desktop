@@ -6,6 +6,7 @@
 #include "html_input_element.h"
 #include "../event.h"
 #include "../document.h"
+#include "../file_selection_policy.h"
 #include "../utils/utf8_utils.h"
 #include "core/editing/input_edit_state.h"
 #include "core/editing/input_editing_controller.h"
@@ -16,9 +17,82 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <utility>
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_dialog.h>
 
 namespace mbink {
+namespace {
+
+HTMLInputElement::FilePicker g_file_picker_for_testing;
+
+struct FileDialogRequest {
+    std::shared_ptr<HTMLInputElement> input;
+    std::vector<std::string> filter_names;
+    std::vector<std::string> filter_patterns;
+    std::vector<SDL_DialogFileFilter> filters;
+};
+
+struct FileDialogResultPayload {
+    std::weak_ptr<HTMLInputElement> input;
+    std::vector<std::string> paths;
+};
+
+std::mutex g_file_dialog_results_mutex;
+std::vector<FileDialogResultPayload> g_pending_file_dialog_results;
+
+Uint32 FileDialogResultEventType() {
+    static Uint32 event_type = SDL_RegisterEvents(1);
+    return event_type;
+}
+
+std::vector<std::string> PathsFromDialogFileList(const char* const* filelist) {
+    std::vector<std::string> paths;
+    if (!filelist) {
+        return paths;
+    }
+
+    for (const char* const* current = filelist; *current; ++current) {
+        if ((*current)[0] != '\0') {
+            paths.emplace_back(*current);
+        }
+    }
+    return paths;
+}
+
+void QueueFileDialogResult(std::weak_ptr<HTMLInputElement> input, std::vector<std::string> paths) {
+    if (paths.empty()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_file_dialog_results_mutex);
+    g_pending_file_dialog_results.push_back(FileDialogResultPayload{std::move(input), std::move(paths)});
+}
+
+void SDLCALL HandleFileDialogResult(void* userdata, const char* const* filelist, int filter) {
+    (void)filter;
+    FileDialogRequest* request = static_cast<FileDialogRequest*>(userdata);
+    std::shared_ptr<HTMLInputElement> input = request ? request->input : nullptr;
+    delete request;
+
+    if (!input) {
+        return;
+    }
+
+    auto paths = PathsFromDialogFileList(filelist);
+    if (!paths.empty()) {
+        QueueFileDialogResult(input, std::move(paths));
+        SDL_Event event{};
+        event.type = FileDialogResultEventType();
+        event.user.code = 0;
+        event.user.data1 = nullptr;
+        SDL_PushEvent(&event);
+    }
+}
+
+} // namespace
 
 HTMLInputElement::HTMLInputElement()
     : Element("input")
@@ -28,12 +102,16 @@ HTMLInputElement::HTMLInputElement()
 }
 
 void HTMLInputElement::SetAttribute(const std::string& name, const std::string& value) {
-    // 调用基类方法设置属性
     Element::SetAttribute(name, value);
 
     // 如果是type属性，同步更新input_type_
     if (name == "type") {
+        const InputType old_type = input_type_;
         input_type_ = StringToInputType(value);
+        if (old_type == InputType::File || input_type_ == InputType::File) {
+            files_.clear();
+            UpdateFileValueFromFiles();
+        }
     }
     // 如果是checked属性，同步更新checked_（这是默认值）
     else if (name == "checked") {
@@ -43,7 +121,13 @@ void HTMLInputElement::SetAttribute(const std::string& name, const std::string& 
     }
     // 如果是value属性，同步更新value_（这是默认值）
     else if (name == "value") {
-        if (edit_state_) {
+        if (input_type_ == InputType::File) {
+            if (value.empty()) {
+                ClearFiles(false);
+            } else {
+                UpdateFileValueFromFiles();
+            }
+        } else if (edit_state_) {
             edit_state_->SetText(value);
             edit_state_->SetCaretPosition(static_cast<int>(utf8::CharCount(value)));
             edit_state_->ClearDirtyFlags();
@@ -64,7 +148,6 @@ void HTMLInputElement::RemoveAttribute(const std::string& name) {
 }
 
 void HTMLInputElement::SetInputType(InputType type) {
-    input_type_ = type;
     SetAttribute("type", InputTypeToString(type));
 
     if (type == InputType::Checkbox || type == InputType::Radio) {
@@ -136,6 +219,13 @@ bool HTMLInputElement::ApplyEditCommand(const InputEditCommand& command) {
 }
 
 void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
+    if (input_type_ == InputType::File) {
+        if (value.empty()) {
+            ClearFiles(trigger_events);
+        }
+        return;
+    }
+
     if (!edit_state_) {
         return;
     }
@@ -165,6 +255,143 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
         TriggerInputEvent();
         TriggerChangeEvent();
     }
+}
+
+void HTMLInputElement::SetFiles(FileList files, bool trigger_events) {
+    if (input_type_ != InputType::File) {
+        return;
+    }
+
+    FileSelectionOptions options;
+    options.allow_multiple = AllowsMultipleFiles();
+    options.allow_directories = AllowsDirectorySelection();
+    options.accept = GetAccept();
+
+    auto selection = ResolveFileSelection(files_, std::move(files), options);
+    const bool changed = selection.changed;
+    files_ = std::move(selection.files);
+    UpdateFileValueFromFiles();
+
+    if (changed) {
+        RequestInputRepaint();
+    }
+
+    if (trigger_events && changed) {
+        TriggerInputEvent();
+        TriggerChangeEvent();
+    }
+}
+
+void HTMLInputElement::SetFilesFromPaths(const std::vector<std::string>& paths, bool trigger_events) {
+    SetFiles(BuildFileListFromPaths(paths), trigger_events);
+}
+
+void HTMLInputElement::ClearFiles(bool trigger_events) {
+    SetFiles({}, trigger_events);
+}
+
+bool HTMLInputElement::OpenFilePicker() {
+    if (input_type_ != InputType::File || IsDisabled()) {
+        return false;
+    }
+
+    if (g_file_picker_for_testing) {
+        g_file_picker_for_testing(*this);
+        return true;
+    }
+
+    std::shared_ptr<HTMLInputElement> self;
+    try {
+        self = std::static_pointer_cast<HTMLInputElement>(shared_from_this());
+    } catch (const std::bad_weak_ptr&) {
+        return false;
+    }
+
+    const Uint32 event_type = FileDialogResultEventType();
+    if (event_type == static_cast<Uint32>(-1)) {
+        return false;
+    }
+
+    auto* request = new FileDialogRequest();
+    request->input = std::move(self);
+    auto accept_filters = BuildFileDialogAcceptFilters(GetAccept());
+    request->filter_names.reserve(accept_filters.size());
+    request->filter_patterns.reserve(accept_filters.size());
+    request->filters.reserve(accept_filters.size());
+    for (const auto& filter : accept_filters) {
+        request->filter_names.push_back(filter.name);
+        request->filter_patterns.push_back(filter.pattern);
+    }
+    for (size_t i = 0; i < request->filter_names.size(); ++i) {
+        request->filters.push_back(SDL_DialogFileFilter{
+            request->filter_names[i].c_str(),
+            request->filter_patterns[i].c_str()
+        });
+    }
+
+    const bool allow_many = AllowsMultipleFiles();
+    SDL_Window* parent_window = nullptr;
+    if (auto doc = GetOwnerDocument()) {
+        if (auto* window = doc->GetWindow()) {
+            parent_window = window->GetSDLWindow();
+        }
+    }
+
+    const bool directory = AllowsDirectorySelection();
+
+    if (directory) {
+        SDL_ShowOpenFolderDialog(HandleFileDialogResult, request, parent_window, nullptr, allow_many);
+    } else {
+        const auto* filters = request->filters.empty() ? nullptr : request->filters.data();
+        const int filter_count = static_cast<int>(request->filters.size());
+        SDL_ShowOpenFileDialog(HandleFileDialogResult, request, parent_window, filters, filter_count, nullptr, allow_many);
+    }
+    return true;
+}
+
+void HTMLInputElement::SetFilePickerForTesting(FilePicker picker) {
+    g_file_picker_for_testing = std::move(picker);
+}
+
+bool IsFileDialogResultEvent(const SDL_Event& event) {
+    const Uint32 event_type = FileDialogResultEventType();
+    return event_type != static_cast<Uint32>(-1) && event.type == event_type;
+}
+
+void HandleFileDialogResultEvent(const SDL_Event& event) {
+    (void)event;
+    ProcessPendingFileDialogResults();
+}
+
+void ProcessPendingFileDialogResults() {
+    std::vector<FileDialogResultPayload> pending;
+    {
+        std::lock_guard<std::mutex> lock(g_file_dialog_results_mutex);
+        pending.swap(g_pending_file_dialog_results);
+    }
+
+    if (pending.empty()) {
+        return;
+    }
+
+    for (auto& payload : pending) {
+        if (auto input = payload.input.lock()) {
+            input->SetFilesFromPaths(payload.paths, true);
+        }
+    }
+}
+
+void QueueFileDialogResultForTesting(std::shared_ptr<HTMLInputElement> input, std::vector<std::string> paths) {
+    QueueFileDialogResult(std::move(input), std::move(paths));
+}
+
+void HTMLInputElement::UpdateFileValueFromFiles() {
+    if (!edit_state_) {
+        return;
+    }
+    edit_state_->SetText(FileListValueString(files_));
+    edit_state_->SetCaretPosition(static_cast<int>(utf8::CharCount(edit_state_->text)));
+    edit_state_->ClearDirtyFlags();
 }
 
 bool HTMLInputElement::GetChecked() const {

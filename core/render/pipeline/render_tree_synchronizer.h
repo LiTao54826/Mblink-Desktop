@@ -29,6 +29,7 @@ class Document;
 class DirtyNodeTracker;
 class RenderTreeBuilder;
 class LayoutEngine;
+struct ComputedStyle;
 
 class StyleResolver;
 
@@ -123,13 +124,16 @@ private:
      * @brief 处理样式变化
      * @param tracker 脏节点追踪器
      */
-    void ProcessStyleChanges(DirtyNodeTracker& tracker);
+    bool ProcessStyleChanges(DirtyNodeTracker& tracker,
+                             const std::unordered_set<Node*>* rebuilt_roots = nullptr,
+                             const std::unordered_set<Node*>* preapplied_style_roots = nullptr);
 
     /**
      * @brief 处理文本变化
      * @param tracker 脏节点追踪器
      */
-    void ProcessTextChanges(DirtyNodeTracker& tracker);
+    void ProcessTextChanges(DirtyNodeTracker& tracker,
+                            const std::unordered_set<Node*>* rebuilt_roots = nullptr);
 
     /**
      * @brief 判断是否需要子树重建
@@ -177,6 +181,12 @@ private:
     void ReplaceRenderObject(Node* old_node, Node* new_node, Node* parent, size_t index);
 
     /**
+     * @brief Replace an existing render object when computed display maps to a different layout class.
+     */
+    std::shared_ptr<RenderObject> ReplaceRenderObjectForStyleChange(std::shared_ptr<Element> element,
+                                                                    const ComputedStyle& new_style);
+
+    /**
      * @brief 移动渲染对象（不清除关联）
      * @param node DOM 节点
      * @param old_parent 旧父 DOM 节点
@@ -214,12 +224,16 @@ private:
      */
     void InvalidateAncestorLayout(RenderObject* obj);
 
+    bool ApplyStyleChange(StyleResolver& resolver,
+                          const std::shared_ptr<Element>& element,
+                          bool refresh_descendants);
+
     /**
      * @brief 递归刷新元素子树的样式与布局失效状态
      * @param resolver 样式解析器
      * @param element 起始元素
      */
-    void RefreshElementSubtreeStyles(StyleResolver& resolver, std::shared_ptr<Element> element);
+    bool RefreshElementSubtreeStyles(StyleResolver& resolver, std::shared_ptr<Element> element);
 
     /**
      * @brief Refresh inherited style on a text node after an ancestor style change.

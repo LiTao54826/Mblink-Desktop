@@ -32,6 +32,8 @@
 #include "core/devtools/devtools_bridge.h"
 
 #include "core/utils/encoding_utils.h"
+#include "core/utils/async_resource_context.h"
+#include "core/utils/background_task_runner.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -60,6 +62,7 @@
 #include <iomanip>
 #include <chrono>
 #include <thread>
+#include <atomic>
 
 namespace {
 
@@ -122,6 +125,14 @@ void ClearDocumentElementListeners(const std::shared_ptr<mbink::Document>& docum
 struct WindowContext;
 class StructuredJsonBuffer;
 mbink::DevToolsHostContext makeDevToolsHostContext(WindowContext* ctx);
+
+struct MountedResourceState {
+    mutable std::mutex mutex;
+    std::string package;
+    std::string key;
+    std::string mountPoint = "/";
+    std::atomic<bool> alive{true};
+};
 
 // ========== SharedObject 结构体 ==========
 // Python/JS 共享的 C 对象，内含 QuickJS JSValue
@@ -378,6 +389,10 @@ struct WindowContext {
     std::unique_ptr<mbink::HostBridge> hostBridge;
     std::unique_ptr<mbink::FetchBindings> fetchBindings;
     std::unique_ptr<mbink::StateManager> stateManager;
+    std::shared_ptr<mbink::BackgroundTaskRunner> backgroundTaskRunner;
+    std::shared_ptr<mbink::AsyncResourceContext> asyncResourceContext;
+    std::shared_ptr<MountedResourceState> mountedResourceState;
+    uint64_t asyncOwnerToken = 0;
     mbink::MainThreadQueue mainThreadQueue;
     std::string mountedResourcePackage;
     std::string mountedResourceKey;
@@ -423,6 +438,7 @@ struct WindowContext {
     void* onTrayMenuUserData = nullptr;
 
     bool running = false;
+    bool initialFrameWarmupDone = false;
     std::unique_ptr<mbink::AppTray> tray;
     std::string trayTooltip;
     std::vector<mbink::AppTrayMenuItem> trayMenuItems;
@@ -654,6 +670,59 @@ void reportNativeError(const std::string& error) {
     std::ofstream log("mbink_native_error.log", std::ios::app);
     if (log.is_open()) {
         log << error << std::endl;
+    }
+}
+
+void processRuntimeQueuesForWarmup(WindowContext* ctx) {
+    if (!ctx) return;
+
+    if (ctx->stateManager) {
+        ctx->stateManager->processQueue();
+    }
+    if (ctx->hostBridge) {
+        ctx->hostBridge->flushEvents();
+        ctx->hostBridge->flushAsyncResults();
+    }
+    if (ctx->runtime) {
+        ctx->runtime->RunEventLoop(1);
+        ctx->runtime->ProcessMicrotasks();
+    }
+    ctx->mainThreadQueue.flush();
+    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+        shared->flushPendingNotify();
+    });
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    }
+}
+
+void renderWarmupFrame(WindowContext* ctx, bool forceFullRepaint) {
+    if (!ctx || !ctx->window) return;
+
+    if (forceFullRepaint) {
+        ctx->window->InvalidateRenderTree();
+        ctx->window->SetForceFullRepaint(true);
+        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
+    }
+
+    if (ctx->window->NeedsRepaint()) {
+        ctx->window->Render();
+        ctx->window->SwapBuffers();
+    }
+}
+
+void ensureInitialFrameWarmup(WindowContext* ctx) {
+    if (!ctx || ctx->initialFrameWarmupDone) return;
+    ctx->initialFrameWarmupDone = true;
+
+    try {
+        renderWarmupFrame(ctx, true);
+        processRuntimeQueuesForWarmup(ctx);
+        renderWarmupFrame(ctx, false);
+    } catch (const std::exception& e) {
+        reportNativeError(std::string("Initial frame warmup failed: ") + e.what());
+    } catch (...) {
+        reportNativeError("Initial frame warmup failed: unknown error");
     }
 }
 
@@ -965,7 +1034,48 @@ std::string JoinMountedResourcePath(const std::string& mountPoint, const std::st
 bool LoadMountedResourceAsset(const WindowContext* ctx,
                               const std::string& requestPath,
                               std::vector<uint8_t>& out) {
-    if (!ctx || ctx->mountedResourcePackage.empty()) {
+    if (!ctx) {
+        return false;
+    }
+
+    if (ctx->mountedResourceState) {
+        auto state = ctx->mountedResourceState;
+        if (!state->alive.load()) {
+            return false;
+        }
+
+        std::string package;
+        std::string key;
+        std::string mountPoint;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            package = state->package;
+            key = state->key;
+            mountPoint = state->mountPoint;
+        }
+
+        if (package.empty()) {
+            return false;
+        }
+
+        const std::string resourcePath = JoinMountedResourcePath(
+            mountPoint.empty() ? "/" : mountPoint,
+            requestPath);
+        if (resourcePath.empty()) {
+            return false;
+        }
+
+        std::string error;
+        return mbink::resourcepkg::LoadResourceFile(
+            package.c_str(),
+            resourcePath.c_str(),
+            key.c_str(),
+            out,
+            nullptr,
+            error);
+    }
+
+    if (ctx->mountedResourcePackage.empty()) {
         return false;
     }
 
@@ -984,6 +1094,89 @@ bool LoadMountedResourceAsset(const WindowContext* ctx,
         out,
         nullptr,
         error);
+}
+
+bool LoadMountedResourceAsset(const std::shared_ptr<MountedResourceState>& state,
+                              const std::string& requestPath,
+                              std::vector<uint8_t>& out) {
+    if (!state || !state->alive.load()) {
+        return false;
+    }
+
+    std::string package;
+    std::string key;
+    std::string mountPoint;
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        package = state->package;
+        key = state->key;
+        mountPoint = state->mountPoint;
+    }
+
+    if (package.empty()) {
+        return false;
+    }
+
+    const std::string resourcePath = JoinMountedResourcePath(
+        mountPoint.empty() ? "/" : mountPoint,
+        requestPath);
+    if (resourcePath.empty()) {
+        return false;
+    }
+
+    std::string error;
+    return mbink::resourcepkg::LoadResourceFile(
+        package.c_str(),
+        resourcePath.c_str(),
+        key.c_str(),
+        out,
+        nullptr,
+        error);
+}
+
+bool MountedResourcePackageEmpty(const std::shared_ptr<MountedResourceState>& state) {
+    if (!state || !state->alive.load()) {
+        return true;
+    }
+
+    std::lock_guard<std::mutex> lock(state->mutex);
+    return state->package.empty();
+}
+
+void SetMountedResourceState(WindowContext* ctx,
+                             std::string package,
+                             std::string key,
+                             std::string mountPoint) {
+    if (!ctx) {
+        return;
+    }
+
+    ctx->mountedResourcePackage = package;
+    ctx->mountedResourceKey = key;
+    ctx->mountedResourceMountPoint = mountPoint;
+
+    if (!ctx->mountedResourceState) {
+        ctx->mountedResourceState = std::make_shared<MountedResourceState>();
+    }
+
+    std::lock_guard<std::mutex> lock(ctx->mountedResourceState->mutex);
+    ctx->mountedResourceState->package = std::move(package);
+    ctx->mountedResourceState->key = std::move(key);
+    ctx->mountedResourceState->mountPoint = std::move(mountPoint);
+}
+
+void SetRuntimeBasePath(WindowContext* ctx, const std::string& basePath) {
+    if (!ctx) {
+        return;
+    }
+    if (ctx->document) {
+        ctx->document->SetBasePath(basePath);
+    }
+    if (ctx->asyncResourceContext) {
+        ctx->asyncResourceContext->SetBasePath(basePath);
+    }
+    mbink::FetchBindings::SetBasePath(basePath);
+    mbink::ImageLoader::SetBasePath(basePath);
 }
 
 void registerPreactModules(mbink::QuickJSRuntime* runtime) {
@@ -1471,6 +1664,10 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 3. 创建 TaskScheduler
     ctx->taskScheduler = std::make_shared<mbink::TaskScheduler>();
+    ctx->backgroundTaskRunner = std::make_shared<mbink::BackgroundTaskRunner>();
+    ctx->asyncResourceContext = std::make_shared<mbink::AsyncResourceContext>();
+    ctx->mountedResourceState = std::make_shared<MountedResourceState>();
+    ctx->asyncOwnerToken = reinterpret_cast<uintptr_t>(ctx);
 
     // 4. 注册到 WindowManager
     mbink::WindowManager::Instance().RegisterWindow(ctx->window);
@@ -1484,17 +1681,17 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
-    ctx->document->SetBasePath("");
-    mbink::FetchBindings::SetBasePath("");
-    mbink::ImageLoader::SetBasePath("");
+    SetRuntimeBasePath(ctx, "");
+    SetMountedResourceState(ctx, "", "", "/");
 
-    auto mountedAssetProvider = [ctx](const std::string& path, std::vector<uint8_t>& out) {
-        return LoadMountedResourceAsset(ctx, path, out);
+    auto resourceState = ctx->mountedResourceState;
+    auto mountedAssetProvider = [resourceState](const std::string& path, std::vector<uint8_t>& out) {
+        return LoadMountedResourceAsset(resourceState, path, out);
     };
-    ctx->runtime->SetFileLoader([ctx](const std::string& path, std::string& out, std::string* error) {
+    ctx->runtime->SetFileLoader([resourceState](const std::string& path, std::string& out, std::string* error) {
         std::vector<uint8_t> data;
-        if (!LoadMountedResourceAsset(ctx, path, data)) {
-            if (error) *error = ctx->mountedResourcePackage.empty()
+        if (!LoadMountedResourceAsset(resourceState, path, data)) {
+            if (error) *error = MountedResourcePackageEmpty(resourceState)
                                    ? "resource package not mounted"
                                    : "resource path outside mount point or not found";
             return false;
@@ -1507,6 +1704,7 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     mbink::FetchBindings::SetAssetProvider(mountedAssetProvider);
     mbink::ImageLoader::SetAssetProvider(mountedAssetProvider);
     mbink::LexborStyleSheet::SetAssetProvider(mountedAssetProvider);
+    ctx->asyncResourceContext->SetAssetProvider(mountedAssetProvider);
 
     // 7. 创建 WindowBindings + 初始化（setTimeout/setInterval/RAF/DOM/Canvas...）
     // DOM 主路径初始化统一由 WindowBindings::InitBindings() 负责，
@@ -1532,7 +1730,8 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     mbink::WindowBindings::SetActiveEventLoop(ctx->eventLoop.get());
 
     // 10. 创建 FetchBindings
-    ctx->fetchBindings = std::make_unique<mbink::FetchBindings>(jsCtx, ctx->taskScheduler);
+    ctx->fetchBindings = std::make_unique<mbink::FetchBindings>(
+        jsCtx, ctx->taskScheduler, ctx->backgroundTaskRunner, ctx->asyncResourceContext);
     ctx->fetchBindings->InitBindings();
 
     // 11. 创建 StateManager + HostBridge
@@ -1542,8 +1741,11 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     ctx->stateManager = std::make_unique<mbink::StateManager>();
     ctx->document->SetStateManager(ctx->stateManager.get());
-    ctx->hostBridge = std::make_unique<mbink::HostBridge>(jsCtx, ctx->stateManager.get());
+    ctx->hostBridge = std::make_unique<mbink::HostBridge>(
+        jsCtx, ctx->stateManager.get(), ctx->backgroundTaskRunner);
     ctx->hostBridge->registerGlobal();
+    mbink::ImageLoader::RegisterAsyncContext(
+        ctx->asyncOwnerToken, ctx->backgroundTaskRunner, ctx->asyncResourceContext);
 
     ctx->runtime->RegisterFunction("__mbinkSharedNativeSet", [ctx](const nlohmann::json& args) -> nlohmann::json {
         if (!args.is_array() || args.size() < 3 || !args[0].is_string() || !args[1].is_string()) {
@@ -1766,7 +1968,10 @@ void mbink_destroy(MBinkHandle handle) {
     SAFE_CLEANUP("js_shutdown", if (ctx->runtime) {
         auto jsCtx = ctx->runtime->GetContext();
         const char* shutdownScript =
-            "(function(){if(typeof __mbinkShutdown==='function'){__mbinkShutdown();}})();";
+            "(function(){"
+            "if(typeof __mbinkShutdown==='function'){__mbinkShutdown();}"
+            "if(typeof __fetchCleanup==='function'){__fetchCleanup();}"
+            "})();";
         JSValue res = JS_Eval(jsCtx, shutdownScript, strlen(shutdownScript),
                               "<shutdown>", JS_EVAL_TYPE_GLOBAL);
         if (JS_IsException(res)) {
@@ -1786,6 +1991,29 @@ void mbink_destroy(MBinkHandle handle) {
     // 避免 shutdown 过程中再执行额外的 JS/DOM 操作导致 QuickJS 残留对象。
 
     // 4. 停止任务源
+    SAFE_CLEANUP("fetch_begin_shutdown", if (ctx->fetchBindings) {
+        ctx->fetchBindings->BeginShutdown();
+    });
+
+    SAFE_CLEANUP("mark_async_resources_dead", {
+        if (ctx->asyncResourceContext) {
+            ctx->asyncResourceContext->MarkDead();
+        }
+        if (ctx->mountedResourceState) {
+            ctx->mountedResourceState->alive = false;
+        }
+    });
+
+    SAFE_CLEANUP("unregister_image_async_context", {
+        if (ctx->asyncOwnerToken != 0) {
+            mbink::ImageLoader::UnregisterAsyncContext(ctx->asyncOwnerToken);
+        }
+    });
+
+    SAFE_CLEANUP("shutdown_background_runner", if (ctx->backgroundTaskRunner) {
+        ctx->backgroundTaskRunner->Shutdown();
+    });
+
     SAFE_CLEANUP("shutdown_task_scheduler", if (ctx->taskScheduler) {
         ctx->taskScheduler->Shutdown();
         ctx->taskScheduler->ClearAllTasks();
@@ -1899,6 +2127,8 @@ void mbink_run(MBinkHandle handle) {
     });
 
     // 阻塞运行事件循环
+    ensureInitialFrameWarmup(ctx);
+
 #ifdef _WIN32
     unsigned int sehCode = 0;
     std::string sehMessage;
@@ -1936,6 +2166,7 @@ bool mbink_poll_events(MBinkHandle handle) {
         setLifecycle(ctx, MBINK_LIFECYCLE_RUNNING, "running");
     }
 
+    ensureInitialFrameWarmup(ctx);
     flushRuntimeWork(ctx);
 
     ctx->eventLoop->RunOnceNonBlocking();
@@ -2358,6 +2589,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
 
     try {
         std::string path = filepath;
+        std::string next_base_path;
         if (!ctx->mountedResourcePackage.empty()) {
             const std::string resourcePath = JoinMountedResourcePath(
                 ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
@@ -2373,8 +2605,11 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                         data,
                         &flags,
                         error)) {
+                    const fs::path module_dir = Utf8PathToFsPath(NormalizeResourcePath(filepath)).parent_path();
+                    next_base_path = NormalizeResourcePath(FsPathToUtf8String(module_dir));
                     if ((flags & mbink::resourcepkg::kResourceFlagBytecode) != 0) {
                         auto jsCtx = ctx->runtime->GetContext();
+                        SetRuntimeBasePath(ctx, next_base_path);
                         if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data.data(), data.size(), error)) {
                             setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
                             return MBINK_ERROR_JS_ERROR;
@@ -2389,6 +2624,17 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                 }
             }
         }
+        if (next_base_path.empty()) {
+            fs::path module_dir;
+            if (!path.empty() && path.front() == '/') {
+                module_dir = Utf8PathToFsPath(NormalizeResourcePath(path)).parent_path();
+                next_base_path = NormalizeResourcePath(FsPathToUtf8String(module_dir));
+            } else {
+                module_dir = fs::absolute(Utf8PathToFsPath(path)).parent_path();
+                next_base_path = NormalizeFsPath(module_dir);
+            }
+        }
+        SetRuntimeBasePath(ctx, next_base_path);
         ctx->runtime->LoadModuleFile(path);
         if (ctx->window) {
             ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
@@ -3561,12 +3807,8 @@ int mbink_mount_resource_package(MBinkHandle handle,
     const char* normalizedKey = encryption_key ? encryption_key : "";
     const std::string normalizedMount = NormalizeResourcePath(mount_point ? mount_point : "/");
 
-    ctx->mountedResourcePackage = package_file;
-    ctx->mountedResourceKey = normalizedKey;
-    ctx->mountedResourceMountPoint = normalizedMount;
-    ctx->document->SetBasePath(normalizedMount);
-    mbink::FetchBindings::SetBasePath(normalizedMount);
-    mbink::ImageLoader::SetBasePath(normalizedMount);
+    SetMountedResourceState(ctx, package_file, normalizedKey, normalizedMount);
+    SetRuntimeBasePath(ctx, normalizedMount);
     ctx->runtime->SetBaseModulePath(normalizedMount == "/" ? "/index.js" : normalizedMount + "/index.js");
     return MBINK_OK;
 }

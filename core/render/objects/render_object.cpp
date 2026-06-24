@@ -434,7 +434,9 @@ Style ConvertComputedStyleToLayoutStyle(const ComputedStyle& computed) {
     }
 
     // align-items
-    if (computed.align_items == "flex-start" || computed.align_items == "start") {
+    if (computed.align_items == "normal" && style.display == Display::Flex) {
+        style.align_items = AlignItems::Stretch;
+    } else if (computed.align_items == "flex-start" || computed.align_items == "start") {
         style.align_items = AlignItems::FlexStart;
     } else if (computed.align_items == "flex-end" || computed.align_items == "end") {
         style.align_items = AlignItems::FlexEnd;
@@ -449,6 +451,8 @@ Style ConvertComputedStyleToLayoutStyle(const ComputedStyle& computed) {
     // align-self
     if (computed.align_self == "auto") {
         style.align_self = std::nullopt;
+    } else if (computed.align_self == "normal") {
+        style.align_self = AlignSelf::Stretch;
     } else if (computed.align_self == "flex-start" || computed.align_self == "start") {
         style.align_self = AlignSelf::FlexStart;
     } else if (computed.align_self == "flex-end" || computed.align_self == "end") {

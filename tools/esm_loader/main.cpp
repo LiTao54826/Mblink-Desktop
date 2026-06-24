@@ -51,6 +51,7 @@ extern "C" {
 #include <sstream>
 #include <memory>
 #include <string>
+#include <vector>
 #include <algorithm>
 #include <filesystem>
 #include <cstdio>
@@ -61,6 +62,7 @@ extern "C" {
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #include <io.h>
 #include <fcntl.h>
 #include <dbghelp.h>
@@ -292,6 +294,26 @@ bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
     }
 }
 
+std::vector<std::string> CollectCommandLineArgsUtf8(int argc, char** argv) {
+#ifdef _WIN32
+    int wide_argc = 0;
+    LPWSTR* wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (wide_argv) {
+        std::vector<std::string> args;
+        args.reserve(static_cast<size_t>(wide_argc > 0 ? wide_argc : 0));
+        for (int i = 0; i < wide_argc; ++i) {
+            args.push_back(utils::WideToUTF8(wide_argv[i]));
+        }
+        LocalFree(wide_argv);
+        return args;
+    }
+#endif
+    std::vector<std::string> args;
+    args.reserve(static_cast<size_t>(argc > 0 ? argc : 0));
+    for (int i = 0; i < argc; ++i) args.emplace_back(argv[i]);
+    return args;
+}
+
 std::filesystem::path FindOfficialPreactRoot() {
     static const auto kOfficialPreactRelativeRoot =
         Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact");
@@ -446,7 +468,27 @@ void RegisterAssetAPI(QuickJSRuntime* runtime) {
 
 // 检测并加载嵌入的 payload
 bool TryLoadEmbeddedPayload(const std::string& exe_path, mbink::PayloadData& payload_data) {
+#ifdef _WIN32
+    std::ifstream file(Utf8PathToFsPath(exe_path), std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    const std::streamsize size = file.tellg();
+    if (size < 0) {
+        return false;
+    }
+    file.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> data(static_cast<size_t>(size));
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        return false;
+    }
+
+    return mbink::PayloadBuilder::Parse(data, payload_data);
+#else
     return mbink::PayloadBuilder::ParseFromFile(exe_path, payload_data);
+#endif
 }
 
 // 执行嵌入的字节码模块
@@ -511,18 +553,21 @@ int main(int argc, char** argv) {
     SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 #endif
 
+    const auto args = CollectCommandLineArgsUtf8(argc, argv);
+    const std::string program_name = args.empty() ? "esm_loader" : args.front();
+
     // ============================================================
     // 检查是否有嵌入的 payload（app_bundler 打包模式）
     // ============================================================
     mbink::PayloadData embedded_payload;
-    bool has_embedded = TryLoadEmbeddedPayload(argv[0], embedded_payload);
+    bool has_embedded = TryLoadEmbeddedPayload(program_name, embedded_payload);
 
 #ifdef _WIN32
     // 嵌入模式下，如果没有 --verbose 参数，释放控制台
     if (has_embedded && embedded_payload.valid) {
         bool want_console = false;
-        for (int i = 1; i < argc; i++) {
-            std::string arg = argv[i];
+        for (size_t i = 1; i < args.size(); i++) {
+            const std::string& arg = args[i];
             if (arg == "--verbose" || arg == "-v") {
                 want_console = true;
                 break;
@@ -568,48 +613,48 @@ int main(int argc, char** argv) {
     int max_width = has_embedded ? embedded_payload.config.max_width : 0;
     int max_height = has_embedded ? embedded_payload.config.max_height : 0;
 
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
+    for (size_t i = 1; i < args.size(); i++) {
+        const std::string& arg = args[i];
 
         if (arg == "--help" || arg == "-h") {
-            PrintUsage(argv[0]);
+            PrintUsage(program_name.c_str());
             return 0;
-        } else if (arg == "--width" && i + 1 < argc) {
-            width = std::stoi(argv[++i]);
-        } else if (arg == "--height" && i + 1 < argc) {
-            height = std::stoi(argv[++i]);
-        } else if (arg == "--title" && i + 1 < argc) {
-            title = argv[++i];
+        } else if (arg == "--width" && i + 1 < args.size()) {
+            width = std::stoi(args[++i]);
+        } else if (arg == "--height" && i + 1 < args.size()) {
+            height = std::stoi(args[++i]);
+        } else if (arg == "--title" && i + 1 < args.size()) {
+            title = args[++i];
             title_from_user = true;
         } else if (arg == "--devtools") {
             open_devtools = true;
-        } else if (arg == "--ui-dev-snapshot-file" && i + 1 < argc) {
-            ui_dev_snapshot_file = argv[++i];
-        } else if (arg == "--ui-dev-command-file" && i + 1 < argc) {
-            ui_dev_command_file = argv[++i];
-        } else if (arg == "--ui-dev-response-file" && i + 1 < argc) {
-            ui_dev_response_file = argv[++i];
-        } else if (arg == "--ui-dev-console-file" && i + 1 < argc) {
-            ui_dev_console_file = argv[++i];
-        } else if (arg == "--ui-dev-errors-file" && i + 1 < argc) {
-            ui_dev_errors_file = argv[++i];
-        } else if (arg == "--ui-dev-lifecycle-file" && i + 1 < argc) {
-            ui_dev_lifecycle_file = argv[++i];
-        } else if (arg == "--ui-dev-runtime-epoch" && i + 1 < argc) {
-            ui_dev_runtime_epoch = argv[++i];
-        } else if (arg == "--ui-dev-snapshot-max-nodes" && i + 1 < argc) {
-            ui_dev_snapshot_max_nodes = static_cast<size_t>(std::stoul(argv[++i]));
-        } else if (arg == "--ui-dev-snapshot-max-depth" && i + 1 < argc) {
-            ui_dev_snapshot_max_depth = std::stoi(argv[++i]);
-        } else if (arg == "--ui-dev-snapshot-root-selector" && i + 1 < argc) {
-            ui_dev_snapshot_root_selector = argv[++i];
+        } else if (arg == "--ui-dev-snapshot-file" && i + 1 < args.size()) {
+            ui_dev_snapshot_file = args[++i];
+        } else if (arg == "--ui-dev-command-file" && i + 1 < args.size()) {
+            ui_dev_command_file = args[++i];
+        } else if (arg == "--ui-dev-response-file" && i + 1 < args.size()) {
+            ui_dev_response_file = args[++i];
+        } else if (arg == "--ui-dev-console-file" && i + 1 < args.size()) {
+            ui_dev_console_file = args[++i];
+        } else if (arg == "--ui-dev-errors-file" && i + 1 < args.size()) {
+            ui_dev_errors_file = args[++i];
+        } else if (arg == "--ui-dev-lifecycle-file" && i + 1 < args.size()) {
+            ui_dev_lifecycle_file = args[++i];
+        } else if (arg == "--ui-dev-runtime-epoch" && i + 1 < args.size()) {
+            ui_dev_runtime_epoch = args[++i];
+        } else if (arg == "--ui-dev-snapshot-max-nodes" && i + 1 < args.size()) {
+            ui_dev_snapshot_max_nodes = static_cast<size_t>(std::stoul(args[++i]));
+        } else if (arg == "--ui-dev-snapshot-max-depth" && i + 1 < args.size()) {
+            ui_dev_snapshot_max_depth = std::stoi(args[++i]);
+        } else if (arg == "--ui-dev-snapshot-root-selector" && i + 1 < args.size()) {
+            ui_dev_snapshot_root_selector = args[++i];
         } else if (arg == "--ui-dev-snapshot-include-screenshot") {
             ui_dev_snapshot_include_screenshot = true;
         } else if (arg == "--ui-dev-snapshot-inline-screenshot") {
             ui_dev_snapshot_inline_screenshot = true;
             ui_dev_snapshot_include_screenshot = true;
-        } else if (arg == "--ui-dev-screenshot-file" && i + 1 < argc) {
-            ui_dev_snapshot_screenshot_file = argv[++i];
+        } else if (arg == "--ui-dev-screenshot-file" && i + 1 < args.size()) {
+            ui_dev_snapshot_screenshot_file = args[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
         } else if (arg == "--no-official-preact") {
@@ -622,17 +667,17 @@ int main(int argc, char** argv) {
             gpu = false;
         } else if (arg == "--verbose" || arg == "-v") {
             verbose = true;
-        } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
-            quit_after_seconds = std::stof(argv[++i]);
-        } else if (arg == "--min-width" && i + 1 < argc) {
-            min_width = std::stoi(argv[++i]);
-        } else if (arg == "--min-height" && i + 1 < argc) {
-            min_height = std::stoi(argv[++i]);
-        } else if (arg == "--max-width" && i + 1 < argc) {
-            max_width = std::stoi(argv[++i]);
-        } else if (arg == "--max-height" && i + 1 < argc) {
-            max_height = std::stoi(argv[++i]);
-        } else if (arg[0] != '-') {
+        } else if ((arg == "-q" || arg == "--quit") && i + 1 < args.size()) {
+            quit_after_seconds = std::stof(args[++i]);
+        } else if (arg == "--min-width" && i + 1 < args.size()) {
+            min_width = std::stoi(args[++i]);
+        } else if (arg == "--min-height" && i + 1 < args.size()) {
+            min_height = std::stoi(args[++i]);
+        } else if (arg == "--max-width" && i + 1 < args.size()) {
+            max_width = std::stoi(args[++i]);
+        } else if (arg == "--max-height" && i + 1 < args.size()) {
+            max_height = std::stoi(args[++i]);
+        } else if (!arg.empty() && arg[0] != '-') {
             entry_path = arg;
         }
     }
@@ -644,7 +689,7 @@ int main(int argc, char** argv) {
     if (!has_embedded || !embedded_payload.valid) {
         if (entry_path.empty()) {
             std::cerr << "错误: 未指定入口文件" << std::endl;
-            PrintUsage(argv[0]);
+            PrintUsage(program_name.c_str());
             return 1;
         }
         if (!fs::exists(Utf8PathToFsPath(entry_path))) {
@@ -938,6 +983,10 @@ int main(int argc, char** argv) {
             // ===== JS/ESM 模式：加载 ES 模块 =====
             fs::path abs_path = fs::absolute(Utf8PathToFsPath(entry_path));
             std::string normalized_abs_path = NormalizeFsPath(abs_path);
+            std::string module_base_path = NormalizeFsPath(abs_path.parent_path());
+            document->SetBasePath(module_base_path);
+            FetchBindings::SetBasePath(module_base_path);
+            ImageLoader::SetBasePath(module_base_path);
             runtime->SetBaseModulePath(normalized_abs_path);
 
             std::string entry_code = ReadFile(entry_path);

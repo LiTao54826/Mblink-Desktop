@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -39,9 +40,16 @@ bool IsProcessRunning(int pid) {
 namespace {
 
 std::filesystem::path GetCurrentExecutablePath() {
-    char buf[MAX_PATH] = {0};
-    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    return std::filesystem::path(std::string(buf, buf + n));
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (n == 0) return {};
+        if (n < buffer.size()) {
+            buffer.resize(n);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2);
+    }
 }
 
 std::filesystem::path GetRuntimeStdoutLogPath(const DaemonState& state) {
@@ -76,8 +84,24 @@ std::filesystem::path GetRuntimeLifecyclePath(const DaemonState& state) {
     return GetRuntimeFilePath(state.project_id, "runtime.lifecycle.json");
 }
 
+std::filesystem::path JoinProjectPath(const std::filesystem::path& project_root, const std::string& relative_path) {
+    return project_root / PathFromUtf8(relative_path);
+}
+
+std::string PathToGenericUtf8(const std::filesystem::path& path) {
+    auto result = PathToUtf8(path);
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+std::string RelativePathToUtf8(const std::filesystem::path& path, const std::filesystem::path& root) {
+    std::error_code ec;
+    const auto relative = std::filesystem::relative(path, root, ec);
+    return PathToGenericUtf8(ec ? path.filename() : relative);
+}
+
 std::filesystem::path GetProjectBuildLogPath(const std::filesystem::path& project_root, const ProjectConfig& config) {
-    return std::filesystem::absolute(project_root / config.out_dir / "build.log");
+    return std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir) / "build.log");
 }
 
 constexpr uintmax_t kInlineSnapshotMaxBytes = 256 * 1024;
@@ -327,6 +351,7 @@ bool MaterialConfigEquals(const ProjectConfig& a, const ProjectConfig& b) {
            a.build_builder == b.build_builder &&
            a.build_jsx_factory == b.build_jsx_factory &&
            a.build_jsx_fragment == b.build_jsx_fragment &&
+           a.build_icon == b.build_icon &&
            a.build_external == b.build_external &&
            a.build_sourcemap == b.build_sourcemap &&
            a.build_minify == b.build_minify &&
@@ -366,7 +391,7 @@ bool ResolveProjectPath(const std::filesystem::path& project_root,
         if (error) *error = "缺少 path";
         return false;
     }
-    const std::filesystem::path input_path(relative_path);
+    const std::filesystem::path input_path = PathFromUtf8(relative_path);
     if (input_path.is_absolute()) {
         if (error) *error = "path 必须是项目根目录下的相对路径";
         return false;
@@ -422,6 +447,40 @@ uintmax_t FileSizeOrZero(const std::filesystem::path& path) {
     return ec ? 0 : size;
 }
 
+std::wstring QuoteWindowsArg(const std::wstring& value) {
+    std::wstring quoted = L"\"";
+    size_t backslashes = 0;
+    for (wchar_t ch : value) {
+        if (ch == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        if (ch == L'"') {
+            quoted.append(backslashes * 2 + 1, L'\\');
+            quoted.push_back(ch);
+            backslashes = 0;
+            continue;
+        }
+        if (backslashes > 0) {
+            quoted.append(backslashes, L'\\');
+            backslashes = 0;
+        }
+        quoted.push_back(ch);
+    }
+    if (backslashes > 0) quoted.append(backslashes * 2, L'\\');
+    quoted.push_back(L'"');
+    return quoted;
+}
+
+std::wstring BuildWindowsCommandLine(const std::filesystem::path& exe, const std::string& args) {
+    std::wstring command = QuoteWindowsArg(exe.wstring());
+    if (!args.empty()) {
+        command.push_back(L' ');
+        command += Utf8ToWide(args);
+    }
+    return command;
+}
+
 bool SnapshotFileLooksComplete(const std::filesystem::path& path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || std::filesystem::is_directory(path, ec)) return false;
@@ -444,7 +503,7 @@ bool SnapshotFileLooksComplete(const std::filesystem::path& path) {
 }
 
 nlohmann::json SnapshotFileMetadata(const std::filesystem::path& snapshot_path, uintmax_t bytes) {
-    return nlohmann::json{{"path", snapshot_path.string()},
+    return nlohmann::json{{"path", PathToUtf8(snapshot_path)},
                           {"encoding", "utf8"},
                           {"mime_type", "application/json"},
                           {"bytes", bytes}};
@@ -479,7 +538,7 @@ bool SnapshotScreenshotLooksComplete(const nlohmann::json& snapshot) {
     const auto path = screenshot.value("path", std::string{});
     const auto expected_bytes = screenshot.value("bytes", uintmax_t{0});
     if (path.empty() || expected_bytes == 0) return false;
-    const auto screenshot_path = std::filesystem::path(path);
+    const auto screenshot_path = PathFromUtf8(path);
     const auto actual_bytes = FileSizeOrZero(screenshot_path);
     return actual_bytes == expected_bytes && actual_bytes > 0 && FileHasPngSignature(screenshot_path);
 }
@@ -509,7 +568,7 @@ nlohmann::json BuildSnapshotFileResponse(const DaemonState& state,
                                                                  snapshot.value("screenshot_base64", std::string{}).size() > 0)},
                           {"screenshot_base64", snapshot.value("screenshot_base64", std::string{})},
                           {"runtime_epoch", state.runtime_epoch},
-                          {"source", snapshot_path.string()},
+                          {"source", PathToUtf8(snapshot_path)},
                           {"inline_limit_bytes", kInlineSnapshotMaxBytes},
                           {"note", note}};
 }
@@ -536,7 +595,7 @@ nlohmann::json BuildSnapshotResponse(const DaemonState& state,
 
     auto inline_snapshot = snapshot;
     inline_snapshot["timestamp"] = CurrentTimestampIso8601();
-    inline_snapshot["source"] = snapshot_path.string();
+    inline_snapshot["source"] = PathToUtf8(snapshot_path);
     inline_snapshot["response_mode"] = "inline";
     inline_snapshot["snapshot"] = SnapshotFileMetadata(snapshot_path, snapshot_bytes);
     inline_snapshot["inline_limit_bytes"] = kInlineSnapshotMaxBytes;
@@ -608,7 +667,7 @@ bool RunCapturedCommand(const std::string& command,
     }
 
     SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
-    HANDLE output_handle = CreateFileA(capture_path.string().c_str(),
+    HANDLE output_handle = CreateFileW(capture_path.wstring().c_str(),
                                        GENERIC_WRITE,
                                        FILE_SHARE_READ | FILE_SHARE_WRITE,
                                        &sa,
@@ -620,7 +679,7 @@ bool RunCapturedCommand(const std::string& command,
         return false;
     }
 
-    HANDLE input_handle = CreateFileA("NUL",
+    HANDLE input_handle = CreateFileW(L"NUL",
                                       GENERIC_READ,
                                       FILE_SHARE_READ | FILE_SHARE_WRITE,
                                       &sa,
@@ -633,7 +692,7 @@ bool RunCapturedCommand(const std::string& command,
         return false;
     }
 
-    STARTUPINFOA si{};
+    STARTUPINFOW si{};
     PROCESS_INFORMATION pi{};
     si.cb = sizeof(si);
     si.dwFlags |= STARTF_USESTDHANDLES;
@@ -641,18 +700,19 @@ bool RunCapturedCommand(const std::string& command,
     si.hStdOutput = output_handle;
     si.hStdError = output_handle;
 
-    std::vector<char> mutable_cmd(command.begin(), command.end());
-    mutable_cmd.push_back('\0');
+    std::wstring mutable_cmd = Utf8ToWide(command);
+    mutable_cmd.push_back(L'\0');
+    const auto working_dir = cwd.wstring();
 
     const auto started = std::chrono::steady_clock::now();
-    const BOOL created = CreateProcessA(nullptr,
+    const BOOL created = CreateProcessW(nullptr,
                                         mutable_cmd.data(),
                                         nullptr,
                                         nullptr,
                                         TRUE,
                                         CREATE_NO_WINDOW,
                                         nullptr,
-                                        cwd.string().c_str(),
+                                        working_dir.empty() ? nullptr : working_dir.c_str(),
                                         &si,
                                         &pi);
     CloseHandle(input_handle);
@@ -710,11 +770,48 @@ std::string DetectProjectRuntime(const ProjectConfig& config) {
 }
 
 std::filesystem::path ResourcePackagePath(const std::filesystem::path& project_root, const ProjectConfig& config) {
-    return std::filesystem::absolute(project_root / config.out_dir / "app.mbrp").lexically_normal();
+    return std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir) / "app.mbrp").lexically_normal();
 }
 
 std::filesystem::path ResourceInputDir(const std::filesystem::path& project_root, const ProjectConfig& config) {
-    return std::filesystem::absolute(project_root / config.out_dir / "resource-input").lexically_normal();
+    return std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir) / "app").lexically_normal();
+}
+
+bool IsBundledSourceFile(const std::filesystem::path& path) {
+    const auto ext = ToLowerAscii(path.extension().string());
+    return ext == ".js" ||
+           ext == ".mjs" ||
+           ext == ".jsx" ||
+           ext == ".ts" ||
+           ext == ".tsx" ||
+           ext == ".css" ||
+           ext == ".html" ||
+           ext == ".htm";
+}
+
+bool IsIgnoredStaticAssetDir(const std::filesystem::path& path,
+                             const std::filesystem::path& project_root,
+                             const ProjectConfig& config) {
+    const auto name = ToLowerAscii(path.filename().string());
+    if (name.empty() ||
+        name == ".git" ||
+        name == ".hg" ||
+        name == ".svn" ||
+        name == ".devui" ||
+        name == "__pycache__" ||
+        name == "node_modules" ||
+        name == "host" ||
+        name == "rust_host" ||
+        name == "go_host" ||
+        name == "vendor" ||
+        name == ".venv" ||
+        name == "venv" ||
+        name == "env") {
+        return true;
+    }
+
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
+    return IsPathInsideRoot(out_dir, path);
 }
 
 bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem::path& to, std::string* error) {
@@ -727,10 +824,72 @@ bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem:
     }
     std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
     if (ec) {
-        if (error) *error = "failed to copy " + from.string() + " to " + to.string();
+        if (error) *error = "failed to copy " + PathToUtf8(from) + " to " + PathToUtf8(to);
         return false;
     }
     return true;
+}
+
+size_t CopyUiStaticAssets(const std::filesystem::path& project_root,
+                          const ProjectConfig& config,
+                          const std::filesystem::path& target_root,
+                          std::string* error) {
+    size_t copied = 0;
+    std::string ignored;
+    const auto public_root = std::filesystem::absolute(project_root / "public").lexically_normal();
+    const auto assets_root = std::filesystem::absolute(project_root / "assets").lexically_normal();
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> roots = {
+        {JoinProjectPath(project_root, config.src_dir), {}},
+        {public_root, {}},
+        {assets_root, std::filesystem::path("assets")}
+    };
+
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> unique_roots;
+    for (const auto& [root, target_prefix] : roots) {
+        std::error_code ec;
+        const auto absolute = std::filesystem::absolute(root, ec).lexically_normal();
+        if (ec ||
+            absolute.empty() ||
+            !std::filesystem::exists(absolute, ec) ||
+            !std::filesystem::is_directory(absolute, ec) ||
+            std::any_of(unique_roots.begin(), unique_roots.end(), [&](const auto& item) {
+                return item.first == absolute;
+            })) {
+            continue;
+        }
+        unique_roots.push_back({absolute, target_prefix});
+    }
+
+    for (const auto& [root, target_prefix] : unique_roots) {
+        std::error_code ec;
+        for (std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec),
+             end; !ec && it != end; it.increment(ec)) {
+            const auto current = it->path();
+            if (it->is_directory(ec)) {
+                if (target_prefix.empty() &&
+                    root != public_root &&
+                    root != assets_root &&
+                    (IsPathInsideRoot(project_root / "public", current) ||
+                     IsPathInsideRoot(project_root / "assets", current))) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                if (IsIgnoredStaticAssetDir(current, project_root, config)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!it->is_regular_file(ec) || IsBundledSourceFile(current)) continue;
+
+            const auto rel = std::filesystem::relative(current, root, ec);
+            if (ec || rel.empty()) continue;
+            if (!CopyFileOverwrite(current, target_root / target_prefix / rel, &ignored)) {
+                if (error) *error = ignored;
+                return copied;
+            }
+            ++copied;
+        }
+    }
+
+    return copied;
 }
 
 bool SetWindowsGuiSubsystem(const std::filesystem::path& exe_path, bool hide_console, std::string* error) {
@@ -767,6 +926,184 @@ bool SetWindowsGuiSubsystem(const std::filesystem::path& exe_path, bool hide_con
     return true;
 }
 
+#pragma pack(push, 1)
+struct IconDirFile {
+    uint16_t reserved;
+    uint16_t type;
+    uint16_t count;
+};
+
+struct IconDirEntryFile {
+    uint8_t width;
+    uint8_t height;
+    uint8_t color_count;
+    uint8_t reserved;
+    uint16_t planes;
+    uint16_t bit_count;
+    uint32_t bytes_in_res;
+    uint32_t image_offset;
+};
+
+struct GroupIconDirEntry {
+    uint8_t width;
+    uint8_t height;
+    uint8_t color_count;
+    uint8_t reserved;
+    uint16_t planes;
+    uint16_t bit_count;
+    uint32_t bytes_in_res;
+    uint16_t id;
+};
+#pragma pack(pop)
+
+bool ValidateIcoFile(const std::filesystem::path& ico_path, std::string* ico_data, std::string* error) {
+    if (!ReadFileBytes(ico_path, ico_data, error)) return false;
+    if (ico_data->size() < sizeof(IconDirFile)) {
+        if (error) *error = "invalid ICO file: too small";
+        return false;
+    }
+    const auto* header = reinterpret_cast<const IconDirFile*>(ico_data->data());
+    if (header->reserved != 0 || header->type != 1 || header->count == 0) {
+        if (error) *error = "invalid ICO file format";
+        return false;
+    }
+    const size_t entries_end = sizeof(IconDirFile) +
+        static_cast<size_t>(header->count) * sizeof(IconDirEntryFile);
+    if (entries_end > ico_data->size()) {
+        if (error) *error = "invalid ICO file: truncated directory";
+        return false;
+    }
+
+    const auto* entries = reinterpret_cast<const IconDirEntryFile*>(ico_data->data() + sizeof(IconDirFile));
+    for (uint16_t i = 0; i < header->count; ++i) {
+        const auto& entry = entries[i];
+        if (entry.bytes_in_res == 0 ||
+            static_cast<size_t>(entry.image_offset) > ico_data->size() ||
+            static_cast<size_t>(entry.bytes_in_res) > ico_data->size() - static_cast<size_t>(entry.image_offset)) {
+            if (error) *error = "invalid ICO file: image data out of bounds";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool InjectExeIconResource(const std::filesystem::path& exe_path,
+                           const std::string& ico_data,
+                           std::string* error) {
+#ifdef _WIN32
+    const auto* header = reinterpret_cast<const IconDirFile*>(ico_data.data());
+    const auto* entries = reinterpret_cast<const IconDirEntryFile*>(ico_data.data() + sizeof(IconDirFile));
+    const uint16_t image_count = header->count;
+
+    HANDLE update = BeginUpdateResourceW(exe_path.wstring().c_str(), FALSE);
+    if (!update) {
+        if (error) *error = "BeginUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    for (uint16_t i = 0; i < image_count; ++i) {
+        const auto& entry = entries[i];
+        if (!UpdateResourceW(update,
+                             MAKEINTRESOURCEW(3),
+                             MAKEINTRESOURCEW(i + 1),
+                             MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                             const_cast<char*>(ico_data.data() + entry.image_offset),
+                             entry.bytes_in_res)) {
+            EndUpdateResourceW(update, TRUE);
+            if (error) *error = "UpdateResource RT_ICON failed (error " + std::to_string(GetLastError()) + ")";
+            return false;
+        }
+    }
+
+    const size_t group_size = sizeof(IconDirFile) +
+        static_cast<size_t>(image_count) * sizeof(GroupIconDirEntry);
+    std::vector<uint8_t> group_data(group_size);
+    auto* group_header = reinterpret_cast<IconDirFile*>(group_data.data());
+    group_header->reserved = 0;
+    group_header->type = 1;
+    group_header->count = image_count;
+
+    auto* group_entries = reinterpret_cast<GroupIconDirEntry*>(group_data.data() + sizeof(IconDirFile));
+    for (uint16_t i = 0; i < image_count; ++i) {
+        group_entries[i].width = entries[i].width;
+        group_entries[i].height = entries[i].height;
+        group_entries[i].color_count = entries[i].color_count;
+        group_entries[i].reserved = entries[i].reserved;
+        group_entries[i].planes = entries[i].planes;
+        group_entries[i].bit_count = entries[i].bit_count;
+        group_entries[i].bytes_in_res = entries[i].bytes_in_res;
+        group_entries[i].id = i + 1;
+    }
+
+    if (!UpdateResourceW(update,
+                         MAKEINTRESOURCEW(14),
+                         MAKEINTRESOURCEW(1),
+                         MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                         group_data.data(),
+                         static_cast<DWORD>(group_size))) {
+        EndUpdateResourceW(update, TRUE);
+        if (error) *error = "UpdateResource RT_GROUP_ICON failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    if (!EndUpdateResourceW(update, FALSE)) {
+        if (error) *error = "EndUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+    return true;
+#else
+    (void)exe_path;
+    (void)ico_data;
+    if (error) *error = "Icon injection is only supported on Windows";
+    return false;
+#endif
+}
+
+nlohmann::json ApplyBuildIconToExe(const std::filesystem::path& project_root,
+                                   const ProjectConfig& config,
+                                   const std::filesystem::path& exe_path) {
+    const std::string icon_rel = config.build_icon;
+    if (icon_rel.empty()) return nlohmann::json{{"status", "none"}, {"path", ""}};
+
+    auto status = nlohmann::json{{"status", "skipped"}, {"path", icon_rel}};
+    const auto icon_ext = ToLowerAscii(PathFromUtf8(icon_rel).extension().string());
+    if (icon_ext != ".ico") {
+        status["reason"] = "not_ico";
+        return status;
+    }
+
+    const auto icon_path = std::filesystem::absolute(JoinProjectPath(project_root, icon_rel)).lexically_normal();
+    std::error_code ec;
+    if (!std::filesystem::exists(icon_path, ec) || !std::filesystem::is_regular_file(icon_path, ec)) {
+        status["reason"] = "missing";
+        return status;
+    }
+
+    std::string ico_data;
+    std::string icon_error;
+    if (!ValidateIcoFile(icon_path, &ico_data, &icon_error)) {
+        status["reason"] = "invalid_ico";
+        status["message"] = icon_error;
+        return status;
+    }
+
+#ifndef _WIN32
+    (void)exe_path;
+    status["reason"] = "unsupported_platform";
+    status["message"] = "Icon injection is only supported on Windows";
+    return status;
+#else
+    if (!InjectExeIconResource(exe_path, ico_data, &icon_error)) {
+        status["reason"] = "inject_failed";
+        status["message"] = icon_error;
+        return status;
+    }
+    status["status"] = "applied";
+    status.erase("reason");
+    return status;
+#endif
+}
+
 nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project_root,
                                             const ProjectConfig& config,
                                             const std::filesystem::path& app_bundle,
@@ -776,7 +1113,7 @@ nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project
 
     std::error_code ec;
     if (std::filesystem::exists(input_dir, ec)) {
-        const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+        const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
         if (IsPathInsideRoot(out_dir, input_dir)) {
             std::filesystem::remove_all(input_dir, ec);
         }
@@ -790,28 +1127,35 @@ nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project
     if (!CopyFileOverwrite(app_bundle, input_dir / "app.js", error)) {
         return nlohmann::json{{"ok", false}, {"error", error ? *error : ""}};
     }
+    std::string asset_error;
+    const size_t static_assets = CopyUiStaticAssets(project_root, config, input_dir, &asset_error);
+    if (!asset_error.empty()) {
+        if (error) *error = asset_error;
+        return nlohmann::json{{"ok", false}, {"error", asset_error}};
+    }
     const auto config_path = project_root / "mbink.config.json";
     if (std::filesystem::exists(config_path, ec)) {
         std::string ignored;
         CopyFileOverwrite(config_path, input_dir / "mbink.config.json", &ignored);
     }
 
-    const auto input_dir_text = input_dir.generic_string();
-    const auto output_file_text = output_file.generic_string();
+    const auto input_dir_text = PathToUtf8(input_dir);
+    const auto output_file_text = PathToUtf8(output_file);
     std::string compile_error;
     if (!mbink::resourcepkg::CompileResources(input_dir_text.c_str(), output_file_text.c_str(), "", compile_error)) {
         if (compile_error.empty()) compile_error = "resource package build failed";
         if (error) *error = compile_error;
         return nlohmann::json{{"ok", false},
-                              {"input_dir", std::filesystem::relative(input_dir, project_root).generic_string()},
-                              {"output", std::filesystem::relative(output_file, project_root).generic_string()},
+                              {"input_dir", RelativePathToUtf8(input_dir, project_root)},
+                              {"output", RelativePathToUtf8(output_file, project_root)},
                               {"error", error ? *error : ""}};
     }
 
     return nlohmann::json{{"ok", true},
                           {"format", "mbrp"},
-                          {"input_dir", std::filesystem::relative(input_dir, project_root).generic_string()},
-                          {"output", std::filesystem::relative(output_file, project_root).generic_string()}};
+                          {"input_dir", RelativePathToUtf8(input_dir, project_root)},
+                          {"output", RelativePathToUtf8(output_file, project_root)},
+                          {"static_assets", static_assets}};
 }
 
 std::string Base64Encode(const std::string& input) {
@@ -1010,7 +1354,7 @@ bool RequestRuntimeReloadBundle(const DaemonState& state,
                                 std::string* error) {
     return RequestRuntimeCommand(state,
                                  runtime_pid,
-                                 nlohmann::json{{"type", "reload_bundle"}, {"bundle_path", bundle_path.string()}},
+                                 nlohmann::json{{"type", "reload_bundle"}, {"bundle_path", PathToUtf8(bundle_path)}},
                                  response,
                                  error);
 }
@@ -1060,10 +1404,10 @@ nlohmann::json RuntimeCommandErrorResponse(const std::string& fallback_code, con
 }
 
 std::filesystem::path ResolveReloadBundlePath(const std::filesystem::path& root, const ProjectConfig& project) {
-    const auto built_bundle = std::filesystem::absolute(root / project.out_dir / "App.js").lexically_normal();
+    const auto built_bundle = std::filesystem::absolute(JoinProjectPath(root, project.out_dir) / "App.js").lexically_normal();
     std::error_code ec;
     if (std::filesystem::exists(built_bundle, ec) && std::filesystem::is_regular_file(built_bundle, ec)) return built_bundle;
-    return std::filesystem::absolute(root / project.entry).lexically_normal();
+    return std::filesystem::absolute(JoinProjectPath(root, project.entry)).lexically_normal();
 }
 
 nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, DaemonState* state) {
@@ -1085,7 +1429,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
                                   {"mode", "reload_bundle"},
                                   {"fallback", false},
                                   {"runtime_epoch", state->runtime_epoch},
-                                  {"bundle_path", bundle_path.string()},
+                                  {"bundle_path", PathToUtf8(bundle_path)},
                                   {"response", runtime_response}};
         }
         reload_error = ExtractRuntimeCommandMessage(runtime_response,
@@ -1098,7 +1442,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
         return nlohmann::json{{"ok", false},
                               {"mode", "user_closed"},
                               {"fallback", false},
-                              {"bundle_path", bundle_path.string()},
+                              {"bundle_path", PathToUtf8(bundle_path)},
                               {"message", "runtime 已被用户手动关闭，当前不会自动拉起"},
                               {"response", runtime_response}};
     }
@@ -1109,7 +1453,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
                               {"mode", "restart_runtime"},
                               {"fallback", true},
                               {"runtime_epoch", state->runtime_epoch},
-                              {"bundle_path", bundle_path.string()},
+                              {"bundle_path", PathToUtf8(bundle_path)},
                               {"message", reload_error.empty() ? "in-place reload 失败，已回退 restart_runtime" : reload_error},
                               {"response", runtime_response}};
     }
@@ -1117,7 +1461,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
     return nlohmann::json{{"ok", false},
                           {"mode", "restart_runtime"},
                           {"fallback", true},
-                          {"bundle_path", bundle_path.string()},
+                          {"bundle_path", PathToUtf8(bundle_path)},
                           {"message", restart_error},
                           {"previous_error", reload_error},
                           {"response", runtime_response}};
@@ -1159,7 +1503,7 @@ nlohmann::json BuildStructuredLogTail(const std::filesystem::path& path,
     std::ifstream ifs(path, std::ios::binary);
     nlohmann::json result{{"ok", true},
                           {"stream", stream},
-                          {"source", path.string()},
+                          {"source", PathToUtf8(path)},
                           {"timestamp", CurrentTimestampIso8601()},
                           {"count", 0},
                           {"truncated", false},
@@ -1196,7 +1540,7 @@ nlohmann::json BuildStructuredRuntimeBufferResponse(const std::filesystem::path&
                                                     const char* array_field_name) {
     nlohmann::json result{{"ok", true},
                           {"stream", stream},
-                          {"source", path.string()},
+                          {"source", PathToUtf8(path)},
                           {"timestamp", CurrentTimestampIso8601()},
                           {"count", 0},
                           {"truncated", false},
@@ -1275,10 +1619,10 @@ bool ProjectRequiresJsxBuild(const std::filesystem::path& project_root, const Pr
         config.template_name == "desktop-app/tool" || config.template_name == "desktop-app/python" ||
         config.template_name == "desktop-app/rust" || config.template_name == "desktop-app/go") return true;
 
-    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    const auto entry_path = std::filesystem::absolute(JoinProjectPath(project_root, config.entry)).lexically_normal();
     if (SourceLooksLikeJsx(entry_path)) return true;
 
-    const auto scan_root = std::filesystem::absolute(project_root / config.src_dir).lexically_normal();
+    const auto scan_root = std::filesystem::absolute(JoinProjectPath(project_root, config.src_dir)).lexically_normal();
     std::error_code ec;
     if (!std::filesystem::exists(scan_root, ec) || !std::filesystem::is_directory(scan_root, ec)) return false;
 
@@ -1294,7 +1638,7 @@ bool ProjectRequiresJsxBuild(const std::filesystem::path& project_root, const Pr
 }
 
 bool ShouldBuildBeforeRun(const std::filesystem::path& project_root, const ProjectConfig& config) {
-    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    const auto entry_path = std::filesystem::absolute(JoinProjectPath(project_root, config.entry)).lexically_normal();
     const auto ext = ToLowerAscii(entry_path.extension().string());
     if (ext == ".jsx" || ext == ".tsx" || ext == ".ts") return true;
     return ProjectRequiresJsxBuild(project_root, config);
@@ -1303,13 +1647,13 @@ bool ShouldBuildBeforeRun(const std::filesystem::path& project_root, const Proje
 
 std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project_root, const ProjectConfig& config) {
     const std::vector<std::filesystem::path> preferred_candidates = {
-        project_root / config.src_dir / "App.jsx",
-        project_root / config.src_dir / "app.jsx",
-        project_root / config.src_dir / "main.jsx",
-        project_root / config.src_dir / "index.jsx",
-        project_root / config.src_dir / "App.tsx",
-        project_root / config.src_dir / "main.tsx",
-        project_root / config.src_dir / "index.tsx"
+        JoinProjectPath(project_root, config.src_dir) / "App.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "app.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "main.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "index.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "App.tsx",
+        JoinProjectPath(project_root, config.src_dir) / "main.tsx",
+        JoinProjectPath(project_root, config.src_dir) / "index.tsx"
     };
     if (config.template_name == "preact-jsx" || config.template_name == "preact-ts" ||
         config.template_name == "minimal/tool" || config.template_name == "minimal/python" ||
@@ -1326,7 +1670,7 @@ std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project
         }
     }
 
-    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    const auto entry_path = std::filesystem::absolute(JoinProjectPath(project_root, config.entry)).lexically_normal();
     if (entry_path.extension() == ".jsx" || entry_path.extension() == ".tsx") return entry_path;
     if (entry_path.extension() == ".js" || entry_path.extension() == ".mjs" || entry_path.extension() == ".ts") {
         for (const auto& candidate : preferred_candidates) {
@@ -1338,16 +1682,16 @@ std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project
         return entry_path;
     }
     const std::vector<std::filesystem::path> candidates = {
-        project_root / config.src_dir / "App.jsx",
-        project_root / config.src_dir / "app.jsx",
-        project_root / config.src_dir / "main.jsx",
-        project_root / config.src_dir / "index.jsx",
-        project_root / config.src_dir / "App.tsx",
-        project_root / config.src_dir / "main.tsx",
-        project_root / config.src_dir / "index.tsx",
-        project_root / config.src_dir / "app.js",
-        project_root / config.src_dir / "main.js",
-        project_root / config.src_dir / "index.js"
+        JoinProjectPath(project_root, config.src_dir) / "App.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "app.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "main.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "index.jsx",
+        JoinProjectPath(project_root, config.src_dir) / "App.tsx",
+        JoinProjectPath(project_root, config.src_dir) / "main.tsx",
+        JoinProjectPath(project_root, config.src_dir) / "index.tsx",
+        JoinProjectPath(project_root, config.src_dir) / "app.js",
+        JoinProjectPath(project_root, config.src_dir) / "main.js",
+        JoinProjectPath(project_root, config.src_dir) / "index.js"
     };
     for (const auto& candidate : candidates) {
         std::error_code ec;
@@ -1380,7 +1724,7 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
         if (error) *error = "未找到可构建入口，请检查 entry/src_dir 配置";
         return {};
     }
-    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
     std::error_code ec;
     std::filesystem::create_directories(out_dir, ec);
     if (ec) {
@@ -1388,8 +1732,8 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
         return {};
     }
     const auto output_file = out_dir / "App.js";
-    std::string esbuild_args = QuoteForCmd(entry_point.string()) +
-                               " --bundle --format=esm --outfile=" + QuoteForCmd(output_file.string()) +
+    std::string esbuild_args = QuoteForCmd(PathToUtf8(entry_point)) +
+                               " --bundle --format=esm --outfile=" + QuoteForCmd(PathToUtf8(output_file)) +
                                " --jsx=transform --jsx-factory=" + QuoteForCmd(config.build_jsx_factory) +
                                " --jsx-fragment=" + QuoteForCmd(config.build_jsx_fragment) +
                                " --loader:.js=jsx --loader:.mjs=jsx" +
@@ -1402,9 +1746,9 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
     }
     std::string command;
     if (IsCmdScript(esbuild)) {
-        command = "cmd.exe /d /c call " + QuoteForCmd(esbuild.string()) + " " + esbuild_args;
+        command = "cmd.exe /d /c call " + QuoteForCmd(PathToUtf8(esbuild)) + " " + esbuild_args;
     } else {
-        command = QuoteForCmd(esbuild.string()) + " " + esbuild_args;
+        command = QuoteForCmd(PathToUtf8(esbuild)) + " " + esbuild_args;
     }
 
     SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
@@ -1416,7 +1760,7 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
     }
     SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
 
-    STARTUPINFOA si{};
+    STARTUPINFOW si{};
     PROCESS_INFORMATION pi{};
     si.cb = sizeof(si);
     si.dwFlags |= STARTF_USESTDHANDLES;
@@ -1424,11 +1768,11 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
     si.hStdOutput = write_pipe;
     si.hStdError = write_pipe;
 
-    std::vector<char> mutable_cmd(command.begin(), command.end());
-    mutable_cmd.push_back('\0');
-    const std::string working_dir = project_root.string();
-    const BOOL created = CreateProcessA(nullptr, mutable_cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
-                                        nullptr, working_dir.c_str(), &si, &pi);
+    std::wstring mutable_cmd = Utf8ToWide(command);
+    mutable_cmd.push_back(L'\0');
+    const auto working_dir = project_root.wstring();
+    const BOOL created = CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                                        nullptr, working_dir.empty() ? nullptr : working_dir.c_str(), &si, &pi);
     CloseHandle(write_pipe);
     if (!created) {
         CloseHandle(read_pipe);
@@ -1485,14 +1829,25 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
                           {"started_at", started_iso},
                           {"finished_at", finished_iso},
                           {"duration_ms", duration_ms},
-                          {"entry_point", std::filesystem::relative(entry_point, project_root).generic_string()},
+                          {"entry_point", RelativePathToUtf8(entry_point, project_root)},
                           {"out_dir", config.out_dir},
-                          {"outputs", nlohmann::json::array({std::filesystem::relative(output_file, project_root).generic_string()})},
+                          {"outputs", nlohmann::json::array({RelativePathToUtf8(output_file, project_root)})},
                           {"warnings", warnings},
                           {"errors", errors},
                           {"raw_output", lines},
-                          {"build_log", build_log_path.string()}};
+                          {"build_log", PathToUtf8(build_log_path)}};
     if (exit_code == 0) {
+        std::string asset_error;
+        const size_t copied_static_assets = CopyUiStaticAssets(project_root, config, out_dir, &asset_error);
+        status["static_assets"] = copied_static_assets;
+        if (!asset_error.empty()) {
+            status["ok"] = false;
+            status["status"] = "failed";
+            status["errors"].push_back({{"message", asset_error}});
+            if (error) *error = asset_error;
+            WriteJsonFile(build_log_path, status);
+            return status;
+        }
         std::string package_error;
         auto package_status = CompileResourcePackageStatus(project_root, config, output_file, &package_error);
         status["resource_package"] = package_status;
@@ -1532,6 +1887,166 @@ std::filesystem::path FindExecutableOnPath(const std::vector<std::string>& names
     return {};
 }
 
+bool IsPythonNativeBinary(const std::filesystem::path& path) {
+    const auto ext = ToLowerAscii(path.extension().string());
+    return ext == ".pyd" || ext == ".dll" || ext == ".so" || ext == ".dylib";
+}
+
+bool IsIgnoredPythonPackageDir(const std::filesystem::path& path) {
+    const auto name = ToLowerAscii(path.filename().string());
+    return name.empty() ||
+           name == "__pycache__" ||
+           name == ".git" ||
+           name == ".hg" ||
+           name == ".svn" ||
+           name == ".venv" ||
+           name == "venv" ||
+           name == "env" ||
+           name == "node_modules" ||
+           name == ".dist" ||
+           name == "build" ||
+           name == "dist" ||
+           name == "pyinstaller-work" ||
+           name == "pyinstaller-spec";
+}
+
+std::optional<std::string> PythonPackageNameFromDir(const std::filesystem::path& package_dir,
+                                                    const std::filesystem::path& search_root) {
+    std::error_code ec;
+    auto rel = std::filesystem::relative(package_dir, search_root, ec);
+    if (ec || rel.empty()) return std::nullopt;
+
+    std::vector<std::string> parts;
+    for (const auto& part : rel) {
+        const auto item = part.string();
+        if (item.empty() || item == "." || item == "..") return std::nullopt;
+        parts.push_back(item);
+    }
+    if (parts.empty()) return std::nullopt;
+
+    std::filesystem::path current = search_root;
+    for (const auto& part : parts) {
+        current /= part;
+        if (!std::filesystem::exists(current / "__init__.py")) return std::nullopt;
+    }
+
+    std::string name;
+    for (const auto& part : parts) {
+        if (!name.empty()) name += ".";
+        name += part;
+    }
+    return name.empty() ? std::nullopt : std::optional<std::string>{name};
+}
+
+std::vector<std::filesystem::path> PythonImportSearchRoots(const std::filesystem::path& project_root,
+                                                           const ProjectConfig& config) {
+    std::vector<std::filesystem::path> roots = {
+        project_root,
+        project_root / "src",
+        JoinProjectPath(project_root, config.src_dir),
+        project_root / "host",
+        project_root / "vendor"
+    };
+    std::vector<std::filesystem::path> result;
+    for (const auto& root : roots) {
+        std::error_code ec;
+        const auto absolute = std::filesystem::absolute(root, ec).lexically_normal();
+        if (ec || absolute.empty() || !std::filesystem::exists(absolute, ec) || !std::filesystem::is_directory(absolute, ec)) continue;
+        if (std::find(result.begin(), result.end(), absolute) == result.end()) result.push_back(absolute);
+    }
+    return result;
+}
+
+std::optional<std::string> PythonVersionFromAbiTag(const std::filesystem::path& path) {
+    const auto name = ToLowerAscii(path.filename().string());
+    const std::string marker = ".cp";
+    const auto pos = name.find(marker);
+    if (pos == std::string::npos || pos + marker.size() + 2 > name.size()) return std::nullopt;
+
+    size_t i = pos + marker.size();
+    std::string digits;
+    while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i]))) {
+        digits.push_back(name[i]);
+        ++i;
+    }
+    if (digits.size() == 2) {
+        return digits.substr(0, 1) + "." + digits.substr(1, 1);
+    }
+    if (digits.size() == 3) {
+        return digits.substr(0, 1) + "." + digits.substr(1, 2);
+    }
+    return std::nullopt;
+}
+
+struct PythonPackageScan {
+    std::vector<std::string> collect_all;
+    std::vector<std::string> native_binaries;
+    std::optional<std::string> required_python_version;
+};
+
+PythonPackageScan ScanProjectPythonPackages(const std::filesystem::path& project_root,
+                                            const ProjectConfig& config,
+                                            const std::vector<std::filesystem::path>& search_roots) {
+    PythonPackageScan scan;
+    for (const auto& search_root : search_roots) {
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(search_root, std::filesystem::directory_options::skip_permission_denied, ec);
+        const std::filesystem::recursive_directory_iterator end;
+        for (; !ec && it != end; it.increment(ec)) {
+            const auto& entry = *it;
+            const auto path = entry.path();
+            if (entry.is_directory(ec)) {
+                if (IsIgnoredPythonPackageDir(path)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!entry.is_regular_file(ec) || !IsPythonNativeBinary(path)) continue;
+            if (IsPathInsideRoot(JoinProjectPath(project_root, config.out_dir), path)) continue;
+
+            scan.native_binaries.push_back(RelativePathToUtf8(path, project_root));
+            if (!scan.required_python_version.has_value()) {
+                scan.required_python_version = PythonVersionFromAbiTag(path);
+            }
+
+            auto dir = path.parent_path();
+            while (!dir.empty() && IsPathInsideRoot(search_root, dir)) {
+                if (std::filesystem::exists(dir / "__init__.py")) {
+                    if (auto package_name = PythonPackageNameFromDir(dir, search_root)) {
+                        if (*package_name != "mbink" &&
+                            std::find(scan.collect_all.begin(), scan.collect_all.end(), *package_name) == scan.collect_all.end()) {
+                            scan.collect_all.push_back(*package_name);
+                        }
+                        break;
+                    }
+                }
+                if (dir == search_root) break;
+                dir = dir.parent_path();
+            }
+        }
+    }
+
+    std::sort(scan.collect_all.begin(), scan.collect_all.end());
+    std::sort(scan.native_binaries.begin(), scan.native_binaries.end());
+    scan.native_binaries.erase(std::unique(scan.native_binaries.begin(), scan.native_binaries.end()), scan.native_binaries.end());
+    return scan;
+}
+
+std::filesystem::path FindPythonLauncher(const std::optional<std::string>& required_version) {
+    if (required_version.has_value()) {
+        const auto launcher = FindExecutableOnPath({"py.exe"});
+        if (!launcher.empty()) return launcher;
+    }
+    return FindExecutableOnPath({"python.exe", "py.exe", "python"});
+}
+
+std::string BuildPythonCommand(const std::filesystem::path& python,
+                               const std::optional<std::string>& required_version) {
+    const auto executable = ToLowerAscii(python.filename().string());
+    if (executable == "py.exe") {
+        return QuoteForCmd(PathToUtf8(python)) + (required_version.has_value() ? " -" + *required_version : " -3");
+    }
+    return QuoteForCmd(PathToUtf8(python));
+}
+
 std::filesystem::path FindMbinkRuntimeLibrary(const std::filesystem::path& project_root) {
     const auto exe_dir = GetCurrentExecutablePath().parent_path();
     const std::vector<std::filesystem::path> candidates = {
@@ -1569,7 +2084,7 @@ nlohmann::json BuildStepFromProcess(const std::string& name,
                               {"exit_code", 1},
                               {"errors", nlohmann::json::array({{{"message", start_error}}})},
                               {"raw_output", nlohmann::json::array()},
-                              {"log", log_path.string()}};
+                              {"log", PathToUtf8(log_path)}};
     }
 
     auto lines = SplitProcessLines(run.raw_output);
@@ -1599,7 +2114,7 @@ nlohmann::json BuildStepFromProcess(const std::string& name,
                           {"warnings", warnings},
                           {"errors", errors},
                           {"raw_output", lines},
-                          {"log", log_path.string()}};
+                          {"log", PathToUtf8(log_path)}};
 }
 
 bool CopyRuntimeDllToFinal(const std::filesystem::path& project_root,
@@ -1613,7 +2128,7 @@ bool CopyRuntimeDllToFinal(const std::filesystem::path& project_root,
     }
     const auto target = final_dir / runtime.filename();
     if (!CopyFileOverwrite(runtime, target, error)) return false;
-    if (outputs) outputs->push_back(std::filesystem::relative(target, project_root).generic_string());
+    if (outputs) outputs->push_back(RelativePathToUtf8(target, project_root));
     return true;
 }
 
@@ -1627,7 +2142,7 @@ bool PrepareEmbeddedResourceFile(const std::filesystem::path& resource_package,
         return false;
     }
     if (!CopyFileOverwrite(resource_package, target, error)) return false;
-    if (outputs) outputs->push_back(std::filesystem::relative(target, project_root).generic_string());
+    if (outputs) outputs->push_back(RelativePathToUtf8(target, project_root));
     return true;
 }
 
@@ -1646,19 +2161,19 @@ nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
         return nlohmann::json{{"ok", false}, {"runtime", "rust"}, {"error", error ? *error : ""}};
     }
 
-    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
     const auto final_dir = out_dir / "final";
     nlohmann::json outputs = nlohmann::json::array();
     if (!PrepareEmbeddedResourceFile(resource_package, project_root, project_root / "rust_host" / "resources" / "app.mbrp", &outputs, error)) {
         return nlohmann::json{{"ok", false}, {"runtime", "rust"}, {"error", error ? *error : ""}};
     }
 
-    const std::string command = QuoteForCmd(cargo.string()) + " build --release --manifest-path " + QuoteForCmd(manifest.string());
+    const std::string command = QuoteForCmd(PathToUtf8(cargo)) + " build --release --manifest-path " + QuoteForCmd(PathToUtf8(manifest));
     auto step = BuildStepFromProcess("cargo build --release", command, project_root, 180000, out_dir / "cargo-build.log", error);
     nlohmann::json status{{"ok", step.value("ok", false)},
                           {"runtime", "rust"},
                           {"builder", "cargo"},
-                          {"embedded_resource", std::filesystem::relative(project_root / "rust_host" / "resources" / "app.mbrp", project_root).generic_string()},
+                          {"embedded_resource", RelativePathToUtf8(project_root / "rust_host" / "resources" / "app.mbrp", project_root)},
                           {"steps", nlohmann::json::array({step})},
                           {"outputs", outputs}};
     if (!step.value("ok", false)) return status;
@@ -1676,13 +2191,14 @@ nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
         status["error"] = error ? *error : "failed to set rust artifact subsystem";
         return status;
     }
-    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
+    status["icon"] = ApplyBuildIconToExe(project_root, config, final_exe);
+    status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
         status["error"] = error ? *error : "failed to copy mbink.dll";
         return status;
     }
-    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["host_artifact"] = RelativePathToUtf8(final_exe, project_root);
     status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
     status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
     status["hide_console"] = config.build_hide_console;
@@ -1704,7 +2220,7 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
         return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
     }
 
-    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
     const auto final_dir = out_dir / "final";
     const std::string stem = SanitizeArtifactStem(config.name);
     const auto final_exe = final_dir / (stem + ".exe");
@@ -1721,13 +2237,13 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
     }
 
     const std::string ldflags = config.build_hide_console ? " -ldflags " + QuoteForCmd("-H=windowsgui") : "";
-    const std::string command = "cmd.exe /d /c set CGO_ENABLED=1&& " + QuoteForCmd(go.string()) +
-                                " build -mod=mod" + ldflags + " -o " + QuoteForCmd(final_exe.string()) + " ./host";
+    const std::string command = "cmd.exe /d /c set CGO_ENABLED=1&& " + QuoteForCmd(PathToUtf8(go)) +
+                                " build -mod=mod" + ldflags + " -o " + QuoteForCmd(PathToUtf8(final_exe)) + " ./host";
     auto step = BuildStepFromProcess("go build", command, project_root, 180000, out_dir / "go-build.log", error);
     nlohmann::json status{{"ok", step.value("ok", false)},
                           {"runtime", "go"},
                           {"builder", "go"},
-                          {"embedded_resource", std::filesystem::relative(project_root / "host" / "resources" / "app.mbrp", project_root).generic_string()},
+                          {"embedded_resource", RelativePathToUtf8(project_root / "host" / "resources" / "app.mbrp", project_root)},
                           {"steps", nlohmann::json::array({step})},
                           {"outputs", outputs}};
     if (!step.value("ok", false)) return status;
@@ -1736,13 +2252,14 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
         status["error"] = error ? *error : "failed to set go artifact subsystem";
         return status;
     }
-    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
+    status["icon"] = ApplyBuildIconToExe(project_root, config, final_exe);
+    status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
         status["error"] = error ? *error : "failed to copy mbink.dll";
         return status;
     }
-    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["host_artifact"] = RelativePathToUtf8(final_exe, project_root);
     status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
     status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
     status["hide_console"] = config.build_hide_console;
@@ -1758,13 +2275,7 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
         if (error) *error = "host/main.py not found";
         return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
     }
-    const auto python = FindExecutableOnPath({"python.exe", "py.exe", "python"});
-    if (python.empty()) {
-        if (error) *error = "python not found in PATH";
-        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
-    }
-
-    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
     const auto final_dir = out_dir / "final";
     const auto resource_copy = project_root / "host" / "resources" / "app.mbrp";
     nlohmann::json outputs = nlohmann::json::array();
@@ -1779,29 +2290,71 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
     }
 
     const std::string stem = SanitizeArtifactStem(config.name);
-    const auto python_cmd = ToLowerAscii(python.filename().string()) == "py.exe"
-        ? QuoteForCmd(python.string()) + " -3"
-        : QuoteForCmd(python.string());
+    const auto python_search_roots = PythonImportSearchRoots(project_root, config);
+    const auto python_package_scan = ScanProjectPythonPackages(project_root, config, python_search_roots);
+    const auto python = FindPythonLauncher(python_package_scan.required_python_version);
+    if (python.empty()) {
+        if (error) *error = "python not found in PATH";
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+    const auto python_cmd = BuildPythonCommand(python, python_package_scan.required_python_version);
     const std::string console_mode = config.build_hide_console ? " --windowed" : " --console";
-    const std::string command =
-        python_cmd + " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
+
+    nlohmann::json icon_status{{"status", "none"}, {"path", ""}};
+    std::string icon_arg;
+    if (!config.build_icon.empty()) {
+        icon_status = nlohmann::json{{"status", "skipped"}, {"path", config.build_icon}};
+        const auto icon_ext = ToLowerAscii(PathFromUtf8(config.build_icon).extension().string());
+        if (icon_ext != ".ico") {
+            icon_status["reason"] = "not_ico";
+        } else {
+            const auto icon_path = std::filesystem::absolute(JoinProjectPath(project_root, config.build_icon)).lexically_normal();
+            std::error_code ec;
+            if (!std::filesystem::exists(icon_path, ec) || !std::filesystem::is_regular_file(icon_path, ec)) {
+                icon_status["reason"] = "missing";
+            } else {
+                icon_arg = " --icon " + QuoteForCmd(PathToUtf8(icon_path));
+                icon_status["status"] = "applied";
+                icon_status.erase("reason");
+            }
+        }
+    }
+
+    std::string pyinstaller_args =
+        " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
         console_mode +
-        " --distpath " + QuoteForCmd(final_dir.string()) +
-        " --workpath " + QuoteForCmd((out_dir / "pyinstaller-work").string()) +
-        " --specpath " + QuoteForCmd((out_dir / "pyinstaller-spec").string()) +
-        " --paths " + QuoteForCmd((project_root / "vendor").string()) +
-        " --add-data " + QuoteForCmd(resource_copy.string() + ";resources") +
-        " --add-binary " + QuoteForCmd(dll_path.string() + ";mbink/bin") +
-        " " + QuoteForCmd(main_py.string());
+        icon_arg +
+        " --distpath " + QuoteForCmd(PathToUtf8(final_dir)) +
+        " --workpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-work")) +
+        " --specpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-spec"));
+    for (const auto& search_root : python_search_roots) {
+        pyinstaller_args += " --paths " + QuoteForCmd(PathToUtf8(search_root));
+    }
+    for (const auto& package_name : python_package_scan.collect_all) {
+        pyinstaller_args += " --collect-all " + QuoteForCmd(package_name);
+    }
+    pyinstaller_args +=
+        " --add-data " + QuoteForCmd(PathToUtf8(resource_copy) + ";resources") +
+        " --add-binary " + QuoteForCmd(PathToUtf8(dll_path) + ";mbink/bin") +
+        " " + QuoteForCmd(PathToUtf8(main_py));
+    const std::string command = python_cmd + pyinstaller_args;
 
     auto step = BuildStepFromProcess("python -m PyInstaller", command, project_root, 240000, out_dir / "pyinstaller.log", error);
     const auto final_exe = final_dir / (stem + ".exe");
     nlohmann::json status{{"ok", step.value("ok", false) && std::filesystem::exists(final_exe)},
                           {"runtime", "python"},
                           {"builder", "pyinstaller"},
-                          {"embedded_resource", std::filesystem::relative(resource_copy, project_root).generic_string()},
+                          {"python_executable", PathToUtf8(python)},
+                          {"python_required_version", python_package_scan.required_python_version.value_or("")},
+                          {"python_import_paths", nlohmann::json::array()},
+                          {"python_collect_all", python_package_scan.collect_all},
+                          {"python_native_binaries", python_package_scan.native_binaries},
+                          {"embedded_resource", RelativePathToUtf8(resource_copy, project_root)},
                           {"steps", nlohmann::json::array({step})},
                           {"outputs", outputs}};
+    for (const auto& search_root : python_search_roots) {
+        status["python_import_paths"].push_back(RelativePathToUtf8(search_root, project_root));
+    }
     if (!status.value("ok", false)) {
         if (error && error->empty()) *error = "PyInstaller did not produce the expected exe";
         status["error"] = error ? *error : "PyInstaller failed";
@@ -1812,8 +2365,9 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
         status["error"] = error ? *error : "failed to set python artifact subsystem";
         return status;
     }
-    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
-    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["icon"] = icon_status;
+    status["outputs"].push_back(RelativePathToUtf8(final_exe, project_root));
+    status["host_artifact"] = RelativePathToUtf8(final_exe, project_root);
     status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
     status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
     status["hide_console"] = config.build_hide_console;
@@ -1845,15 +2399,15 @@ bool StartDetachedProcess(const std::filesystem::path& exe, const std::string& a
                           const std::filesystem::path* stdout_path,
                           const std::filesystem::path* stderr_path,
                           int* pid, std::string* error) {
-    std::string cmd = "\"" + exe.string() + "\"" + (args.empty() ? "" : " " + args);
+    std::wstring cmd = BuildWindowsCommandLine(exe, args);
     const bool inherit_handles = stdout_path != nullptr || stderr_path != nullptr;
     SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     HANDLE out_handle = INVALID_HANDLE_VALUE;
     HANDLE err_handle = INVALID_HANDLE_VALUE;
     HANDLE in_handle = INVALID_HANDLE_VALUE;
-    STARTUPINFOA si{}; PROCESS_INFORMATION pi{}; si.cb = sizeof(si);
+    STARTUPINFOW si{}; PROCESS_INFORMATION pi{}; si.cb = sizeof(si);
     if (stdout_path) {
-        out_handle = CreateFileA(stdout_path->string().c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        out_handle = CreateFileW(stdout_path->wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                  &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (out_handle == INVALID_HANDLE_VALUE) {
             if (error) *error = "创建 stdout 日志失败";
@@ -1861,7 +2415,7 @@ bool StartDetachedProcess(const std::filesystem::path& exe, const std::string& a
         }
     }
     if (stderr_path) {
-        err_handle = CreateFileA(stderr_path->string().c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        err_handle = CreateFileW(stderr_path->wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                  &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (err_handle == INVALID_HANDLE_VALUE) {
             if (out_handle != INVALID_HANDLE_VALUE) CloseHandle(out_handle);
@@ -1870,7 +2424,7 @@ bool StartDetachedProcess(const std::filesystem::path& exe, const std::string& a
         }
     }
     if (inherit_handles) {
-        in_handle = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+        in_handle = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                 &sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (in_handle == INVALID_HANDLE_VALUE) {
             if (out_handle != INVALID_HANDLE_VALUE) CloseHandle(out_handle);
@@ -1883,14 +2437,15 @@ bool StartDetachedProcess(const std::filesystem::path& exe, const std::string& a
         si.hStdError = err_handle != INVALID_HANDLE_VALUE ? err_handle : GetStdHandle(STD_ERROR_HANDLE);
         si.hStdInput = in_handle;
     }
-    std::vector<char> mutable_cmd(cmd.begin(), cmd.end()); mutable_cmd.push_back('\0');
-    if (!CreateProcessA(nullptr, mutable_cmd.data(), nullptr, nullptr, inherit_handles,
+    cmd.push_back(L'\0');
+    const auto working_dir = cwd.wstring();
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, inherit_handles,
                         DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-                        nullptr, cwd.string().c_str(), &si, &pi)) {
+                        nullptr, working_dir.empty() ? nullptr : working_dir.c_str(), &si, &pi)) {
         if (out_handle != INVALID_HANDLE_VALUE) CloseHandle(out_handle);
         if (err_handle != INVALID_HANDLE_VALUE) CloseHandle(err_handle);
         if (in_handle != INVALID_HANDLE_VALUE) CloseHandle(in_handle);
-        if (error) *error = "启动进程失败: " + exe.string();
+        if (error) *error = "启动进程失败: " + PathToUtf8(exe);
         return false;
     }
     if (out_handle != INVALID_HANDLE_VALUE) CloseHandle(out_handle);
@@ -1915,7 +2470,7 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
         if (error) *error = "未找到 esm_loader.exe，请先编译 esm_loader";
         return false;
     }
-    std::filesystem::path entry = std::filesystem::absolute(root / state->project.entry);
+    std::filesystem::path entry = std::filesystem::absolute(JoinProjectPath(root, state->project.entry));
     if (ShouldBuildBeforeRun(root, state->project)) {
         std::string build_error;
         auto build_status = BuildEsbuildStatus(root, state->project, &build_error);
@@ -1934,13 +2489,13 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
             if (error) *error = build_error.empty() ? "JSX/TS 运行前构建失败" : build_error;
             return false;
         }
-        entry = std::filesystem::absolute(root / state->project.out_dir / "App.js");
+        entry = std::filesystem::absolute(JoinProjectPath(root, state->project.out_dir) / "App.js");
     }
     if (!std::filesystem::exists(entry)) {
         state->runtime_pid = 0;
         state->runtime_status = "stopped";
         state->runtime_stop_reason = "entry_missing";
-        if (error) *error = "入口文件不存在: " + entry.string();
+        if (error) *error = "入口文件不存在: " + PathToUtf8(entry);
         return false;
     }
     const auto stdout_path = GetRuntimeStdoutLogPath(*state);
@@ -1958,15 +2513,15 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
     state->runtime_status = "starting";
     state->runtime_stop_reason = "starting";
 
-    std::string args = "\"" + entry.string() + "\" --width " + std::to_string(state->project.width) +
+    std::string args = QuoteForCmd(PathToUtf8(entry)) + " --width " + std::to_string(state->project.width) +
                        " --height " + std::to_string(state->project.height) +
                        " --title \"" + state->project.title + "\"" +
-                       " --ui-dev-snapshot-file \"" + snapshot_path.string() + "\"" +
-                       " --ui-dev-command-file \"" + command_path.string() + "\"" +
-                       " --ui-dev-response-file \"" + response_path.string() + "\"" +
-                       " --ui-dev-console-file \"" + console_path.string() + "\"" +
-                       " --ui-dev-errors-file \"" + errors_path.string() + "\"" +
-                       " --ui-dev-lifecycle-file \"" + lifecycle_path.string() + "\"" +
+                       " --ui-dev-snapshot-file " + QuoteForCmd(PathToUtf8(snapshot_path)) +
+                       " --ui-dev-command-file " + QuoteForCmd(PathToUtf8(command_path)) +
+                       " --ui-dev-response-file " + QuoteForCmd(PathToUtf8(response_path)) +
+                       " --ui-dev-console-file " + QuoteForCmd(PathToUtf8(console_path)) +
+                       " --ui-dev-errors-file " + QuoteForCmd(PathToUtf8(errors_path)) +
+                       " --ui-dev-lifecycle-file " + QuoteForCmd(PathToUtf8(lifecycle_path)) +
                        " --ui-dev-runtime-epoch \"" + state->runtime_epoch + "\"" +
                        " --ui-dev-snapshot-max-nodes 2000" +
                        " --ui-dev-snapshot-max-depth 64";
@@ -2184,7 +2739,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
     if (cmd == "status") return nlohmann::json{{"ok", true}, {"daemon", StateToJson(*state)}};
     if (cmd == "open") {
         std::string error;
-        const auto root = std::filesystem::absolute(request.value("project_root", state->project_root));
+        const auto root = std::filesystem::absolute(PathFromUtf8(request.value("project_root", state->project_root))).lexically_normal();
         const bool force = request.value("force", false);
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         ProjectIdentity identity;
@@ -2193,7 +2748,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         if (!error.empty()) return ErrorResponse("project_config_error", error);
         const auto normalized_current_root = state->project_root.empty()
             ? std::filesystem::path{}
-            : std::filesystem::absolute(std::filesystem::path(state->project_root)).lexically_normal();
+            : std::filesystem::absolute(PathFromUtf8(state->project_root)).lexically_normal();
         const auto normalized_next_root = std::filesystem::absolute(root).lexically_normal();
         const bool same_project = state->project_id == identity.project_id &&
                                   normalized_current_root == normalized_next_root;
@@ -2215,7 +2770,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         state->running = true;
         state->project_id = identity.project_id;
         state->runtime_id = identity.runtime_id;
-        state->project_root = root.string();
+        state->project_root = PathToUtf8(root);
         state->project = loaded_project;
         state->last_build = nlohmann::json{{"ok", true}, {"status", "not_built"}};
         ConfigureWatchUnlocked(*state, false);
@@ -2226,7 +2781,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
     }
     if (cmd == "info") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        const auto root = std::filesystem::path(state->project_root);
+        const auto root = PathFromUtf8(state->project_root);
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         return nlohmann::json{{"ok", true},
                               {"project", ProjectToJson(root, state->project)},
@@ -2238,7 +2793,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
     }
     if (cmd == "read") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        const auto root = std::filesystem::path(state->project_root);
+        const auto root = PathFromUtf8(state->project_root);
         std::filesystem::path resolved_path;
         std::string error;
         if (!ResolveProjectPath(root, request.value("path", ""), &resolved_path, &error)) return ErrorResponse("invalid_args", error);
@@ -2248,11 +2803,11 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         if (!ReadFileBytes(resolved_path, &content, &error)) return ErrorResponse("file_read_failed", error);
         const auto encoding = request.value("encoding", "utf8");
         if (encoding != "utf8" && encoding != "base64") return ErrorResponse("invalid_args", "encoding 仅支持 utf8 或 base64");
-        return nlohmann::json{{"ok", true}, {"path", std::filesystem::relative(resolved_path, root).generic_string()}, {"encoding", encoding}, {"content", encoding == "base64" ? Base64Encode(content) : content}, {"bytes", content.size()}};
+        return nlohmann::json{{"ok", true}, {"path", RelativePathToUtf8(resolved_path, root)}, {"encoding", encoding}, {"content", encoding == "base64" ? Base64Encode(content) : content}, {"bytes", content.size()}};
     }
     if (cmd == "write") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        const auto root = std::filesystem::path(state->project_root);
+        const auto root = PathFromUtf8(state->project_root);
         std::filesystem::path resolved_path;
         std::string error;
         if (!ResolveProjectPath(root, request.value("path", ""), &resolved_path, &error)) return ErrorResponse("invalid_args", error);
@@ -2262,11 +2817,11 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         std::string content = request["content"].get<std::string>();
         if (encoding == "base64" && !Base64Decode(content, &content, &error)) return ErrorResponse("invalid_args", error);
         if (!WriteFileBytes(resolved_path, content, &error)) return ErrorResponse("file_write_failed", error);
-        return nlohmann::json{{"ok", true}, {"path", std::filesystem::relative(resolved_path, root).generic_string()}, {"bytes", content.size()}, {"encoding", encoding}};
+        return nlohmann::json{{"ok", true}, {"path", RelativePathToUtf8(resolved_path, root)}, {"bytes", content.size()}, {"encoding", encoding}};
     }
     if (cmd == "build") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        const auto root = std::filesystem::path(state->project_root);
+        const auto root = PathFromUtf8(state->project_root);
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         std::string error;
         state->project = LoadProjectConfig(root, &error);
@@ -2330,14 +2885,14 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         lock.unlock();
 
         if (custom_snapshot) {
-            nlohmann::json runtime_cmd{{"type", "snapshot"}, {"snapshot_file", snapshot_path.string()}};
+            nlohmann::json runtime_cmd{{"type", "snapshot"}, {"snapshot_file", PathToUtf8(snapshot_path)}};
             if (request.contains("max_nodes")) runtime_cmd["max_nodes"] = request["max_nodes"];
             if (request.contains("max_depth")) runtime_cmd["max_depth"] = request["max_depth"];
             if (request.contains("root_selector")) runtime_cmd["root_selector"] = request["root_selector"];
             if (include_screenshot) {
                 runtime_cmd["include_screenshot"] = true;
                 runtime_cmd["inline_screenshot"] = inline_screenshot;
-                runtime_cmd["screenshot_file"] = screenshot_path.string();
+                runtime_cmd["screenshot_file"] = PathToUtf8(screenshot_path);
             }
             std::string error;
             nlohmann::json resp;
@@ -2400,7 +2955,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         std::string error;
         nlohmann::json resp;
         if (!RequestRuntimeEval(command_state, runtime_pid, code, &resp, &error)) return RuntimeCommandErrorResponse("eval_failed", error);
-        resp["source"] = GetRuntimeResponsePath(command_state).string();
+        resp["source"] = PathToUtf8(GetRuntimeResponsePath(command_state));
         return resp;
     }
     if (cmd == "query_element" || cmd == "inspect" || cmd == "click" || cmd == "input_text" || cmd == "scroll" || cmd == "highlight") {
@@ -2436,14 +2991,14 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         if (!RequestRuntimeUiCommand(command_state, runtime_pid, std::move(runtime_cmd), &resp, &error)) {
             return RuntimeCommandErrorResponse(cmd + "_failed", error);
         }
-        resp["source"] = GetRuntimeResponsePath(command_state).string();
+        resp["source"] = PathToUtf8(GetRuntimeResponsePath(command_state));
         return resp;
     }
     if (cmd == "reload") {
 #ifdef _WIN32
         std::string error;
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        const auto root = std::filesystem::path(state->project_root);
+        const auto root = PathFromUtf8(state->project_root);
         DaemonState command_state = *state;
         lock.unlock();
         auto reload = ReloadRuntimeBundleOrRestart(root, &command_state);
@@ -2477,7 +3032,7 @@ int RunDaemonServer(const std::vector<std::string>& args) {
 
     std::filesystem::path project_root;
     for (size_t i = 0; i + 1 < args.size(); ++i) {
-        if (args[i] == "--project") project_root = std::filesystem::absolute(args[i + 1]).lexically_normal();
+        if (args[i] == "--project") project_root = std::filesystem::absolute(PathFromUtf8(args[i + 1])).lexically_normal();
         if (args[i] == "--project-id") state.project_id = args[i + 1];
     }
     if (!project_root.empty()) {
@@ -2485,7 +3040,7 @@ int RunDaemonServer(const std::vector<std::string>& args) {
         if (!EnsureProjectIdentity(project_root, &identity, &error)) return 1;
         state.project_id = identity.project_id;
         state.runtime_id = identity.runtime_id;
-        state.project_root = project_root.string();
+        state.project_root = PathToUtf8(project_root);
         state.project = LoadProjectConfig(project_root, &error);
     }
     if (state.runtime_id.empty()) state.runtime_id = state.project_id;
@@ -2494,7 +3049,8 @@ int RunDaemonServer(const std::vector<std::string>& args) {
     const auto pipe_name = GetDaemonPipeName(state.project_id);
     std::atomic<bool> should_exit{false};
     while (!should_exit.load()) {
-        HANDLE pipe = CreateNamedPipeA(pipe_name.c_str(),
+        const auto wide_pipe_name = Utf8ToWide(pipe_name);
+        HANDLE pipe = CreateNamedPipeW(wide_pipe_name.c_str(),
                                        PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
                                        PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
                                        PIPE_UNLIMITED_INSTANCES,
@@ -2504,7 +3060,7 @@ int RunDaemonServer(const std::vector<std::string>& args) {
                                        nullptr);
         if (pipe == INVALID_HANDLE_VALUE) return 1;
         OVERLAPPED connect_overlapped{};
-        connect_overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+        connect_overlapped.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!connect_overlapped.hEvent) { CloseHandle(pipe); return 1; }
         BOOL connected = ConnectNamedPipe(pipe, &connect_overlapped);
         DWORD connect_error = connected ? ERROR_SUCCESS : GetLastError();

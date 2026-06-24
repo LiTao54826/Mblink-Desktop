@@ -2,6 +2,7 @@
 
 set(ELEMENTS_SOURCES
     html_anchor_element.cpp
+    html_audio_element.cpp
     html_button_element.cpp
     html_canvas_element.cpp
     html_div_element.cpp
@@ -30,6 +31,7 @@ set(ELEMENTS_SOURCES
 
 set(ELEMENTS_HEADERS
     html_anchor_element.h
+    html_audio_element.h
     html_button_element.h
     html_canvas_element.h
     html_div_element.h

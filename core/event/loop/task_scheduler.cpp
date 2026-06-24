@@ -198,29 +198,11 @@ bool TaskScheduler::HasReadyTasks() const {
         return true;
     }
 
-    if (!tasks_.empty()) {
-        const Uint64 current_time = GetCurrentTime();
-        if (tasks_.top().execute_time <= current_time) {
-            return true;
-        }
-    }
-
-    return false;
+    return HasReadyTimerTasks();
 }
 
 int64_t TaskScheduler::MillisecondsUntilNextTask() const {
-    if (tasks_.empty()) {
-        return -1;
-    }
-
-    const Uint64 current_time = GetCurrentTime();
-    const Uint64 execute_time = tasks_.top().execute_time;
-    if (execute_time <= current_time) {
-        return 0;
-    }
-
-    const Uint64 delta_ticks = execute_time - current_time;
-    return static_cast<int64_t>((delta_ticks * 1000) / performance_frequency_);
+    return MillisecondsUntilNextTimer();
 }
 
 bool TaskScheduler::HasPendingAnimationFrames() const {
@@ -229,10 +211,31 @@ bool TaskScheduler::HasPendingAnimationFrames() const {
             return true;
         }
     }
-
     return false;
 }
 
+bool TaskScheduler::HasReadyTimerTasks() const {
+    if (tasks_.empty()) {
+        return false;
+    }
+
+    return tasks_.top().execute_time <= GetCurrentTime();
+}
+
+int64_t TaskScheduler::MillisecondsUntilNextTimer() const {
+    if (tasks_.empty()) {
+        return -1;
+    }
+
+    const Uint64 now = GetCurrentTime();
+    const Uint64 execute_time = tasks_.top().execute_time;
+    if (execute_time <= now) {
+        return 0;
+    }
+
+    const Uint64 delta_ticks = execute_time - now;
+    return static_cast<int64_t>((delta_ticks * 1000) / performance_frequency_);
+}
 void TaskScheduler::ClearAllTasks() {
     // 清空优先队列
     while (!tasks_.empty()) {

@@ -19,7 +19,7 @@ func main() {
 	must(os.WriteFile(filepath.Join(inputDir, "message.txt"), []byte("hello from resource package\n"), 0o644))
 
 	must(mbink.CompileResources(inputDir, packageFile, ""))
-	file, err := mbink.LoadResourceFile(packageFile, "message.txt", "")
+	file, err := mbink.LoadResourceFile(packageFile, "input/message.txt", "")
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -14,6 +14,8 @@
 
 namespace mbink {
 
+class BackgroundTaskRunner;
+
 /**
  * @brief HTTP 响应结构
  */
@@ -54,7 +56,7 @@ public:
     /**
      * @brief 构造函数
      */
-    HttpClient();
+    explicit HttpClient(std::shared_ptr<BackgroundTaskRunner> background_runner = nullptr);
     
     /**
      * @brief 析构函数
@@ -138,13 +140,16 @@ private:
      * @param path 输出路径
      * @return 是否解析成功
      */
-    bool ParseUrl(const std::string& url, std::string& scheme, 
-                  std::string& host, int& port, std::string& path);
+    static bool ParseUrl(const std::string& url, std::string& scheme,
+                         std::string& host, int& port, std::string& path);
     
     /**
      * @brief 执行 HTTP 请求（平台相关实现）
      */
-    HttpResponse DoRequest(const std::string& url, const HttpRequestOptions& options);
+    static HttpResponse DoRequest(const std::string& url, const HttpRequestOptions& options);
+    static HttpResponse MakeShutdownResponse(const std::string& message);
+
+    std::shared_ptr<BackgroundTaskRunner> background_runner_;
 };
 
 } // namespace mbink

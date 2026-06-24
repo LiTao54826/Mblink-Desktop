@@ -1815,10 +1815,11 @@ static void CalculateFlexItem(
     Layout layout;
     layout.order = item.order;
 
-    // 🔧 FIX: 智能选择尺寸来源
-    // 如果 target_size 看起来不合理（接近0），但 layout_output.size 有效且更大，
-    // 则使用 layout_output.size（这处理了 shrink-to-fit 测量失败的情况）
-    // 否则使用 target_size（保留 min/max 约束）
+    // The flex algorithm measures children before final layout, but nested
+    // auto-sized flex/grid/block containers can produce a larger cross size
+    // when laid out with their resolved main size. Preserve the flex-resolved
+    // main size, but let a larger final cross size participate in this
+    // container's content size so later siblings do not overlap it.
     Size<float> final_size = item.target_size;
     bool target_too_small = item.target_size.Main(constants.dir) < 1.0f;
     bool layout_output_valid = apply_layout_results &&
@@ -1833,6 +1834,14 @@ static void CalculateFlexItem(
         if (debug_flex) {
         }
     } else if (debug_flex) {
+    }
+
+    if (apply_layout_results && item.align_self != AlignSelf::Stretch) {
+        const float layout_cross = layout_output.size.Cross(constants.dir);
+        const float target_cross = final_size.Cross(constants.dir);
+        if (layout_cross > target_cross) {
+            final_size.SetCross(constants.dir, layout_cross);
+        }
     }
 
     if (apply_layout_results) {

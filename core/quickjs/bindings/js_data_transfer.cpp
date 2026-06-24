@@ -12,6 +12,7 @@
  */
 
 #include "js_data_transfer.h"
+#include "js_file_list.h"
 #include "core/event/types/data_transfer.h"
 #include <iostream>
 
@@ -135,6 +136,16 @@ static JSValue JSDataTransfer_get_types(JSContext* ctx, JSValueConst this_val, i
     return arr;
 }
 
+// files (getter)
+static JSValue JSDataTransfer_get_files(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSDataTransferData*>(JS_GetOpaque(this_val, js_data_transfer_class_id));
+    if (!data || !data->data_transfer) {
+        return JS_NULL;
+    }
+
+    return WrapFileList(ctx, data->data_transfer->GetFiles());
+}
+
 
 // effectAllowed (getter)
 static JSValue JSDataTransfer_get_effectAllowed(JSContext* ctx, JSValueConst this_val, int magic) {
@@ -205,6 +216,7 @@ static const JSCFunctionListEntry js_data_transfer_proto_funcs[] = {
     JS_CFUNC_DEF("getData", 1, JSDataTransfer_getData),
     JS_CFUNC_DEF("clearData", 0, JSDataTransfer_clearData),
     JS_CGETSET_MAGIC_DEF("types", JSDataTransfer_get_types, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("files", JSDataTransfer_get_files, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("effectAllowed", JSDataTransfer_get_effectAllowed, JSDataTransfer_set_effectAllowed, 0),
     JS_CGETSET_MAGIC_DEF("dropEffect", JSDataTransfer_get_dropEffect, JSDataTransfer_set_dropEffect, 0),
 };

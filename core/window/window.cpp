@@ -48,6 +48,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <cstdlib>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -475,6 +476,94 @@ void AddRetainedDirtyRectForNode(Window* window, const std::shared_ptr<Node>& no
     AddRetainedDirtyRectForRenderObject(window, render_obj.get());
 }
 
+bool AddStructuralDirtyRectForRenderObject(Window* window, RenderObject* render_obj) {
+    if (!window || !render_obj) {
+        return false;
+    }
+
+    bool added = false;
+    auto add_bounds = [&](SkRect bounds) {
+        if (bounds.isEmpty()) {
+            return;
+        }
+        bounds.outset(8.0f, 8.0f);
+        window->AddDirtyRect(bounds);
+        added = true;
+    };
+
+    SkRect current_bounds = render_obj->GetViewportBoundingRect();
+    if (current_bounds.isEmpty()) {
+        current_bounds = render_obj->GetBoundingRect();
+    }
+    add_bounds(current_bounds);
+
+    if (render_obj->HasPreviousPaintBounds()) {
+        SkRect previous_bounds = render_obj->GetPreviousViewportPaintBounds();
+        if (previous_bounds.isEmpty()) {
+            previous_bounds = render_obj->GetPreviousPaintBounds();
+        }
+        add_bounds(previous_bounds);
+    }
+
+    return added;
+}
+
+bool AddStructuralDirtyRectForNode(Window* window, const std::shared_ptr<Node>& node) {
+    if (!window || !node) {
+        return false;
+    }
+
+    auto render_obj = node->GetRenderObject();
+    if (!render_obj && node->GetNodeType() == NodeType::TEXT_NODE) {
+        if (auto parent = node->GetParentNode()) {
+            render_obj = parent->GetRenderObject();
+        }
+    }
+
+    return AddStructuralDirtyRectForRenderObject(window, render_obj.get());
+}
+
+bool AddStructuralDirtyRectsForPendingChanges(Window* window, const DirtyNodeTracker& tracker) {
+    if (!window) {
+        return false;
+    }
+
+    bool added_any = false;
+    bool missing_bounds = false;
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        bool added_for_change = false;
+        auto add_candidate = [&](const std::shared_ptr<Node>& node) {
+            added_for_change =
+                AddStructuralDirtyRectForNode(window, node) || added_for_change;
+        };
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Added:
+                add_candidate(change.parent);
+                add_candidate(change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Removed:
+                add_candidate(change.node);
+                add_candidate(change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Moved:
+                add_candidate(change.node);
+                add_candidate(change.old_parent);
+                add_candidate(change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Replaced:
+                add_candidate(change.old_node);
+                add_candidate(change.new_node);
+                add_candidate(change.parent);
+                break;
+        }
+
+        added_any = added_any || added_for_change;
+        missing_bounds = missing_bounds || !added_for_change;
+    }
+
+    return added_any && !missing_bounds;
+}
+
 void AddRetainedDirtyRectsForPendingChanges(Window* window, const DirtyNodeTracker& tracker) {
     if (!window) {
         return;
@@ -530,6 +619,145 @@ void ClearDomDirtyTree(Node* node) {
 
     for (const auto& child : node->GetChildNodes()) {
         ClearDomDirtyTree(child.get());
+    }
+}
+
+void ClearDomDirtyNode(Node* node) {
+    if (!node) {
+        return;
+    }
+
+    node->ClearDirty();
+    node->ClearNeedsStyleRecalc();
+    node->ClearNeedsLayout();
+}
+
+struct DirtyDomClearScope {
+    std::vector<std::shared_ptr<Node>> ancestor_nodes;
+    std::vector<std::shared_ptr<Node>> subtree_roots;
+    std::unordered_set<Node*> ancestor_seen;
+    std::unordered_set<Node*> subtree_seen;
+    Node* boundary_root = nullptr;
+};
+
+void AddDirtyDomAncestorPath(DirtyDomClearScope& scope,
+                             const std::shared_ptr<Node>& node) {
+    std::vector<std::shared_ptr<Node>> path;
+    auto current = node;
+    while (current) {
+        path.push_back(current);
+        if (!scope.boundary_root || current.get() == scope.boundary_root) {
+            for (const auto& path_node : path) {
+                if (scope.ancestor_seen.insert(path_node.get()).second) {
+                    scope.ancestor_nodes.push_back(path_node);
+                }
+            }
+            return;
+        }
+        current = current->GetParentNode();
+    }
+}
+
+void AddDirtyDomSubtreeRoot(DirtyDomClearScope& scope,
+                            const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return;
+    }
+
+    if (scope.boundary_root &&
+        node.get() != scope.boundary_root &&
+        !scope.boundary_root->Contains(node)) {
+        return;
+    }
+
+    if (scope.subtree_seen.insert(node.get()).second) {
+        scope.subtree_roots.push_back(node);
+    }
+    AddDirtyDomAncestorPath(scope, node);
+}
+
+bool IsDescendantOfSubtreeRoot(Node* node,
+                               const std::unordered_set<Node*>& roots) {
+    if (!node || roots.empty()) {
+        return false;
+    }
+
+    auto parent = node->GetParentNode();
+    while (parent) {
+        if (roots.find(parent.get()) != roots.end()) {
+            return true;
+        }
+        parent = parent->GetParentNode();
+    }
+    return false;
+}
+
+void CollectStructuralDirtyAncestorPaths(const DirtyNodeTracker& tracker,
+                                         DirtyDomClearScope& scope) {
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Added:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Removed:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Moved:
+                AddDirtyDomAncestorPath(scope, change.old_parent);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Replaced:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.new_node);
+                break;
+        }
+    }
+}
+
+void CollectOptimizedDirtyDomClearScope(const DirtyNodeTracker& tracker,
+                                        DirtyDomClearScope& scope) {
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Added:
+                AddDirtyDomSubtreeRoot(scope, change.node);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Removed:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Moved:
+                AddDirtyDomAncestorPath(scope, change.old_parent);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Replaced:
+                AddDirtyDomSubtreeRoot(scope, change.new_node);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+        }
+    }
+
+    for (const auto& change : tracker.GetStyleChanges()) {
+        AddDirtyDomAncestorPath(scope, change.element.lock());
+    }
+    for (const auto& change : tracker.GetTextChanges()) {
+        AddDirtyDomAncestorPath(scope, change.node.lock());
+    }
+}
+
+void ClearDirtyDomScope(const DirtyDomClearScope& scope) {
+    for (const auto& root : scope.subtree_roots) {
+        if (!root ||
+            IsDescendantOfSubtreeRoot(root.get(), scope.subtree_seen)) {
+            continue;
+        }
+        ClearDomDirtyTree(root.get());
+    }
+
+    for (const auto& node : scope.ancestor_nodes) {
+        ClearDomDirtyNode(node.get());
     }
 }
 
@@ -1149,20 +1377,17 @@ void Window::SwapBuffers() {
             // 使用局部更新优化 CPU 模式性能
             if (has_dirty_bounds_ && !last_dirty_bounds_.isEmpty()) {
                 // 有脏区域边界：只更新脏区域
-                int dirty_x = static_cast<int>(last_dirty_bounds_.left());
-                int dirty_y = static_cast<int>(last_dirty_bounds_.top());
-                int dirty_width = static_cast<int>(last_dirty_bounds_.width());
-                int dirty_height = static_cast<int>(last_dirty_bounds_.height());
 
                 // 边界检查
                 int surface_width = static_cast<int>(pixmap.width());
                 int surface_height = static_cast<int>(pixmap.height());
-                if (dirty_x < 0) dirty_x = 0;
-                if (dirty_y < 0) dirty_y = 0;
-                if (dirty_x + dirty_width > surface_width) dirty_width = surface_width - dirty_x;
-                if (dirty_y + dirty_height > surface_height) dirty_height = surface_height - dirty_y;
+                SkIRect dirty_rect = ClampPhysicalRect(last_dirty_bounds_, surface_width, surface_height);
+                int dirty_x = dirty_rect.left();
+                int dirty_y = dirty_rect.top();
+                int dirty_width = dirty_rect.width();
+                int dirty_height = dirty_rect.height();
 
-                if (dirty_width > 0 && dirty_height > 0) {
+                if (!dirty_rect.isEmpty()) {
                     if (debug_anim_frame && (swap_frame <= 120 || (swap_frame % 60 == 0))) {
                         std::cout << "[ANIM_FRAME_SWAP] frame=" << swap_frame
                                   << " backend=CPU"
@@ -1858,6 +2083,9 @@ void Window::Render() {
     double size_check_ms = 0.0;
     double ensure_tree_ms = 0.0;
     double dirty_sync_ms = 0.0;
+    double dirty_rect_collect_ms = 0.0;
+    double render_tree_sync_ms = 0.0;
+    double dom_dirty_clear_ms = 0.0;
     double style_dirty_scan_ms = 0.0;
     double layout_ms = 0.0;
     double animation_update_ms = 0.0;
@@ -2048,6 +2276,8 @@ void Window::Render() {
     bool needs_layout_update = false;
     bool had_pending_dom_changes = false;
     bool had_structural_dom_changes = false;
+    bool structural_dirty_rects_bounded = false;
+    bool can_use_structural_dirty_rects = false;
     bool needs_dom_raster_update = false;
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
@@ -2055,16 +2285,44 @@ void Window::Render() {
         const bool has_pending_changes = tracker.HasPendingChanges();
         had_pending_dom_changes = has_pending_changes;
         if (has_pending_changes) {
+            DirtyDomClearScope dirty_clear_scope;
+            auto body = document_->GetBody();
+            dirty_clear_scope.boundary_root = body.get();
+            CollectStructuralDirtyAncestorPaths(tracker, dirty_clear_scope);
+            tracker.Optimize();
+            CollectOptimizedDirtyDomClearScope(tracker, dirty_clear_scope);
+
             had_structural_dom_changes = tracker.GetStructuralChangeCount() > 0;
-            if (!had_structural_dom_changes) {
-                AddRetainedDirtyRectsForPendingChanges(this, tracker);
+            double dirty_phase_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+            if (tracker.HasPendingChanges()) {
+                if (!had_structural_dom_changes) {
+                    AddRetainedDirtyRectsForPendingChanges(this, tracker);
+                } else {
+                    structural_dirty_rects_bounded =
+                        AddStructuralDirtyRectsForPendingChanges(this, tracker);
+                }
+            }
+            if (baseline_stats_enabled) {
+                dirty_rect_collect_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+                dirty_phase_start_ms = GetBaselineTimeMs();
             }
             // 调用 RenderTreeSynchronizer 来同步变化
-            bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
-            ClearDomDirtyTree(document_->GetBody().get());
+            bool synced = tracker.HasPendingChanges() &&
+                render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            if (baseline_stats_enabled) {
+                render_tree_sync_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+                dirty_phase_start_ms = GetBaselineTimeMs();
+            }
+            ClearDirtyDomScope(dirty_clear_scope);
+            if (baseline_stats_enabled) {
+                dom_dirty_clear_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+            }
             needs_dom_raster_update = true;
             if (synced) {
                 needs_layout_update = true;
+            }
+            if (!had_structural_dom_changes && render_pipeline_) {
+                render_pipeline_->MarkNeedsPaint();
             }
         }
     }
@@ -2118,6 +2376,24 @@ void Window::Render() {
             sync_app_height = sync_bounds.height;
         }
 
+        const SkRect structural_dirty_bounds =
+            UnionDirtyRects(dirty_rects_, sync_app_width, sync_app_height);
+        const float structural_viewport_area = sync_app_width * sync_app_height;
+        const float structural_dirty_total_area =
+            TotalDirtyRectArea(dirty_rects_, sync_app_width, sync_app_height);
+        const bool structural_dirty_rects_too_broad =
+            structural_dirty_rects_bounded &&
+            sync_app_width > 0.0f &&
+            sync_app_height > 0.0f &&
+            !structural_dirty_bounds.isEmpty() &&
+            (structural_dirty_bounds.width() * structural_dirty_bounds.height()) >
+                (structural_viewport_area * 0.85f) &&
+            structural_dirty_total_area > (structural_viewport_area * 0.50f);
+        can_use_structural_dirty_rects =
+            had_structural_dom_changes &&
+            structural_dirty_rects_bounded &&
+            !structural_dirty_rects_too_broad;
+
         if (needs_layout_update) {
             // DOM 结构变化，需要重建布局树
             // force_rebuild=true 确保即使缓存有效也会重建
@@ -2127,7 +2403,7 @@ void Window::Render() {
             layout_sync_valid_ = true;
 
             // 关键修复：结构变化后强制层树重建，避免父层残留旧位图导致“重影/双实例”
-            if (had_structural_dom_changes && render_pipeline_) {
+            if (had_structural_dom_changes && !can_use_structural_dirty_rects && render_pipeline_) {
                 render_pipeline_->InvalidateLayerTree();
                 render_pipeline_->ForceFullUpdate();
             }
@@ -2146,7 +2422,7 @@ void Window::Render() {
             layout_sync_valid_ = true;
         }
         if ((needs_layout_update || needs_dom_raster_update) && render_pipeline_) {
-            if (had_structural_dom_changes) {
+            if (had_structural_dom_changes && !can_use_structural_dirty_rects) {
                 render_pipeline_->ForceRasterize();
             } else {
                 render_pipeline_->MarkNeedsPaint();
@@ -2159,7 +2435,7 @@ void Window::Render() {
     }
 
     // 关键：将渲染树传递给统一渲染管线
-    if (!had_structural_dom_changes && cached_render_tree_) {
+    if ((!had_structural_dom_changes || structural_dirty_rects_bounded) && cached_render_tree_) {
         AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get(), app_width, app_height);
     }
 
@@ -2226,15 +2502,19 @@ void Window::Render() {
             HasExplicitDirtyRectsForUnknownReason(last_repaint_reason_, has_dirty_bounds);
         const bool retained_dirty_clip_allowed =
             retained_dirty_reason_allowed &&
-            (!had_pending_dom_changes || !had_structural_dom_changes) &&
+            (!had_pending_dom_changes ||
+             !had_structural_dom_changes ||
+             can_use_structural_dirty_rects) &&
             !render_tree_rebuild_required &&
-            !needs_layout_update &&
+            (!needs_layout_update || can_use_structural_dirty_rects) &&
             !dirty_union_too_broad;
         const int retained_width_px = std::max(0, static_cast<int>(std::lround(app_width * dpi_scale)));
         const int retained_height_px = std::max(0, static_cast<int>(std::lround(app_height * dpi_scale)));
         const RetainedDirtyBounds retained_dirty_bounds =
             ComputeRetainedDirtyBounds(
                 dirty_bounds, dpi_scale, app_x, app_y, retained_width_px, retained_height_px);
+        const SkRect dirty_bounds_px = SkRect::Make(retained_dirty_bounds.physical);
+        const SkRect present_dirty_bounds_px = retained_dirty_bounds.present_physical;
         const bool pending_scroll_retained_present_blocking_fallback =
             render_pipeline_ && render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback();
         const bool previous_scroll_retained_present_blocking_fallback =
@@ -2325,9 +2605,11 @@ void Window::Render() {
             has_dirty_bounds &&
             !retained_dirty_bounds.physical.isEmpty() &&
             retained_dirty_reason_allowed &&
-            (!had_pending_dom_changes || !had_structural_dom_changes) &&
+            (!had_pending_dom_changes ||
+             !had_structural_dom_changes ||
+             can_use_structural_dirty_rects) &&
             !render_tree_rebuild_required &&
-            !needs_layout_update &&
+            (!needs_layout_update || can_use_structural_dirty_rects) &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
         const std::vector<SkRect> retained_pipeline_dirty_rects =
@@ -2342,13 +2624,11 @@ void Window::Render() {
         } else {
             if (can_update_retained_dirty_region) {
                 main_canvas->save();
-                main_canvas->clipRect(SkRect::Make(retained_dirty_bounds.physical),
-                                      SkClipOp::kIntersect,
-                                      false);
+                main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, false);
                 SkPaint clear_paint;
                 clear_paint.setBlendMode(SkBlendMode::kSrc);
                 clear_paint.setColor(clear_color);
-                main_canvas->drawRect(SkRect::Make(retained_dirty_bounds.physical), clear_paint);
+                main_canvas->drawRect(dirty_bounds_px, clear_paint);
             } else {
                 main_canvas->clear(clear_color);
             }
@@ -2360,7 +2640,8 @@ void Window::Render() {
             main_canvas->save();
             main_canvas->scale(dpi_scale, dpi_scale);
             if (can_update_retained_dirty_region) {
-                main_canvas->clipRect(retained_dirty_bounds.logical, SkClipOp::kIntersect, false);
+                const SkRect dirty_bounds = retained_dirty_bounds.logical;
+                main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, false);
             }
 
             // 如果 DevTools 打开，裁剪到主应用区域
@@ -2414,7 +2695,7 @@ void Window::Render() {
                 actual_backend_ == RenderBackend::CPU &&
                 can_update_retained_dirty_region &&
                 has_dirty_bounds &&
-                !retained_dirty_bounds.physical.isEmpty() &&
+                !dirty_bounds_px.isEmpty() &&
                 !devtools_open &&
                 !SelectDropdownManager::Instance().IsDropdownOpen();
 
@@ -2423,8 +2704,8 @@ void Window::Render() {
             }
             if (sk_sp<SkImage> retained_image = retained_main_surface_->makeImageSnapshot()) {
                 if (can_partial_retained_copy) {
-                    SkIRect src = retained_dirty_bounds.physical;
-                    src.intersect(SkIRect::MakeWH(retained_image->width(), retained_image->height()));
+                    SkIRect src = ClampPhysicalRect(
+                        dirty_bounds_px, retained_image->width(), retained_image->height());
                     if (!src.isEmpty()) {
                         SkRect dst = SkRect::MakeXYWH(
                             app_x * dpi_scale + src.left(),
@@ -2433,7 +2714,7 @@ void Window::Render() {
                             static_cast<float>(src.height()));
                         canvas->drawImageRect(retained_image, SkRect::Make(src), dst,
                                               SkSamplingOptions(), nullptr,
-                                              SkCanvas::kFast_SrcRectConstraint);
+                                              SkCanvas::kStrict_SrcRectConstraint);
                         partial_retained_copy_used = true;
                     }
                 } else {
@@ -2458,7 +2739,7 @@ void Window::Render() {
         if (retained_present_used &&
             actual_backend_ == RenderBackend::CPU &&
             partial_retained_copy_used) {
-            last_dirty_bounds_ = retained_dirty_bounds.present_physical;
+            last_dirty_bounds_ = present_dirty_bounds_px;
             has_dirty_bounds_ = true;
         } else {
             last_dirty_bounds_ = SkRect::MakeEmpty();
@@ -2509,6 +2790,9 @@ void Window::Render() {
                       << " size_check_ms=" << size_check_ms
                       << " ensure_tree_ms=" << ensure_tree_ms
                       << " dirty_sync_ms=" << dirty_sync_ms
+                      << " dirty_rect_collect_ms=" << dirty_rect_collect_ms
+                      << " render_tree_sync_ms=" << render_tree_sync_ms
+                      << " dom_dirty_clear_ms=" << dom_dirty_clear_ms
                       << " style_dirty_scan_ms=" << style_dirty_scan_ms
                       << " layout_ms=" << layout_ms
                       << " animation_update_ms=" << animation_update_ms
@@ -3206,6 +3490,9 @@ void Window::ForceLayoutSync() {
     if (render_tree_rebuild_required) {
         RenderTreeSynchronizer::CleanupDetachedDOMBindings(document_->GetDirtyTracker());
         document_->GetDirtyTracker().Clear();
+        if (auto body = document_->GetBody()) {
+            ClearDomDirtyTree(body.get());
+        }
         layout_sync_valid_ = true;
         return;
     }
@@ -3234,7 +3521,18 @@ void Window::ForceLayoutSync() {
         bool has_pending = tracker.HasPendingChanges();
 
         if (has_pending) {
-            needs_layout_tree_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            DirtyDomClearScope dirty_clear_scope;
+            auto body = document_->GetBody();
+            dirty_clear_scope.boundary_root = body.get();
+            CollectStructuralDirtyAncestorPaths(tracker, dirty_clear_scope);
+            tracker.Optimize();
+            CollectOptimizedDirtyDomClearScope(tracker, dirty_clear_scope);
+
+            if (tracker.HasPendingChanges()) {
+                needs_layout_tree_rebuild =
+                    render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            }
+            ClearDirtyDomScope(dirty_clear_scope);
         }
     }
 

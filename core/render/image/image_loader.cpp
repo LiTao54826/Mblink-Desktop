@@ -10,10 +10,14 @@
 #include "include/core/SkPixmap.h"
 #include "include/codec/SkCodec.h"
 #include "core/network/http_client.h"
-#include <thread>
+#include "core/utils/async_resource_context.h"
+#include "core/utils/background_task_runner.h"
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+#include <deque>
+#include <mutex>
+#include <utility>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -30,6 +34,148 @@
 #endif
 
 namespace mbink {
+namespace {
+
+struct ImageAsyncContextEntry {
+    uint64_t owner_token = 0;
+    std::weak_ptr<BackgroundTaskRunner> runner;
+    std::weak_ptr<AsyncResourceContext> resource_context;
+};
+
+struct ImageAsyncContext {
+    std::shared_ptr<BackgroundTaskRunner> runner;
+    std::shared_ptr<AsyncResourceContext> resource_context;
+};
+
+std::mutex g_image_async_context_mutex;
+std::deque<ImageAsyncContextEntry> g_image_async_contexts;
+
+std::shared_ptr<BackgroundTaskRunner> FallbackImageRunner() {
+    static auto runner = std::make_shared<BackgroundTaskRunner>();
+    return runner;
+}
+
+ImageAsyncContext SelectImageAsyncContext() {
+    std::lock_guard<std::mutex> lock(g_image_async_context_mutex);
+
+    for (auto it = g_image_async_contexts.begin(); it != g_image_async_contexts.end();) {
+        if (it->runner.expired() || it->resource_context.expired()) {
+            it = g_image_async_contexts.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = g_image_async_contexts.rbegin(); it != g_image_async_contexts.rend(); ++it) {
+        auto runner = it->runner.lock();
+        auto resource_context = it->resource_context.lock();
+        if (runner && resource_context && resource_context->IsAlive()) {
+            return {std::move(runner), std::move(resource_context)};
+        }
+    }
+
+    return {};
+}
+
+template <typename Task, typename Drop>
+bool PostImageAsyncTask(const ImageAsyncContext& context, Task&& task, Drop&& on_drop) {
+    auto runner = context.runner ? context.runner : FallbackImageRunner();
+    if (!runner || runner->IsShuttingDown()) {
+        on_drop();
+        return false;
+    }
+    if (!runner->Post(std::forward<Task>(task), std::forward<Drop>(on_drop), "ImageLoader async")) {
+        on_drop();
+        return false;
+    }
+    return true;
+}
+
+bool IsAbsoluteImagePath(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+#ifdef _WIN32
+    return (path.size() >= 2 && path[1] == ':') ||
+           (path.size() >= 2 && path[0] == '\\' && path[1] == '\\');
+#else
+    return path[0] == '/';
+#endif
+}
+
+std::string ResolveImagePathWithBase(const std::string& path, const std::string& base_path) {
+    if (path.empty() ||
+        ImageLoader::IsNetworkUrl(path) ||
+        ImageLoader::IsDataUrl(path) ||
+        ImageLoader::IsExeIconUrl(path) ||
+        IsAbsoluteImagePath(path) ||
+        base_path.empty()) {
+        return path;
+    }
+
+    std::string base = base_path;
+    if (!base.empty() && base.back() != '/' && base.back() != '\\') {
+        base += '/';
+    }
+    return base + path;
+}
+
+sk_sp<SkImage> LoadFromFileWithSnapshot(const std::string& path,
+                                        const AsyncResourceContext::Snapshot& snapshot) {
+    if (ImageLoader::IsNetworkUrl(path) || ImageLoader::IsDataUrl(path)) {
+        return ImageLoader::LoadFromUrl(path);
+    }
+
+    if (snapshot.asset_provider) {
+        std::vector<uint8_t> asset_data;
+        if (snapshot.asset_provider(path, asset_data)) {
+            return ImageLoader::LoadFromMemory(asset_data.data(), asset_data.size());
+        }
+    }
+
+    const std::string resolved_path = ResolveImagePathWithBase(path, snapshot.base_path);
+    sk_sp<SkData> data = SkData::MakeFromFileName(resolved_path.c_str());
+    if (!data) {
+        return nullptr;
+    }
+    return SkImages::DeferredFromEncodedData(data);
+}
+
+ImageLoadResult LoadFromUrlWithSnapshot(const std::string& url,
+                                        const AsyncResourceContext::Snapshot& snapshot) {
+    ImageLoadResult result;
+    if (url.empty()) {
+        result.error = "Empty URL";
+        return result;
+    }
+
+    if (ImageLoader::IsExeIconUrl(url) || ImageLoader::IsNetworkUrl(url) || ImageLoader::IsDataUrl(url)) {
+        return ImageLoader::LoadFromUrlWithResult(url);
+    }
+
+    const std::string resolved_url = ResolveImagePathWithBase(url, snapshot.base_path);
+    sk_sp<SkImage> cached = ImageCache::GetInstance().Get(resolved_url);
+    if (cached) {
+        result.image = cached;
+        result.natural_width = cached->width();
+        result.natural_height = cached->height();
+        result.success = true;
+        return result;
+    }
+
+    result.image = LoadFromFileWithSnapshot(resolved_url, snapshot);
+    if (result.image) {
+        result.natural_width = result.image->width();
+        result.natural_height = result.image->height();
+        result.success = true;
+        ImageCache::GetInstance().Put(url, result.image);
+    } else {
+        result.error = "Failed to load image from file: " + resolved_url;
+    }
+    return result;
+}
+
+} // namespace
 
 // ========== 静态成员 ==========
 
@@ -50,6 +196,31 @@ void ImageLoader::SetBasePath(const std::string& path) {
 
 const std::string& ImageLoader::GetBasePath() {
     return base_path_;
+}
+
+void ImageLoader::RegisterAsyncContext(uint64_t owner_token,
+                                       std::weak_ptr<BackgroundTaskRunner> runner,
+                                       std::weak_ptr<AsyncResourceContext> resource_context) {
+    std::lock_guard<std::mutex> lock(g_image_async_context_mutex);
+    for (auto& entry : g_image_async_contexts) {
+        if (entry.owner_token == owner_token) {
+            entry.runner = std::move(runner);
+            entry.resource_context = std::move(resource_context);
+            return;
+        }
+    }
+    g_image_async_contexts.push_back({owner_token, std::move(runner), std::move(resource_context)});
+}
+
+void ImageLoader::UnregisterAsyncContext(uint64_t owner_token) {
+    std::lock_guard<std::mutex> lock(g_image_async_context_mutex);
+    for (auto it = g_image_async_contexts.begin(); it != g_image_async_contexts.end();) {
+        if (it->owner_token == owner_token) {
+            it = g_image_async_contexts.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 // ========== URL 辅助方法 ==========
@@ -454,10 +625,15 @@ void ImageLoader::LoadFromFileAsync(const std::string& path, ImageLoadCallback c
     }
     
     // 在新线程中加载图片
-    std::thread([path, callback]() {
-        sk_sp<SkImage> image = LoadFromFile(path);
+    auto context = SelectImageAsyncContext();
+    auto snapshot = context.resource_context ? context.resource_context->MakeSnapshot()
+                                             : AsyncResourceContext::Snapshot{base_path_, asset_provider_, true};
+    PostImageAsyncTask(context, [path, callback, snapshot]() {
+        sk_sp<SkImage> image = LoadFromFileWithSnapshot(path, snapshot);
         callback(image);
-    }).detach();
+    }, [callback]() {
+        callback(nullptr);
+    });
 }
 
 void ImageLoader::LoadFromMemoryAsync(const void* data, size_t size, ImageLoadCallback callback) {
@@ -470,10 +646,13 @@ void ImageLoader::LoadFromMemoryAsync(const void* data, size_t size, ImageLoadCa
                                 static_cast<const uint8_t*>(data) + size);
     
     // 在新线程中加载图片
-    std::thread([buffer = std::move(buffer), callback]() {
+    auto context = SelectImageAsyncContext();
+    PostImageAsyncTask(context, [buffer = std::move(buffer), callback]() {
         sk_sp<SkImage> image = LoadFromMemory(buffer.data(), buffer.size());
         callback(image);
-    }).detach();
+    }, [callback]() {
+        callback(nullptr);
+    });
 }
 
 void ImageLoader::LoadFromUrlAsync(const std::string& url, ImageLoadCallback callback) {
@@ -481,10 +660,15 @@ void ImageLoader::LoadFromUrlAsync(const std::string& url, ImageLoadCallback cal
         return;
     }
     
-    std::thread([url, callback]() {
-        sk_sp<SkImage> image = LoadFromUrl(url);
+    auto context = SelectImageAsyncContext();
+    auto snapshot = context.resource_context ? context.resource_context->MakeSnapshot()
+                                             : AsyncResourceContext::Snapshot{base_path_, asset_provider_, true};
+    PostImageAsyncTask(context, [url, callback, snapshot]() {
+        sk_sp<SkImage> image = LoadFromUrlWithSnapshot(url, snapshot).image;
         callback(image);
-    }).detach();
+    }, [callback]() {
+        callback(nullptr);
+    });
 }
 
 void ImageLoader::LoadFromUrlAsyncWithResult(const std::string& url, ImageLoadResultCallback callback) {
@@ -492,10 +676,17 @@ void ImageLoader::LoadFromUrlAsyncWithResult(const std::string& url, ImageLoadRe
         return;
     }
     
-    std::thread([url, callback]() {
-        ImageLoadResult result = LoadFromUrlWithResult(url);
+    auto context = SelectImageAsyncContext();
+    auto snapshot = context.resource_context ? context.resource_context->MakeSnapshot()
+                                             : AsyncResourceContext::Snapshot{base_path_, asset_provider_, true};
+    PostImageAsyncTask(context, [url, callback, snapshot]() {
+        ImageLoadResult result = LoadFromUrlWithSnapshot(url, snapshot);
         callback(result);
-    }).detach();
+    }, [callback]() {
+        ImageLoadResult result;
+        result.error = "Background task runner is not available";
+        callback(result);
+    });
 }
 
 // ========== 格式检测 ==========

@@ -142,6 +142,9 @@ public:
     bool HasReadyTasks() const;
     int64_t MillisecondsUntilNextTask() const;
     bool HasPendingAnimationFrames() const;
+
+    bool HasReadyTimerTasks() const;
+    int64_t MillisecondsUntilNextTimer() const;
     
     /**
      * @brief 清除所有任务

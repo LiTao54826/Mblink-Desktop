@@ -172,6 +172,71 @@ TEST_F(IncrementalUpdateSystemTest, DirtyTrackerOptimize) {
 
 // ========== InsertBefore 测试 ==========
 
+TEST_F(IncrementalUpdateSystemTest, DirtyTrackerPrunesChangesCoveredByAddedSubtree) {
+    auto doc = CreateDocument();
+    auto body = doc->GetBody();
+
+    doc->GetDirtyTracker().Clear();
+
+    auto parent = doc->CreateElement("section");
+    auto child = doc->CreateElement("span");
+    auto text = doc->CreateTextNode("before");
+
+    parent->AppendChild(child);
+    child->AppendChild(text);
+    body->AppendChild(parent);
+    child->SetClassName("mutated");
+    text->SetData("after");
+
+    ASSERT_GE(doc->GetDirtyTracker().GetStructuralChangeCount(), 3);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    doc->GetDirtyTracker().Optimize();
+
+    EXPECT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 1);
+    EXPECT_EQ(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+    EXPECT_EQ(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    const auto& changes = doc->GetDirtyTracker().GetStructuralChanges();
+    ASSERT_EQ(changes.size(), 1);
+    EXPECT_EQ(changes[0].type, DirtyNodeTracker::StructuralChangeType::Added);
+    EXPECT_EQ(changes[0].node, parent);
+}
+
+TEST_F(IncrementalUpdateSystemTest, DirtyTrackerPrunesChangesCoveredByRemovedSubtree) {
+    auto doc = CreateDocument();
+    auto body = doc->GetBody();
+
+    auto parent = doc->CreateElement("section");
+    auto child = doc->CreateElement("span");
+    auto text = doc->CreateTextNode("before");
+    child->AppendChild(text);
+    parent->AppendChild(child);
+    body->AppendChild(parent);
+
+    doc->GetDirtyTracker().Clear();
+
+    body->RemoveChild(parent);
+    child->SetClassName("mutated");
+    text->SetData("after");
+
+    ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 1);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    doc->GetDirtyTracker().Optimize();
+
+    EXPECT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 1);
+    EXPECT_EQ(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+    EXPECT_EQ(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    const auto& changes = doc->GetDirtyTracker().GetStructuralChanges();
+    ASSERT_EQ(changes.size(), 1);
+    EXPECT_EQ(changes[0].type, DirtyNodeTracker::StructuralChangeType::Removed);
+    EXPECT_EQ(changes[0].node, parent);
+}
+
 TEST_F(IncrementalUpdateSystemTest, DirtyTrackerRecordsInsertBefore) {
     auto doc = CreateDocument();
     auto body = doc->GetBody();
@@ -347,6 +412,230 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleAttributeRefreshesInherited
     EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
     EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().color, "#555");
     EXPECT_EQ(label->GetRenderObject()->GetComputedStyle().color, "#555");
+}
+
+TEST_F(IncrementalUpdateSystemTest, SynchronizerClearsDetachedRemovedSubtreeBeforeStyleRefresh) {
+    auto doc = CreateDocumentFromHTML(R"(
+        <html>
+        <head>
+            <style>
+                article { display: block; width: 320px; padding: 8px; }
+                span { display: inline; }
+                .retired { color: red; }
+            </style>
+        </head>
+        <body>
+            <div id="page">
+                <article id="old-card">
+                    <span id="old-inline">Removed inline content</span>
+                </article>
+                <article id="stable-card">Stable content</article>
+            </div>
+        </body>
+        </html>
+    )");
+
+    auto body = doc->GetBody();
+    auto page = doc->GetElementById("page");
+    auto old_card = doc->GetElementById("old-card");
+    auto old_inline = doc->GetElementById("old-inline");
+    ASSERT_NE(body, nullptr);
+    ASSERT_NE(page, nullptr);
+    ASSERT_NE(old_card, nullptr);
+    ASSERT_NE(old_inline, nullptr);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+
+    auto old_card_ro = old_card->GetRenderObject();
+    auto old_inline_ro = old_inline->GetRenderObject();
+    ASSERT_NE(old_card_ro, nullptr);
+    ASSERT_NE(old_inline_ro, nullptr);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+    ASSERT_TRUE(layout_engine->HasElement(old_card_ro.get()));
+    ASSERT_TRUE(layout_engine->HasElement(old_inline_ro.get()));
+
+    doc->GetDirtyTracker().Clear();
+    page->RemoveChild(old_card);
+    old_inline->SetClassName("retired");
+    ASSERT_GT(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    EXPECT_TRUE(requires_layout_tree_rebuild);
+    EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
+    EXPECT_EQ(old_card->GetRenderObject(), nullptr);
+    EXPECT_EQ(old_inline->GetRenderObject(), nullptr);
+    EXPECT_FALSE(layout_engine->HasElement(old_card_ro.get()));
+    EXPECT_FALSE(layout_engine->HasElement(old_inline_ro.get()));
+
+    layout_engine->BuildLayoutTree(render_root, true);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+}
+
+TEST_F(IncrementalUpdateSystemTest, OptionTextChangeInvalidatesOwningSelect) {
+    auto doc = CreateDocumentFromHTML(R"(
+        <html>
+        <body>
+            <select id="region-filter" style="width: 180px; height: 34px;">
+                <option id="all-option" value="all" selected>All regions</option>
+                <option value="na">NA</option>
+            </select>
+        </body>
+        </html>
+    )");
+
+    auto body = doc->GetBody();
+    auto select = doc->GetElementById("region-filter");
+    auto option = doc->GetElementById("all-option");
+    ASSERT_NE(body, nullptr);
+    ASSERT_NE(select, nullptr);
+    ASSERT_NE(option, nullptr);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    auto select_render = select->GetRenderObject();
+    ASSERT_NE(select_render, nullptr);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    select_render->ClearNeedsPaint();
+    select_render->ClearNeedsLayout();
+    EXPECT_FALSE(select_render->NeedsPaint());
+    EXPECT_FALSE(select_render->NeedsLayout());
+
+    doc->GetDirtyTracker().Clear();
+    option->SetTextContent("Everywhere");
+    ASSERT_GT(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    EXPECT_FALSE(requires_layout_tree_rebuild);
+    EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
+    EXPECT_TRUE(select_render->NeedsPaint());
+    EXPECT_TRUE(select_render->NeedsLayout());
+}
+
+TEST_F(IncrementalUpdateSystemTest, SynchronizerDisplayClassChangeReplacesRenderObjectType) {
+    auto doc = CreateDocumentFromHTML(R"(
+        <html>
+        <head>
+            <style>
+                table { width: 320px; table-layout: fixed; border-spacing: 0; }
+                th { position: sticky; top: 0; padding: 8px 10px; font-size: 12px; font-weight: 700; }
+                .sort-btn {
+                    width: 100%;
+                    padding: 0;
+                    border: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    font: inherit;
+                }
+            </style>
+        </head>
+        <body>
+            <table id="orders">
+                <thead>
+                    <tr>
+                        <th id="header-cell">
+                            <button id="sort-button" type="button">
+                                <span>Client</span>
+                                <span>-</span>
+                            </button>
+                        </th>
+                        <th>Owner</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Northstar Labs</td><td>Mina Chen</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto body = doc->GetBody();
+    auto button = doc->GetElementById("sort-button");
+    auto header_cell = doc->GetElementById("header-cell");
+    ASSERT_NE(body, nullptr);
+    ASSERT_NE(button, nullptr);
+    ASSERT_NE(header_cell, nullptr);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+
+    auto initial_button_ro = button->GetRenderObject();
+    ASSERT_NE(initial_button_ro, nullptr);
+    ASSERT_EQ(initial_button_ro->GetType(), RenderObjectType::INLINE_BLOCK);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    doc->GetDirtyTracker().Clear();
+    button->SetClassName("sort-btn");
+    ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    auto builder_ref = std::shared_ptr<RenderTreeBuilder>(
+        &builder, [](RenderTreeBuilder*) {});
+    synchronizer.SetRenderTreeBuilder(builder_ref);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    auto updated_button_ro = button->GetRenderObject();
+    ASSERT_NE(updated_button_ro, nullptr);
+    EXPECT_TRUE(requires_layout_tree_rebuild);
+    EXPECT_NE(updated_button_ro.get(), initial_button_ro.get());
+    EXPECT_EQ(updated_button_ro->GetType(), RenderObjectType::FLEX);
+    EXPECT_EQ(updated_button_ro->GetComputedStyle().display, RenderObjectType::FLEX);
+
+    layout_engine->BuildLayoutTree(render_root, true);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    auto header_cell_ro = header_cell->GetRenderObject();
+    ASSERT_NE(header_cell_ro, nullptr);
+    EXPECT_GT(updated_button_ro->GetLayoutInfo().height, 0.0f);
+    EXPECT_GE(header_cell_ro->GetLayoutInfo().height,
+              updated_button_ro->GetLayoutInfo().height + 16.0f);
 }
 
 } // namespace test

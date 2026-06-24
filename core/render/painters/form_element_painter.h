@@ -33,6 +33,7 @@ namespace mbink {
 // 前向声明
 class HTMLInputElement;
 class HTMLTextAreaElement;
+class HTMLSelectElement;
 class Element;
 struct ComputedStyle;
 struct InputPaintModel;
@@ -111,6 +112,10 @@ public:
     void PaintTextAreaElement(HTMLTextAreaElement* textarea, 
                               const Box& box, 
                               const FormElementPaintParams& params);
+
+    void PaintSelectElement(HTMLSelectElement* select,
+                            const Box& box,
+                            const FormElementPaintParams& params);
 
     /**
      * @brief 绘制复选框

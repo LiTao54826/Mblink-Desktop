@@ -15,6 +15,7 @@
 #include "core/dom/elements/html_option_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_audio_element.h"
 #include "core/dom/elements/html_table_element.h"
 #include "core/dom/elements/html_template_element.h"
 #include "core/dom/elements/svg_element.h"
@@ -29,12 +30,12 @@
 #include "js_node.h"
 #include "js_style_declaration.h"
 #include "js_event.h"
+#include "js_file_list.h"
 #include "core/quickjs/js_value_wrapper.h"
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <iostream>
-#include <sstream>
 #include <vector>
 #include <utility>
 
@@ -1022,6 +1023,55 @@ static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int ma
     return JS_UNDEFINED;
 }
 
+// HTMLInputElement.files getter
+static JSValue JSElement_get_files(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    if (input_element->GetInputType() != InputType::File) {
+        return JS_NULL;
+    }
+
+    return WrapFileList(ctx, input_element->GetFiles());
+}
+
+// HTMLInputElement.files setter
+static JSValue JSElement_set_files(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    if (input_element->GetInputType() != InputType::File) {
+        return JS_UNDEFINED;
+    }
+
+    if (JS_IsNull(val)) {
+        input_element->ClearFiles(false);
+        return JS_UNDEFINED;
+    }
+
+    FileList files;
+    if (!FileListFromJSValue(ctx, val, &files)) {
+        return JS_ThrowTypeError(ctx, "HTMLInputElement.files must be a FileList");
+    }
+
+    input_element->SetFiles(std::move(files), false);
+    return JS_UNDEFINED;
+}
+
 // value setter (for HTMLOptionElement, HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
 static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1081,6 +1131,10 @@ static JSValue JSElement_get_defaultValue(JSContext* ctx, JSValueConst this_val,
 
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
+        if (input_element->GetInputType() == InputType::File) {
+            std::string value = input_element->GetAttribute("value");
+            return JS_NewString(ctx, value.c_str());
+        }
         std::string value = input_element->GetValue();
         return JS_NewString(ctx, value.c_str());
     }
@@ -1108,6 +1162,11 @@ static JSValue JSElement_set_defaultValue(JSContext* ctx, JSValueConst this_val,
 
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
+        if (input_element->GetInputType() == InputType::File) {
+            input_element->SetAttribute("value", str);
+            JS_FreeCString(ctx, str);
+            return JS_UNDEFINED;
+        }
         input_element->SetValue(str, false);
         JS_FreeCString(ctx, str);
         return JS_UNDEFINED;
@@ -1810,6 +1869,13 @@ static JSValue JSElement_get_img_src(JSContext* ctx, JSValueConst this_val, int 
     if (!data || !data->element) return JS_NULL;
 
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (img) {
+        return JS_NewString(ctx, img->GetSrc().c_str());
+    }
+    auto audio = std::dynamic_pointer_cast<HTMLAudioElement>(data->element);
+    if (audio) {
+        return JS_NewString(ctx, audio->GetSrc().c_str());
+    }
     if (!img) {
         // 不是 img 元素，返回 undefined
         return JS_UNDEFINED;
@@ -1824,14 +1890,167 @@ static JSValue JSElement_set_img_src(JSContext* ctx, JSValueConst this_val, JSVa
     if (!data || !data->element) return JS_UNDEFINED;
 
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
-    if (!img) return JS_UNDEFINED;
+    auto audio = std::dynamic_pointer_cast<HTMLAudioElement>(data->element);
+    if (!img && !audio) return JS_UNDEFINED;
 
     const char* src = JS_ToCString(ctx, val);
     if (!src) return JS_EXCEPTION;
 
-    img->SetSrc(src);
+    if (img) {
+        img->SetSrc(src);
+    } else {
+        audio->SetSrc(src);
+    }
     JS_FreeCString(ctx, src);
 
+    return JS_UNDEFINED;
+}
+
+static std::shared_ptr<HTMLAudioElement> UnwrapAudioElement(JSValueConst this_val) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return nullptr;
+    }
+    return std::dynamic_pointer_cast<HTMLAudioElement>(data->element);
+}
+
+static JSValue JSElement_get_audio_controls(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->GetControls());
+}
+
+static JSValue JSElement_set_audio_controls(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (audio) {
+        audio->SetControls(JS_ToBool(ctx, val));
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_audio_loop(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->GetLoop());
+}
+
+static JSValue JSElement_set_audio_loop(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (audio) {
+        audio->SetLoop(JS_ToBool(ctx, val));
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_audio_muted(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->GetMuted());
+}
+
+static JSValue JSElement_set_audio_muted(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (audio) {
+        audio->SetMuted(JS_ToBool(ctx, val));
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_audio_volume(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewFloat64(ctx, audio->GetVolume());
+}
+
+static JSValue JSElement_set_audio_volume(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+
+    double volume = 1.0;
+    if (JS_ToFloat64(ctx, &volume, val) != 0) {
+        return JS_EXCEPTION;
+    }
+    audio->SetVolume(volume);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_audio_currentTime(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewFloat64(ctx, audio->CurrentTime());
+}
+
+static JSValue JSElement_set_audio_currentTime(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+
+    double seconds = 0.0;
+    if (JS_ToFloat64(ctx, &seconds, val) != 0) {
+        return JS_EXCEPTION;
+    }
+    audio->SetCurrentTime(seconds);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_audio_duration(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewFloat64(ctx, audio->GetDuration());
+}
+
+static JSValue JSElement_get_audio_paused(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->GetPaused());
+}
+
+static JSValue JSElement_get_audio_ended(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->GetEnded());
+}
+
+static JSValue JSElement_audio_load(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->Load());
+}
+
+static JSValue JSElement_audio_play(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (!audio) {
+        return JS_UNDEFINED;
+    }
+    return JS_NewBool(ctx, audio->Play());
+}
+
+static JSValue JSElement_audio_pause(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto audio = UnwrapAudioElement(this_val);
+    if (audio) {
+        audio->Pause();
+    }
     return JS_UNDEFINED;
 }
 
@@ -2873,6 +3092,14 @@ static JSValue JSElement_click(JSContext* ctx, JSValueConst this_val, int argc, 
 
     auto click_event = std::make_shared<MouseEvent>("click", 0, 0, 0, 1, 0);
     data->element->DispatchEvent(click_event);
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (input_element &&
+        input_element->GetInputType() == InputType::File &&
+        !click_event->IsDefaultPrevented()) {
+        input_element->OpenFilePicker();
+    }
+
     return JS_UNDEFINED;
 }
 
@@ -2955,6 +3182,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("attributes", JSElement_get_attributes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
+    JS_CGETSET_MAGIC_DEF("files", JSElement_get_files, JSElement_set_files, 0),
     JS_CGETSET_MAGIC_DEF("defaultValue", JSElement_get_defaultValue, JSElement_set_defaultValue, 0),
     JS_CGETSET_MAGIC_DEF("defaultChecked", JSElement_get_defaultChecked, JSElement_set_defaultChecked, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
@@ -2983,6 +3211,14 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),
     // HTMLImageElement 属性
     JS_CGETSET_MAGIC_DEF("src", JSElement_get_img_src, JSElement_set_img_src, 0),
+    JS_CGETSET_MAGIC_DEF("controls", JSElement_get_audio_controls, JSElement_set_audio_controls, 0),
+    JS_CGETSET_MAGIC_DEF("loop", JSElement_get_audio_loop, JSElement_set_audio_loop, 0),
+    JS_CGETSET_MAGIC_DEF("muted", JSElement_get_audio_muted, JSElement_set_audio_muted, 0),
+    JS_CGETSET_MAGIC_DEF("volume", JSElement_get_audio_volume, JSElement_set_audio_volume, 0),
+    JS_CGETSET_MAGIC_DEF("currentTime", JSElement_get_audio_currentTime, JSElement_set_audio_currentTime, 0),
+    JS_CGETSET_MAGIC_DEF("duration", JSElement_get_audio_duration, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("paused", JSElement_get_audio_paused, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("ended", JSElement_get_audio_ended, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("alt", JSElement_get_img_alt, JSElement_set_img_alt, 0),
     JS_CGETSET_MAGIC_DEF("naturalWidth", JSElement_get_img_naturalWidth, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("naturalHeight", JSElement_get_img_naturalHeight, nullptr, 0),
@@ -3414,6 +3650,15 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
                 logview->PrevMatch();
                 return JS_UNDEFINED;
             }, "prevMatch", 0));
+    }
+
+    if (dynamic_cast<HTMLAudioElement*>(element.get())) {
+        JS_SetPropertyStr(ctx, obj, "load",
+            JS_NewCFunction(ctx, JSElement_audio_load, "load", 0));
+        JS_SetPropertyStr(ctx, obj, "play",
+            JS_NewCFunction(ctx, JSElement_audio_play, "play", 0));
+        JS_SetPropertyStr(ctx, obj, "pause",
+            JS_NewCFunction(ctx, JSElement_audio_pause, "pause", 0));
     }
 
     AttachElementScrollBindings(ctx, obj, element);

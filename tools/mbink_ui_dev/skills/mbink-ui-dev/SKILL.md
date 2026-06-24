@@ -93,6 +93,107 @@ MCP notifications and VS Code preview are still future work.
 - In the `tool` runtime, keep mocks promise-compatible even when they return immediately, so the same UI path works unchanged after wiring the real Python, Rust, or Go host runtime.
 - If an existing host call starts doing heavier work, upgrade it from sync binding to async binding before adding UI around it.
 
+## Prefer Shared Pushes For Live Host Data
+
+- For host-language data that changes frequently and should update the UI immediately, prefer `shared` state over repeated JS polling or request/response `bind_async` calls.
+- Use `shared` to let Python, Rust, or Go proactively push fresh values into JavaScript, especially for progress, logs, counters, telemetry, task status, streaming results, and native resource state.
+- Keep `bind_async` for explicit commands, large queries, paginated data, and user-triggered operations; use `shared` for long-lived small observable state that the UI should react to as it changes.
+- Route UI consumption of shared data through `ui/bridge.js` or a thin adapter so mock data and real host-pushed updates keep the same component-facing contract.
+- Do not put large records, long logs, transcripts, history lists, or bulk blobs in high-frequency `shared` updates. Keep those behind explicit host calls or native high-volume controls.
+- When host data updates at high frequency, batch or throttle host writes enough to preserve UI responsiveness while still making the UI feel live.
+- Create one named shared object per observable state domain. The object is exposed to JavaScript as `globalThis.<name>`, so `app.shared("data")` is read in JS as `globalThis.data` or `data`.
+- Initialize shared fields before or immediately after loading the UI, then update fields from host code whenever the underlying native state changes.
+- Reading `globalThis.<name>` during a Preact render does not by itself schedule another render. Install a shared update bridge that bumps component state or re-renders the root when relevant shared keys change.
+- Current MBink runtimes dispatch host shared writes through `globalThis.__mbinkSharedUpdateDispatcher(changedKeys)`. If you wrap this dispatcher, call the original dispatcher first so MBink's root/dependency tracking can still run.
+- Treat old `globalThis.__onSharedUpdate` examples as legacy or app-local adapters unless the specific project already wires that callback into the dispatcher.
+- Treat `changedKeys` as an optimization hint. Keys are usually shaped like `name:field`, for example `sipShared:audio_levels`; when unsure, re-read the needed fields from `globalThis.<name>`.
+- Keep shared writes host-owned. Do not rely on JS mutating `globalThis.<name>` as the authoritative source for host state.
+- Use primitive setters for numbers, strings, booleans, and null; use JSON setters for arrays and objects. Batch related field writes so JS observes one coherent update.
+
+Minimal Python host pattern:
+
+```python
+state = app.shared("data")
+
+with state.batch():
+    state.status = "ready"
+    state.progress = 0
+    state.items = []
+
+def publish_progress(value, items):
+    with state.batch():
+        state.progress = value
+        state.items = items
+        state.status = "running" if value < 100 else "done"
+```
+
+Minimal JavaScript/Preact consumption pattern:
+
+```js
+import { h, render } from 'preact';
+import { useEffect, useState } from 'preact/hooks';
+
+function installSharedUpdateBridge(forceUpdate, rootName = 'data') {
+  const originalDispatcher = globalThis.__mbinkSharedUpdateDispatcher;
+  let pending = false;
+  let disposed = false;
+
+  const touchesRoot = (changedKeys) => (
+    !Array.isArray(changedKeys) ||
+    changedKeys.length === 0 ||
+    changedKeys.some((key) => (
+      typeof key === 'string' && (key === rootName || key.startsWith(`${rootName}:`))
+    ))
+  );
+
+  const flush = () => {
+    pending = false;
+    if (!disposed) forceUpdate((value) => value + 1);
+  };
+
+  const schedule = () => {
+    if (pending) return;
+    pending = true;
+    const defer = globalThis.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
+    defer(flush);
+  };
+
+  const dispatcher = (changedKeys) => {
+    if (typeof originalDispatcher === 'function') originalDispatcher(changedKeys);
+    if (touchesRoot(changedKeys)) schedule();
+  };
+
+  globalThis.__mbinkSharedUpdateDispatcher = dispatcher;
+  return () => {
+    disposed = true;
+    if (globalThis.__mbinkSharedUpdateDispatcher === dispatcher) {
+      globalThis.__mbinkSharedUpdateDispatcher = originalDispatcher;
+    }
+  };
+}
+
+function App() {
+  const [, forceUpdate] = useState(0);
+  const data = globalThis.data || {};
+
+  useEffect(() => {
+    return installSharedUpdateBridge(forceUpdate, 'data');
+  }, []);
+
+  return h('div', { id: 'status' }, `${data.status || 'idle'} ${data.progress || 0}%`);
+}
+
+render(h(App), document.getElementById('root') || document.body);
+```
+
+Host API quick reference:
+
+```text
+Python: data = app.shared("data"); data.count = 1; data.items = []; with data.batch(): ...
+Go:     shared, err := app.Shared("data"); shared.SetInt("count", 1); shared.SetJSON("items", items); batch := shared.Batch(); defer batch.End()
+Rust:   let shared = app.shared("data")?; shared.set_int("count", 1)?; shared.set_json("items", &items)?; let _batch = shared.batch()
+```
+
 ## Develop Incrementally
 
 - Add UI in small verified slices instead of writing the whole screen or a large component in one pass.

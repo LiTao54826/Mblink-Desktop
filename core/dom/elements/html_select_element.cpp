@@ -179,12 +179,14 @@ void HTMLSelectElement::SetSelectedIndex(long index, bool trigger_events) {
 
     suppress_change_event_ = previous_suppress;
 
-    long current_index = GetSelectedIndex();
-    if (previous_index != current_index) {
+    const long current_index = GetSelectedIndex();
+    const bool selection_changed = previous_index != current_index;
+    if (selection_changed) {
         RequestSelectionRepaint();
     }
 
-    if (trigger_events && !previous_suppress && previous_index != current_index) {
+    if (trigger_events && !previous_suppress && selection_changed) {
+        TriggerInputEvent();
         TriggerChangeEvent();
     }
 }
@@ -226,12 +228,14 @@ void HTMLSelectElement::SetValue(const std::string& value, bool trigger_events) 
     pending_value_ = matched ? std::string() : value;
     suppress_change_event_ = previous_suppress;
 
-    long current_index = GetSelectedIndex();
-    if (previous_index != current_index) {
+    const long current_index = GetSelectedIndex();
+    const bool selection_changed = previous_index != current_index;
+    if (selection_changed) {
         RequestSelectionRepaint();
     }
 
-    if (trigger_events && !previous_suppress && previous_index != current_index) {
+    if (trigger_events && !previous_suppress && selection_changed) {
+        TriggerInputEvent();
         TriggerChangeEvent();
     }
 }
@@ -334,6 +338,7 @@ void HTMLSelectElement::OnOptionSelectionChanged(std::shared_ptr<HTMLOptionEleme
 
     // 触发change事件
     if (!suppress_change_event_) {
+        TriggerInputEvent();
         TriggerChangeEvent();
     }
 }
@@ -342,6 +347,7 @@ void HTMLSelectElement::OnOptionsChanged() {
     if (has_pending_value_) {
         SetValue(pending_value_, false);
     }
+    RequestSelectionRepaint();
 }
 
 // ========== 辅助方法 ==========
@@ -373,8 +379,16 @@ void HTMLSelectElement::TriggerChangeEvent() {
     DispatchEvent(event);
 }
 
+void HTMLSelectElement::TriggerInputEvent() {
+    auto event = std::make_shared<Event>("input");
+    event->SetTarget(shared_from_this());
+    event->SetCurrentTarget(shared_from_this());
+    DispatchEvent(event);
+}
+
 void HTMLSelectElement::RequestSelectionRepaint() {
     if (auto render_object = GetRenderObject()) {
+        render_object->MarkNeedsLayout();
         render_object->MarkNeedsPaint();
         render_object->InvalidatePaintCache();
     }

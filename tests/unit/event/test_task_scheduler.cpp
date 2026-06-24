@@ -97,14 +97,28 @@ TEST_F(TaskSchedulerTest, CancelTask) {
 
 TEST_F(TaskSchedulerTest, HasPendingTasks) {
     EXPECT_FALSE(scheduler_->HasPendingTasks());
+    EXPECT_FALSE(scheduler_->HasReadyTasks());
 
     scheduler_->SetTimeout([]() {}, 0);
 
     EXPECT_TRUE(scheduler_->HasPendingTasks());
+    EXPECT_TRUE(scheduler_->HasReadyTasks());
 
     scheduler_->ProcessTasks();
 
     EXPECT_FALSE(scheduler_->HasPendingTasks());
+    EXPECT_FALSE(scheduler_->HasReadyTasks());
+}
+
+TEST_F(TaskSchedulerTest, FutureTimerIsPendingButNotReady) {
+    EXPECT_EQ(scheduler_->MillisecondsUntilNextTimer(), -1);
+
+    scheduler_->SetInterval([]() {}, 3000);
+
+    EXPECT_TRUE(scheduler_->HasPendingTasks());
+    EXPECT_FALSE(scheduler_->HasReadyTasks());
+    EXPECT_FALSE(scheduler_->HasReadyTimerTasks());
+    EXPECT_GE(scheduler_->MillisecondsUntilNextTimer(), 0);
 }
 
 TEST_F(TaskSchedulerTest, ClearAllTasks) {
@@ -170,7 +184,10 @@ TEST_F(TaskSchedulerTest, ScheduleRepeatingTask) {
     std::this_thread::sleep_for(std::chrono::milliseconds(35));
     scheduler_->ProcessTasks();
 
-    // 应该执行了多次
+    EXPECT_GE(counter, 1);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    scheduler_->ProcessTasks();
     EXPECT_GE(counter, 2);
 
     // 取消重复任务

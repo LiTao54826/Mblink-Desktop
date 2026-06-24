@@ -19,6 +19,7 @@
 #include "core/dom/elements/html_button_element.h"
 #include "core/dom/elements/html_form_element.h"
 #include "core/dom/elements/html_select_element.h"
+#include "core/dom/elements/html_audio_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/editing/drag_manager.h"
@@ -136,6 +137,71 @@ float InputTextVisibleWidth(InputType type, const ComputedStyle& style, const La
         ? input_text_viewport::kNumberSpinnerReservedWidth
         : 0.0f;
     return std::max(0.0f, content_width - spinner_width);
+}
+
+struct AudioControlHit {
+    float local_x = 0.0f;
+    float local_y = 0.0f;
+    float content_x = 0.0f;
+    float content_y = 0.0f;
+    float content_width = 0.0f;
+    float content_height = 0.0f;
+};
+
+bool ResolveAudioControlHit(const std::shared_ptr<HTMLAudioElement>& audio,
+                            float viewport_x,
+                            float viewport_y,
+                            AudioControlHit& hit) {
+    if (!audio) {
+        return false;
+    }
+
+    auto render_object = audio->GetRenderObject();
+    if (!render_object) {
+        return false;
+    }
+
+    if (!render_object->GetViewportBounds().valid) {
+        render_object->UpdateViewportBounds();
+    }
+    const auto& bounds = render_object->GetViewportBounds();
+    if (!bounds.valid) {
+        return false;
+    }
+
+    const SkPoint local = bounds.ToLocalCoordinates(viewport_x, viewport_y);
+    const auto& style = render_object->GetComputedStyle();
+    const auto& layout = render_object->GetLayoutInfo();
+    const float border_left = style.border.width.ToPx();
+    const float border_right = style.border.width.ToPx();
+    const float border_top = style.border.width.ToPx();
+    const float border_bottom = style.border.width.ToPx();
+    const float padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    const float padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    const float padding_top = style.padding.top.ToPx(layout.width, style.font_size);
+    const float padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+
+    hit.local_x = local.x();
+    hit.local_y = local.y();
+    hit.content_x = border_left + padding_left;
+    hit.content_y = border_top + padding_top;
+    hit.content_width = std::max(0.0f,
+                                 layout.width - border_left - border_right -
+                                     padding_left - padding_right);
+    hit.content_height = std::max(0.0f,
+                                  layout.height - border_top - border_bottom -
+                                      padding_top - padding_bottom);
+    return true;
+}
+
+void RepaintAudioControl(std::shared_ptr<Window> window) {
+    if (!window) {
+        return;
+    }
+    window->SetNeedsRepaintFor(RepaintReason::MouseButton);
+    if (auto pipeline = window->GetRenderPipeline()) {
+        pipeline->ForceRasterize();
+    }
 }
 
 bool ComputeInputTextLocalX(const std::shared_ptr<HTMLInputElement>& input_element,
@@ -1011,6 +1077,27 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     }
 
     // 对于鼠标移动事件，只在位置真正改变时才更新 hover
+    auto active_audio = std::dynamic_pointer_cast<HTMLAudioElement>(last_mousedown_element_.lock());
+    if (active_audio && active_audio->IsDraggingControls()) {
+        AudioControlHit audio_hit;
+        if (ResolveAudioControlHit(active_audio, logical_x, logical_y, audio_hit)) {
+            if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                active_audio->HandleControlMouseMove(audio_hit.local_x,
+                                                     audio_hit.local_y,
+                                                     audio_hit.content_x,
+                                                     audio_hit.content_y,
+                                                     audio_hit.content_width,
+                                                     audio_hit.content_height);
+                RepaintAudioControl(window);
+                return true;
+            }
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
+                active_audio->HandleControlMouseUp();
+                RepaintAudioControl(window);
+            }
+        }
+    }
+
     static float last_mouse_x = -1, last_mouse_y = -1;
     if (event.type == SDL_EVENT_MOUSE_MOTION) {
         if (mouse_x == last_mouse_x && mouse_y == last_mouse_y) {
@@ -1714,9 +1801,13 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
             if (select_element->IsDropdownOpen()) {
                 dropdown_manager.CloseDropdown();
             } else {
-                auto render_obj = hit_result.render_object;
-                if (render_obj) {
-                    SkRect trigger_rect = render_obj->GetViewportBoundingRect();
+                auto rect = select_element->GetBoundingClientRect();
+                SkRect trigger_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
+                if ((rect.width <= 0.0f || rect.height <= 0.0f) && hit_result.render_object) {
+                    trigger_rect = hit_result.render_object->GetViewportBoundingRect();
+                }
+
+                if (trigger_rect.width() > 0.0f && trigger_rect.height() > 0.0f) {
 
                     select_element->SetDropdownOpen(true);
                     dropdown_manager.OpenDropdown(select_element, trigger_rect);
@@ -2162,7 +2253,22 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
 
     // 处理输入框的鼠标交互
     std::string tag_name = hit_result.element->GetTagName();
-    if (tag_name == "input") {
+    if (tag_name == "audio") {
+        auto audio_element = std::dynamic_pointer_cast<HTMLAudioElement>(hit_result.element);
+        AudioControlHit audio_hit;
+        if (audio_element && ResolveAudioControlHit(audio_element, logical_x, logical_y, audio_hit)) {
+            if (audio_element->HandleControlMouseDown(audio_hit.local_x,
+                                                      audio_hit.local_y,
+                                                      audio_hit.content_x,
+                                                      audio_hit.content_y,
+                                                      audio_hit.content_width,
+                                                      audio_hit.content_height)) {
+                RepaintAudioControl(window);
+                return;
+            }
+        }
+    }
+    else if (tag_name == "input") {
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
         if (input_element) {
             InputType input_type = input_element->GetInputType();
@@ -2366,7 +2472,12 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
     // 处理输入框的鼠标释放
     if (last_mousedown && event.button.button == SDL_BUTTON_LEFT) {
         std::string tag_name = last_mousedown->GetTagName();
-        if (tag_name == "input") {
+        if (tag_name == "audio") {
+            auto audio_element = std::dynamic_pointer_cast<HTMLAudioElement>(last_mousedown);
+            if (audio_element && audio_element->HandleControlMouseUp()) {
+                RepaintAudioControl(window);
+            }
+        } else if (tag_name == "input") {
             auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown);
             if (input_element) {
                 if (input_element->IsDraggingRange()) {
@@ -2448,6 +2559,12 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             0  // buttons: 按钮已释放
         );
         hit_result.element->DispatchEvent(click_event);
+        if (button == 1 && !click_event->IsDefaultPrevented()) {
+            auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
+            if (input_element && input_element->GetInputType() == InputType::File) {
+                input_element->OpenFilePicker();
+            }
+        }
 
         // 参考 Blink/Chrome 的行为：
         // click 事件分发后，不应该再尝试设置焦点或清除焦点

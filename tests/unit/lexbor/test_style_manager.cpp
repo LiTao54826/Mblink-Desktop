@@ -244,6 +244,27 @@ TEST_F(StyleManagerTest, SelectorListSplitsOnlyTopLevelCommas) {
     EXPECT_EQ(style["color"], "red");
 }
 
+TEST_F(StyleManagerTest, UniversalSelectorListWithPseudoElementsMatchesElementBranch) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto target = doc->CreateElement("div");
+    doc->GetBody()->AppendChild(target);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+    )"));
+
+    auto rules = doc->GetStyleManager()->GetMatchingRules(target.get());
+    ASSERT_FALSE(rules.empty());
+
+    auto style = doc->GetStyleManager()->ComputeStyle(target.get());
+    ASSERT_TRUE(style.contains("box-sizing"));
+    EXPECT_EQ(style["box-sizing"], "border-box");
+}
+
 TEST_F(StyleManagerTest, LaterSameSpecificityRuleWinsBySourceOrder) {
     auto doc = std::make_shared<Document>();
     doc->Initialize();

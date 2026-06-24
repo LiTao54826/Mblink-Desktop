@@ -4,6 +4,8 @@
  */
 
 #include "fetch_bindings.h"
+#include "core/utils/async_resource_context.h"
+#include "core/utils/background_task_runner.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -11,12 +13,24 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <thread>
+#include <utility>
 
 namespace fs = std::filesystem;
 
 namespace mbink {
 namespace {
+
+FetchBindings* FetchBindingFromFuncData(JSContext* ctx, JSValue* func_data) {
+    if (!func_data) {
+        return nullptr;
+    }
+
+    int64_t ptr = 0;
+    if (JS_ToInt64(ctx, &ptr, func_data[0]) < 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<FetchBindings*>(ptr);
+}
 
 std::string NormalizePathString(std::string path, bool force_leading_slash = true) {
     std::replace(path.begin(), path.end(), '\\', '/');
@@ -152,7 +166,6 @@ HttpResponse LoadLocalResponse(const std::string& resolved_path,
 
 } // namespace
 
-FetchBindings* FetchBindings::instance_ = nullptr;
 FetchBindings::AssetProvider FetchBindings::asset_provider_ = nullptr;
 std::string FetchBindings::base_path_;
 
@@ -173,18 +186,22 @@ const std::string& FetchBindings::GetBasePath() {
 }
 
 FetchBindings::FetchBindings(JSContext* ctx,
-                             std::shared_ptr<TaskScheduler> task_scheduler)
+                             std::shared_ptr<TaskScheduler> task_scheduler,
+                             std::shared_ptr<BackgroundTaskRunner> background_runner,
+                             std::shared_ptr<AsyncResourceContext> resource_context)
     : ctx_(ctx)
     , task_scheduler_(task_scheduler)
-    , http_client_(std::make_unique<HttpClient>())
+    , background_runner_(background_runner ? std::move(background_runner)
+                                           : std::make_shared<BackgroundTaskRunner>())
+    , resource_context_(resource_context ? std::move(resource_context)
+                                         : std::make_shared<AsyncResourceContext>())
+    , http_client_(std::make_unique<HttpClient>(background_runner_))
     , next_request_id_(1) {
-    instance_ = this;
+    pending_state_ = std::make_shared<PendingState>();
 }
 
 FetchBindings::~FetchBindings() {
-    if (instance_ == this) {
-        instance_ = nullptr;
-    }
+    BeginShutdown();
 }
 
 void FetchBindings::InitBindings() {
@@ -194,8 +211,12 @@ void FetchBindings::InitBindings() {
 
 // 静态回调函数：__fetch_request
 static JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val,
-                                int argc, JSValueConst* argv) {
-    if (!FetchBindings::instance_) {
+                                int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+    (void)this_val;
+    (void)magic;
+
+    auto* bindings = FetchBindingFromFuncData(ctx, func_data);
+    if (!bindings || !bindings->pending_state_ || !bindings->pending_state_->alive.load()) {
         return JS_ThrowInternalError(ctx, "FetchBindings not initialized");
     }
 
@@ -214,46 +235,55 @@ static JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val,
     // 获取选项
     nlohmann::json options = nlohmann::json::object();
     if (argc > 1 && !JS_IsUndefined(argv[1])) {
-        options = FetchBindings::instance_->JSValueToJson(argv[1]);
+        options = bindings->JSValueToJson(argv[1]);
     }
 
-    int request_id = FetchBindings::instance_->DoFetch(url, options);
+    int request_id = bindings->DoFetch(url, options);
     return JS_NewInt32(ctx, request_id);
 }
 
 // 静态回调函数：__fetch_check_response
 static JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val,
-                                       int argc, JSValueConst* argv) {
-    if (!FetchBindings::instance_) {
+                                       int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    (void)magic;
+
+    auto* bindings = FetchBindingFromFuncData(ctx, func_data);
+    if (!bindings || !bindings->pending_state_) {
         return JS_NULL;
     }
 
-    std::lock_guard<std::mutex> lock(FetchBindings::instance_->pending_mutex_);
+    auto state = bindings->pending_state_;
+    std::lock_guard<std::mutex> lock(state->mutex);
 
-    if (FetchBindings::instance_->pending_responses_.empty()) {
+    if (!state->alive.load() || state->responses.empty()) {
         return JS_NULL;
     }
 
-    auto& response = FetchBindings::instance_->pending_responses_.front();
+    auto& response = state->responses.front();
     nlohmann::json result = nlohmann::json::object();
     result["id"] = response.request_id;
-    result["response"] = FetchBindings::instance_->ResponseToJson(response.response);
-    FetchBindings::instance_->pending_responses_.pop();
+    result["response"] = bindings->ResponseToJson(response.response);
+    state->responses.pop();
 
-    return FetchBindings::instance_->JsonToJSValue(result);
+    return bindings->JsonToJSValue(result);
 }
 
 void FetchBindings::RegisterNativeFunctions() {
     JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue bindingsPtr = JS_NewInt64(ctx_, reinterpret_cast<int64_t>(this));
 
     // 注册 __fetch_request
-    JSValue fetch_func = JS_NewCFunction(ctx_, js_fetch_request, "__fetch_request", 2);
+    JSValue fetch_func = JS_NewCFunctionData(ctx_, js_fetch_request, 2, 0, 1, &bindingsPtr);
     JS_SetPropertyStr(ctx_, global, "__fetch_request", fetch_func);
 
     // 注册 __fetch_check_response
-    JSValue check_func = JS_NewCFunction(ctx_, js_fetch_check_response, "__fetch_check_response", 0);
+    JSValue check_func = JS_NewCFunctionData(ctx_, js_fetch_check_response, 0, 0, 1, &bindingsPtr);
     JS_SetPropertyStr(ctx_, global, "__fetch_check_response", check_func);
 
+    JS_FreeValue(ctx_, bindingsPtr);
     JS_FreeValue(ctx_, global);
 }
 
@@ -504,6 +534,9 @@ void FetchBindings::RegisterJSPolyfill() {
 
 int FetchBindings::DoFetch(const std::string& url, const nlohmann::json& options) {
     int request_id = next_request_id_++;
+    if (!pending_state_ || !pending_state_->alive.load()) {
+        return -1;
+    }
 
     HttpRequestOptions http_options;
     if (options.contains("method")) {
@@ -523,10 +556,14 @@ int FetchBindings::DoFetch(const std::string& url, const nlohmann::json& options
     }
 
     if (!IsNetworkUrl(url) && !IsDataUrl(url)) {
-        const std::string resolved_path = ResolvePathAgainstBase(url, base_path_);
-        const AssetProvider provider = asset_provider_;
+        auto resource_snapshot = resource_context_ ? resource_context_->MakeSnapshot()
+                                                   : AsyncResourceContext::Snapshot{base_path_, asset_provider_, true};
+        const std::string resolved_path = ResolvePathAgainstBase(url, resource_snapshot.base_path);
+        const AssetProvider provider = resource_snapshot.asset_provider;
+        auto pending_state = pending_state_;
+        const std::string method = http_options.method;
 
-        std::thread([this, request_id, resolved_path, provider, method = http_options.method]() {
+        auto task = [pending_state, request_id, resolved_path, provider, method]() {
             HttpResponse response;
             if (method != "GET" && method != "HEAD") {
                 response.status_code = 405;
@@ -539,17 +576,27 @@ int FetchBindings::DoFetch(const std::string& url, const nlohmann::json& options
                 }
             }
 
-            std::lock_guard<std::mutex> lock(pending_mutex_);
-            pending_responses_.push({request_id, response});
-        }).detach();
+            PublishPendingResponse(pending_state, request_id, std::move(response));
+        };
+        auto on_drop = [pending_state, request_id]() {
+            PublishPendingResponse(pending_state, request_id,
+                                   MakeShutdownResponse("Fetch task dropped during shutdown"));
+        };
+
+        if (!resource_snapshot.alive ||
+            !background_runner_ ||
+            !background_runner_->Post(std::move(task), std::move(on_drop), resolved_path)) {
+            PublishPendingResponse(pending_state, request_id,
+                                   MakeShutdownResponse("Background task runner is shutting down"));
+        }
 
         return request_id;
     }
 
+    auto pending_state = pending_state_;
     http_client_->RequestAsync(url, http_options,
-        [this, request_id](const HttpResponse& response) {
-            std::lock_guard<std::mutex> lock(pending_mutex_);
-            pending_responses_.push({request_id, response});
+        [pending_state, request_id](const HttpResponse& response) {
+            PublishPendingResponse(pending_state, request_id, response);
         });
 
     return request_id;
@@ -576,8 +623,46 @@ void FetchBindings::ProcessPendingResponses() {
 }
 
 bool FetchBindings::HasPendingResponses() const {
-    std::lock_guard<std::mutex> lock(pending_mutex_);
-    return !pending_responses_.empty();
+    if (!pending_state_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(pending_state_->mutex);
+    return pending_state_->alive.load() && !pending_state_->responses.empty();
+}
+
+void FetchBindings::BeginShutdown() {
+    if (!pending_state_) {
+        return;
+    }
+
+    pending_state_->alive = false;
+    std::lock_guard<std::mutex> lock(pending_state_->mutex);
+    std::queue<PendingFetchResponse> empty;
+    pending_state_->responses.swap(empty);
+}
+
+void FetchBindings::PublishPendingResponse(const std::shared_ptr<PendingState>& state,
+                                           int request_id,
+                                           HttpResponse response) {
+    if (!state || !state->alive.load()) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (!state->alive.load()) {
+        return;
+    }
+    state->responses.push({request_id, std::move(response)});
+}
+
+HttpResponse FetchBindings::MakeShutdownResponse(const std::string& message) {
+    HttpResponse response;
+    response.status_code = 0;
+    response.status_text = "Background Task Unavailable";
+    response.error = message;
+    response.ok = false;
+    return response;
 }
 
 JSValue FetchBindings::JsonToJSValue(const nlohmann::json& j) {

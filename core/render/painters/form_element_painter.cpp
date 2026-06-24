@@ -7,6 +7,7 @@
 
 #include "form_element_painter.h"
 #include "core/dom/elements/html_input_element.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
 #include "core/render/input/input_paint_model.h"
@@ -91,6 +92,73 @@ void FormElementPainter::PaintTextAreaElement(HTMLTextAreaElement* textarea,
                                textarea->GetValue(), cursor_pos);
         }
     }
+}
+
+void FormElementPainter::PaintSelectElement(HTMLSelectElement* select,
+                                            const Box& box,
+                                            const FormElementPaintParams& params) {
+    if (!select || !canvas_) {
+        return;
+    }
+
+    std::string selected_text;
+    auto options = select->GetOptions();
+    long selected_index = select->GetSelectedIndex();
+    if (selected_index >= 0 && selected_index < static_cast<long>(options.size())) {
+        selected_text = options[selected_index]->GetText();
+    } else if (!options.empty()) {
+        selected_text = options.front()->GetText();
+    }
+
+    SkFont font = CreateFont(params);
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    constexpr float arrow_area_width = 16.0f;
+    const float text_available_width = std::max(0.0f, box.content_width - arrow_area_width);
+
+    if (!selected_text.empty() && text_available_width > 0.0f && box.content_height > 0.0f) {
+        const float font_height = -font_metrics.fAscent + font_metrics.fDescent;
+        const float text_x = box.content_x;
+        const float text_y =
+            box.content_y + (box.content_height - font_height) / 2.0f - font_metrics.fAscent;
+
+        canvas_->save();
+        canvas_->clipRect(SkRect::MakeXYWH(text_x, box.content_y,
+                                           text_available_width, box.content_height));
+
+        TextRenderer text_renderer(canvas_);
+        mbink::Paint text_paint;
+        text_paint.SetColor(GetTextColor(params, false));
+        text_renderer.DrawTextWithEmoji(selected_text, text_x, text_y, font, text_paint);
+
+        canvas_->restore();
+    }
+
+    SkPaint arrow_paint;
+    arrow_paint.setColor(SkColorSetRGB(80, 80, 80));
+    arrow_paint.setStyle(SkPaint::kStroke_Style);
+    arrow_paint.setStrokeWidth(1.5f);
+    arrow_paint.setAntiAlias(true);
+    arrow_paint.setStrokeCap(SkPaint::kRound_Cap);
+    arrow_paint.setStrokeJoin(SkPaint::kRound_Join);
+
+    constexpr float arrow_width = 6.0f;
+    constexpr float arrow_height = 4.0f;
+    const float border_right = std::max(0.0f, box.border_right_width);
+    const float control_right =
+        box.content_x + box.content_width + box.padding_right + border_right;
+    const float arrow_right_edge = control_right - border_right - 2.0f;
+    const float arrow_center_x = arrow_right_edge - arrow_width / 2.0f;
+    const float arrow_center_y = box.content_y + box.content_height / 2.0f;
+
+    SkPath arrow_path;
+    arrow_path.moveTo(arrow_center_x - arrow_width / 2.0f,
+                      arrow_center_y - arrow_height / 2.0f);
+    arrow_path.lineTo(arrow_center_x, arrow_center_y + arrow_height / 2.0f);
+    arrow_path.lineTo(arrow_center_x + arrow_width / 2.0f,
+                      arrow_center_y - arrow_height / 2.0f);
+    canvas_->drawPath(arrow_path, arrow_paint);
 }
 
 void FormElementPainter::PaintCheckbox(const Box& box, bool checked) {

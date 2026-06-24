@@ -979,9 +979,12 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer,
                             draw_offset_y + src.top() / dpi_scale,
                             draw_offset_x + src.right() / dpi_scale,
                             draw_offset_y + src.bottom() / dpi_scale);
+                        // Dirty-clip blits are already mapped 1:1 to device pixels.
+                        // Filtering here can sample neighboring pixels outside the slice
+                        // and leave transient 1px seams during retained-present updates.
                         canvas->drawImageRect(bitmap.asImage(), SkRect::Make(src), dst,
-                                              SkSamplingOptions(SkFilterMode::kLinear), &paint,
-                                              SkCanvas::kFast_SrcRectConstraint);
+                                              SkSamplingOptions(), &paint,
+                                              SkCanvas::kStrict_SrcRectConstraint);
                     }
                 }
             } else if (dpi_scale != 1.0f) {
@@ -1038,7 +1041,7 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer,
 
         if (effective_child_clip) {
             canvas->save();
-            canvas->clipRect(*effective_child_clip, SkClipOp::kIntersect, true);
+            canvas->clipRect(*effective_child_clip, SkClipOp::kIntersect, false);
         }
 
         if (child_is_fixed) {

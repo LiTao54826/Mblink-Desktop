@@ -25,8 +25,26 @@ function run() {
   assert(compositorSrc.includes('can_draw_clipped_region') &&
          compositorSrc.includes('transform_is_clip_compatible') &&
          compositorSrc.includes('drawImageRect') &&
-         compositorSrc.includes('SkCanvas::kFast_SrcRectConstraint'),
+         compositorSrc.includes('SkCanvas::kStrict_SrcRectConstraint'),
     'CPU compositor must draw only the bitmap source rect intersecting the dirty clip');
+  const clippedPathStart = compositorSrc.indexOf('if (can_draw_clipped_region)');
+  const clippedPathEnd = compositorSrc.indexOf('} else if (dpi_scale != 1.0f)', clippedPathStart);
+  const clippedPathSrc = compositorSrc.slice(clippedPathStart, clippedPathEnd);
+  assert(clippedPathStart >= 0 &&
+         clippedPathEnd > clippedPathStart &&
+         clippedPathSrc.includes('SkSamplingOptions(), &paint') &&
+         !clippedPathSrc.includes('SkFilterMode::kLinear') &&
+         clippedPathSrc.includes('kStrict_SrcRectConstraint'),
+    'Dirty-clip CPU layer blits must use unfiltered strict src-rect sampling to avoid retained-present seam artifacts');
+  const childClipStart = compositorSrc.indexOf('if (effective_child_clip)');
+  const childClipEnd = compositorSrc.indexOf('if (child_is_fixed)', childClipStart);
+  const childClipSrc = compositorSrc.slice(childClipStart, childClipEnd);
+  assert(childClipStart >= 0 &&
+         childClipEnd > childClipStart &&
+         childClipSrc.includes('canvas->clipRect(*effective_child_clip, SkClipOp::kIntersect, false)'),
+    'Compositor child dirty clips must be hard rect clips, not antialiased clips');
+  assert(!childClipSrc.includes('canvas->clipRect(*effective_child_clip, SkClipOp::kIntersect, true)'),
+    'Compositor child dirty clips must not leave antialiased clip-edge pixels');
   assert(pipelineHeader.includes('ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip') &&
          pipelineHeader.includes('DoComposite(SkCanvas* canvas, const SkRect* logical_clip'),
     'RenderPipeline must thread the optional logical clip through the frame');

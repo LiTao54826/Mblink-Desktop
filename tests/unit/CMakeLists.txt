@@ -11,6 +11,7 @@ set(DOM_TEST_SOURCES
     dom/test_css_style_declaration.cpp
     dom/test_incremental_update.cpp
     dom/test_html_select_element.cpp
+    dom/test_html_audio_element.cpp
     dom/test_native_data_binding.cpp
 )
 
@@ -64,6 +65,7 @@ set(LEXBOR_TEST_SOURCES
 set(UTILS_TEST_SOURCES
     utils/test_json.cpp
     utils/test_encoding.cpp
+    utils/test_background_task_runner.cpp
 )
 
 # Compositor 测试

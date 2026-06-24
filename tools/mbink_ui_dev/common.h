@@ -21,6 +21,7 @@ struct ProjectConfig {
     std::string build_builder = "esbuild";
     std::string build_jsx_factory = "h";
     std::string build_jsx_fragment = "Fragment";
+    std::string build_icon;
     std::vector<std::string> build_external = {"preact", "preact/hooks"};
     bool build_sourcemap = true;
     bool build_minify = false;
@@ -85,6 +86,13 @@ std::filesystem::path GetProjectMetadataPath(const std::string& project_id);
 std::filesystem::path GetStateFilePath(const std::string& project_id = "");
 std::filesystem::path GetRuntimeFilePath(const std::string& project_id, const std::string& file_name);
 std::string GetDaemonPipeName(const std::string& project_id);
+std::filesystem::path PathFromUtf8(const std::string& value);
+std::string PathToUtf8(const std::filesystem::path& path);
+
+#ifdef _WIN32
+std::wstring Utf8ToWide(const std::string& value);
+std::string WideToUtf8(const std::wstring& value);
+#endif
 
 std::string CurrentTimestampIso8601();
 int CurrentProcessId();

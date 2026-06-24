@@ -97,6 +97,7 @@ set(RENDER_SOURCES
     painters/border_painter.cpp
     painters/scrollbar_painter.cpp
     painters/form_element_painter.cpp
+    painters/audio_element_painter.cpp
 )
 
 set(RENDER_HEADERS
@@ -190,6 +191,7 @@ set(RENDER_HEADERS
     painters/border_painter.h
     painters/scrollbar_painter.h
     painters/form_element_painter.h
+    painters/audio_element_painter.h
 )
 
 add_library(mbink_render STATIC ${RENDER_SOURCES})

@@ -6,6 +6,7 @@
 #include "host_bridge.h"
 #include "state_manager.h"
 #include "quickjs/js_value_wrapper.h"
+#include "core/utils/background_task_runner.h"
 
 extern "C" {
 #include "quickjs.h"
@@ -13,12 +14,17 @@ extern "C" {
 
 #include <algorithm>
 #include <cstdio>
-#include <thread>
 
 namespace mbink {
 
-HostBridge::HostBridge(JSContext* ctx, StateManager* stateManager)
-    : ctx_(ctx), stateManager_(stateManager), asyncQueueState_(std::make_shared<AsyncQueueState>()) {
+HostBridge::HostBridge(JSContext* ctx,
+                       StateManager* stateManager,
+                       std::shared_ptr<BackgroundTaskRunner> background_runner)
+    : ctx_(ctx)
+    , stateManager_(stateManager)
+    , background_runner_(background_runner ? std::move(background_runner)
+                                           : std::make_shared<BackgroundTaskRunner>())
+    , asyncQueueState_(std::make_shared<AsyncQueueState>()) {
 }
 
 HostBridge::~HostBridge() {
@@ -268,7 +274,7 @@ JSValue HostBridge::jsBackendCall(JSContext* ctx, JSValueConst thisVal,
         std::string argsCopy(args);
         auto queueState = bridge->asyncQueueState_;
 
-        std::thread([queueState, callback, promiseId, funcName, argsCopy]() {
+        auto runAsyncCallback = [queueState, callback, promiseId, funcName, argsCopy]() {
             AsyncCompletion completion{promiseId, true, "null"};
             try {
                 completion.payloadJson = callback(argsCopy);
@@ -289,7 +295,38 @@ JSValue HostBridge::jsBackendCall(JSContext* ctx, JSValueConst thisVal,
             std::lock_guard<std::mutex> lock(queueState->mutex);
             if (!queueState->alive.load()) return;
             queueState->completions.push_back(std::move(completion));
-        }).detach();
+        };
+
+        bool posted = false;
+        if (bridge->background_runner_) {
+            posted = bridge->background_runner_->Post(std::move(runAsyncCallback), funcName);
+        }
+
+        if (!posted) {
+            PendingPromise pending{};
+            bool found = false;
+            {
+                std::lock_guard<std::mutex> lock(bridge->pendingPromisesMutex_);
+                auto it = bridge->pendingPromises_.find(promiseId);
+                if (it != bridge->pendingPromises_.end()) {
+                    pending = it->second;
+                    bridge->pendingPromises_.erase(it);
+                    found = true;
+                }
+            }
+
+            if (found) {
+                JSValue error = JS_NewError(ctx);
+                JS_SetPropertyStr(ctx, error, "message",
+                                  JS_NewString(ctx, "Background task runner is shutting down"));
+                JSValue result = JS_Call(ctx, pending.reject, JS_UNDEFINED, 1, &error);
+                JS_FreeValue(ctx, result);
+                JS_FreeValue(ctx, error);
+                JS_FreeValue(ctx, pending.promise);
+                JS_FreeValue(ctx, pending.resolve);
+                JS_FreeValue(ctx, pending.reject);
+            }
+        }
 
         JS_FreeCString(ctx, name);
         return promise;

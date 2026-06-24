@@ -19,6 +19,8 @@ import (
 var embeddedResourcePackage []byte
 
 const embeddedConfig = `{"name":"MBink","purpose":"minimal","runtime":"go","window":{"title":"MBink","width":900,"height":640,"resizable":true}}`
+const resourceConfigPath = "app/mbink.config.json"
+const resourceAppPath = "/app/app.js"
 
 type projectConfig struct {
 	Name    string       `json:"name"`
@@ -163,7 +165,7 @@ func main() {
 
 	if resourcePackage != "" {
 		must(app.MountResourcePackage(resourcePackage, "", "/"))
-		must(app.LoadJSFile("/app.js"))
+		must(app.LoadJSFile(resourceAppPath))
 	} else {
 		must(app.LoadJSFile(filepath.Join(root, "ui", "app.js")))
 	}
@@ -240,7 +242,7 @@ func resourcePackageCandidates(root string) []string {
 func loadConfig(root, resourcePackage string) projectConfig {
 	content, err := os.ReadFile(filepath.Join(root, "mbink.config.json"))
 	if err != nil && resourcePackage != "" {
-		if file, resourceErr := mbink.LoadResourceFile(resourcePackage, "mbink.config.json", ""); resourceErr == nil {
+		if file, resourceErr := mbink.LoadResourceFile(resourcePackage, resourceConfigPath, ""); resourceErr == nil {
 			content = file.Data()
 			err = nil
 		}

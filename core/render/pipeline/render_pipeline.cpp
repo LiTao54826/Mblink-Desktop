@@ -1244,11 +1244,6 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
     };
     collect(render_tree_.get());
 
-    // 调试：输出收集到的对象数量
-    static bool debug_orphan = std::getenv("MBINK_DEBUG_ORPHAN") != nullptr;
-    if (debug_orphan) {
-    }
-
     // 收集需要删除的子层
     std::vector<std::shared_ptr<CompositorLayer>> layers_to_remove;
 
@@ -1269,33 +1264,13 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
 
         // 检查层对应的 RenderObject 是否还在渲染树中
         RenderObject* render_obj = child->GetRenderObject();
+        const bool render_obj_valid =
+            render_obj && valid_objects.find(render_obj) != valid_objects.end();
 
-        // 调试：输出层信息
-        if (debug_orphan && render_obj) {
-            std::string tag_name = "unknown";
-            if (auto node = render_obj->GetNode()) {
-                if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto element = std::static_pointer_cast<Element>(node);
-                    tag_name = element->GetTagName();
-                }
-            }
-            bool is_valid = (valid_objects.find(render_obj) != valid_objects.end());
-        }
-
-        if (!render_obj || valid_objects.find(render_obj) == valid_objects.end()) {
+        if (!render_obj_valid) {
             // RenderObject 已被删除或不在渲染树中
+            child->SetRenderObject(nullptr);
             layers_to_remove.push_back(child);
-
-            std::string tag_name = "unknown";
-            if (render_obj) {
-                if (auto node = render_obj->GetNode()) {
-                    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto element = std::static_pointer_cast<Element>(node);
-                        tag_name = element->GetTagName();
-                    }
-                }
-            }
-
         } else {
             // 递归检查子层的子层
             RemoveOrphanedLayers(child.get());
@@ -1304,10 +1279,6 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
 
     // 删除孤立层
     for (const auto& orphan : layers_to_remove) {
-        // 清除 RenderObject 的层引用
-        if (orphan->GetRenderObject()) {
-            orphan->GetRenderObject()->SetCompositorLayer(nullptr);
-        }
         // 从父层移除
         layer->RemoveChild(orphan.get());
     }

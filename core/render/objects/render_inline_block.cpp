@@ -6,6 +6,8 @@
 #include "render_inline_block.h"
 #include "core/render/text/font_manager.h"
 #include "core/render/painters/box_renderer.h"
+#include "core/render/painters/form_element_painter.h"
+#include "core/render/painters/audio_element_painter.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
@@ -21,6 +23,7 @@
 #include "core/dom/elements/html_form_controls.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_audio_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
@@ -28,6 +31,7 @@
 #include "core/render/image/image_loader.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <unordered_map>
 #include <chrono>
@@ -64,7 +68,6 @@ float MeasureInputContentLineHeight(const ComputedStyle& style) {
 }
 
 }  // namespace
-
 
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
@@ -901,7 +904,17 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
 
         // Select元素
         if (element->GetTagName() == "select") {
-            PaintSelectElement(canvas, element.get(), box);
+            auto select_element = std::dynamic_pointer_cast<HTMLSelectElement>(node);
+            if (select_element) {
+                FormElementPaintParams params;
+                params.font_family = style.font_family;
+                params.font_size = style.font_size;
+                params.text_color = style.color;
+                params.has_focus = element->HasPseudoClass("focus");
+
+                FormElementPainter painter(canvas);
+                painter.PaintSelectElement(select_element.get(), box, params);
+            }
             // Select元素不绘制子元素（option元素由PaintSelectElement处理）
             if (has_opacity) {
                 canvas->restore(); // 恢复 opacity layer
@@ -936,6 +949,17 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         }
 
         // Canvas元素 - 将Canvas内部surface内容绘制到窗口画布
+        auto audio_element = std::dynamic_pointer_cast<HTMLAudioElement>(node);
+        if (audio_element) {
+            PaintAudioElement(canvas, audio_element.get(), box);
+            if (has_opacity) {
+                canvas->restore();
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+
         auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(node);
         if (canvas_element) {
             auto ctx2d = canvas_element->GetContext2D();
@@ -2014,5 +2038,8 @@ void RenderInlineBlock::PaintMeterElement(SkCanvas* canvas, HTMLMeterElement* me
     }
 }
 
-} // namespace mbink
+void RenderInlineBlock::PaintAudioElement(SkCanvas* canvas, HTMLAudioElement* audio, const Box& box) {
+    PaintAudioElementControl(canvas, audio, box, computed_style_);
+}
 
+} // namespace mbink

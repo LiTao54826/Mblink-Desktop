@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "core/dom/file_list.h"
+
 #include <string>
 #include <unordered_map>
 #include <memory>
@@ -106,6 +108,10 @@ public:
      * @return 数据格式列表
      */
     std::vector<std::string> GetTypes() const;
+
+    const FileList& GetFiles() const { return files_; }
+    void SetFiles(FileList files);
+    void SetFilesFromPaths(const std::vector<std::string>& paths);
     
     /**
      * @brief 设置允许的拖拽效果
@@ -159,6 +165,7 @@ private:
     std::vector<std::string> format_order_;
     
     // 允许的拖拽效果
+    FileList files_;
     DragEffect effect_allowed_;
     
     // 当前拖拽效果

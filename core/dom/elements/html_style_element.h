@@ -96,7 +96,7 @@ public:
      */
     void SetTextContent(const std::string& content) override;
 
-private:
+public:
     /**
      * @brief 通知样式管理器更新
      */

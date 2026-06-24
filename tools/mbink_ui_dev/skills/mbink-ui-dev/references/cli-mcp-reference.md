@@ -456,6 +456,7 @@ Expect these top-level areas:
 Default dev-oriented expectations include:
 
 - `build.builder = "esbuild"`
+- `build.icon = "assets/app.ico"` for host-runtime Windows exe icon packaging; only `.ico` is accepted, and missing or invalid icons are reported as skipped instead of failing the build.
 - `dev.watch = true`
 - `dev.debounce_ms = 100`
 - `dev.auto_reload = true`

@@ -10,6 +10,7 @@ use mbink::App;
 use serde_json::{json, Value};
 
 const EMBEDDED_CONFIG: &str = include_str!("../../mbink.config.json");
+const RESOURCE_APP_PATH: &str = "/app/app.js";
 
 include!(concat!(env!("OUT_DIR"), "/embedded_resources.rs"));
 
@@ -170,7 +171,7 @@ fn main() -> mbink::Result<()> {
 
     if let Some(resource_package) = resolve_resource_package(&root) {
         app.mount_resource_package(&path_string(&resource_package), "", "/")?;
-        app.load_js_file("/app.js")?;
+        app.load_js_file(RESOURCE_APP_PATH)?;
     } else {
         app.load_js_file(&path_string(&root.join("ui").join("app.js")))?;
     }
