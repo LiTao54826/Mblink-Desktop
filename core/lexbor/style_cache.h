@@ -5,15 +5,15 @@
  * 提供样式计算结果的缓存机制，优化重复计算性能
  */
 
-#ifndef MBINK_LEXBOR_STYLE_CACHE_H
-#define MBINK_LEXBOR_STYLE_CACHE_H
+#ifndef MBLINK_LEXBOR_STYLE_CACHE_H
+#define MBLINK_LEXBOR_STYLE_CACHE_H
 
 #include <map>
 #include <string>
 #include <unordered_map>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -172,7 +172,7 @@ private:
     size_t access_counter_;
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_LEXBOR_STYLE_CACHE_H
+#endif // MBLINK_LEXBOR_STYLE_CACHE_H
 

@@ -56,18 +56,18 @@ function run() {
   assert(runOnceInternal.includes('if (allow_idle_wait && !did_front_idle_wait)') &&
          runOnceInternal.includes('WaitForIdleWork(CollectIdleWorkState('),
     'RunOnceInternal should keep the tail idle sleep only for the blocking EventLoop::Run path');
-  const cApiPath = path.join(process.cwd(), 'core', 'api', 'mbink.cpp');
+  const cApiPath = path.join(process.cwd(), 'core', 'api', 'mblink.cpp');
   const cApiSrc = fs.readFileSync(cApiPath, 'utf8');
-  const pollEvents = extractFunction(cApiSrc, 'bool mbink_poll_events');
+  const pollEvents = extractFunction(cApiSrc, 'bool mblink_poll_events');
   assert(pollEvents.includes('RunOnceNonBlocking()') && !pollEvents.includes('RunOnce();'),
-    'mbink_poll_events must not perform the blocking idle wait used by EventLoop::Run');
-  const waitEvents = extractFunction(cApiSrc, 'bool mbink_wait_events');
+    'mblink_poll_events must not perform the blocking idle wait used by EventLoop::Run');
+  const waitEvents = extractFunction(cApiSrc, 'bool mblink_wait_events');
   assert(waitEvents.includes('RunOnce()') && !waitEvents.includes('RunOnceNonBlocking()'),
-    'mbink_wait_events must expose the blocking idle-wait step for C API hosts');
+    'mblink_wait_events must expose the blocking idle-wait step for C API hosts');
 
   const esmLoaderSrc = fs.readFileSync(path.join(process.cwd(), 'tools', 'esm_loader', 'main_c_api.cpp'), 'utf8');
-  assert(esmLoaderSrc.includes('while (mbink_wait_events(app))') &&
-         !esmLoaderSrc.includes('while (mbink_poll_events(app))'),
+  assert(esmLoaderSrc.includes('while (mblink_wait_events(app))') &&
+         !esmLoaderSrc.includes('while (mblink_poll_events(app))'),
     'esm_loader must use the blocking C API event step instead of a busy poll loop');
   assert(!esmLoaderSrc.includes('ui_dev_enabled ? 2 : 8'),
     'esm_loader must not hide idle spinning behind fixed millisecond sleeps');

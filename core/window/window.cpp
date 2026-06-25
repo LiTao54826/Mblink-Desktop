@@ -25,10 +25,10 @@
  * - 窗口事件处理
  */
 
-// 性能优化：默认关闭调试日志（可以通过定义MBINK_DEBUG_RENDERING启用）
-// #define MBINK_DEBUG_RENDERING
+// 性能优化：默认关闭调试日志（可以通过定义MBLINK_DEBUG_RENDERING启用）
+// #define MBLINK_DEBUG_RENDERING
 
-#ifdef MBINK_DEBUG_RENDERING
+#ifdef MBLINK_DEBUG_RENDERING
     #define DEBUG_LOG_FLUSH() ((void)0)
 #else
     #define DEBUG_LOG(msg) ((void)0)
@@ -102,7 +102,7 @@
 #include "core/render/image/image_cache.h"
 #include "core/event/input/hit_test_controller.h"
 
-namespace mbink {
+namespace mblink {
 
 const char* RepaintReasonName(RepaintReason reason) {
     switch (reason) {
@@ -173,12 +173,12 @@ static constexpr size_t kImageCacheBurstShrinkBytes = 24 * 1024 * 1024; // 24MB
 
 namespace {
 inline bool IsAnimFrameDebugEnabled() {
-    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
+    static const bool enabled = (std::getenv("MBLINK_DEBUG_ANIM_FRAME") != nullptr);
     return enabled;
 }
 
 inline bool IsBaselineFrameStatsEnabled() {
-    static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+    static const bool enabled = (std::getenv("MBLINK_BASELINE_FRAME_STATS") != nullptr);
     return enabled;
 }
 
@@ -206,7 +206,7 @@ inline bool IsEnvFlagEnabled(const char* name) {
 }
 
 inline bool IsRetainedPresentExperimentEnabled() {
-    static const bool disabled = IsEnvFlagEnabled("MBINK_DISABLE_RETAINED_PRESENT");
+    static const bool disabled = IsEnvFlagEnabled("MBLINK_DISABLE_RETAINED_PRESENT");
     return !disabled;
 }
 
@@ -859,7 +859,7 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
 #ifdef _WIN32
     // 检查调试环境变量
-    if (getenv("MBINK_DEBUG_MESSAGES")) {
+    if (getenv("MBLINK_DEBUG_MESSAGES")) {
         win32::SetDebugMessages(true);
     }
 
@@ -2139,7 +2139,7 @@ void Window::Render() {
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
         if (render_pipeline_ && !render_pipeline_->NeedsUpdate()) {
             if (baseline_stats_enabled) {
-                std::cout << "[MBINK_BASELINE_FRAME]"
+                std::cout << "[MBLINK_BASELINE_FRAME]"
                           << " boundary=window"
                           << " class=idle_early_return"
                           << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
@@ -2780,7 +2780,7 @@ void Window::Render() {
             }
         }
         if (baseline_stats_enabled) {
-            std::cout << "[MBINK_BASELINE_FRAME]"
+            std::cout << "[MBLINK_BASELINE_FRAME]"
                       << " boundary=window"
                       << " class=rendered"
                       << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
@@ -3821,6 +3821,6 @@ std::string Window::HitTestWindowControl(int screen_x, int screen_y) const {
     return "";
 }
 
-} // namespace mbink
+} // namespace mblink
 
 

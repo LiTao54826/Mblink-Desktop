@@ -3,14 +3,14 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 class Document;
 class EventLoop;
 class QuickJSRuntime;
 class Window;
 }
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 
 struct RuntimeSupportOptions {
     std::string snapshot_file;
@@ -38,4 +38,4 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                              const std::shared_ptr<Document>& document,
                              const RuntimeSupportOptions& options);
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

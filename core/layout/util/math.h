@@ -12,7 +12,7 @@
 #include <cmath>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Float utilities
@@ -170,5 +170,5 @@ inline std::optional<float> ApplyAspectRatioHeight(
     return std::nullopt;
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -5,7 +5,7 @@
 #include "core/render/layer/paint_layer.h"
 #include "core/render/objects/render_object.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -100,4 +100,4 @@ TEST(HitTestControllerTest, ViewportBoundsStopsAtFixedAncestorForDescendants) {
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

@@ -2,11 +2,11 @@
 
 [English](BUILD.md) | 中文
 
-这份文档描述 MBink 当前对外可讲清楚的构建面，表述以 Windows-first 为主。
+这份文档描述 MBlink 当前对外可讲清楚的构建面，表述以 Windows-first 为主。
 
 ## 构建系统
 
-MBink 在仓库根目录使用 CMake。
+MBlink 在仓库根目录使用 CMake。
 
 当前已经接入顶层 `CMakeLists.txt` 的主要构建面包括：
 
@@ -14,7 +14,7 @@ MBink 在仓库根目录使用 CMake。
 - `bindings/python/`
 - `tools/app_bundler/`
 - `tools/esm_loader/`
-- `tools/mbink_ui_dev/`
+- `tools/mblink_ui_dev/`
 - 在启用时包含 `tests/`
 
 ## 常用命令
@@ -28,7 +28,7 @@ cmake -B build
 构建公开上手最关键的两个工具：
 
 ```powershell
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 构建更完整的默认 Release 树：
@@ -41,26 +41,26 @@ cmake --build build --config Release
 
 当前文档和示例主要假定你会拿到这些 Windows 输出：
 
-- `build\bin\Release\mbink-ui-dev.exe`
+- `build\bin\Release\mblink-ui-dev.exe`
 - `build\bin\Release\esm_loader.exe`
-- `build\bin\Release\mbink.dll`
+- `build\bin\Release\mblink.dll`
 
 根据构建目标不同，你还可能看到：
 
-- `build\bin\Release\mbink_devtools.dll`
+- `build\bin\Release\mblink_devtools.dll`
 
-如果 `mbink-ui-dev` 的项目 build/open 工作流使用的是 `esbuild` builder，那么系统 `PATH` 或项目 `node_modules` 里还需要有可用的 `esbuild`。
+如果 `mblink-ui-dev` 的项目 build/open 工作流使用的是 `esbuild` builder，那么系统 `PATH` 或项目 `node_modules` 里还需要有可用的 `esbuild`。
 
 ## CMake 选项
 
 常见顶层选项包括：
 
-- `MBINK_BUILD_PYTHON_BINDING=ON`
-- `MBINK_BUILD_RUST_BINDING=OFF`
-- `MBINK_BUILD_GO_BINDING=OFF`
-- `MBINK_USE_SKIA=ON`
-- `MBINK_BUILD_TESTS=OFF`
-- `MBINK_ENABLE_LTO=OFF`
+- `MBLINK_BUILD_PYTHON_BINDING=ON`
+- `MBLINK_BUILD_RUST_BINDING=OFF`
+- `MBLINK_BUILD_GO_BINDING=OFF`
+- `MBLINK_USE_SKIA=ON`
+- `MBLINK_BUILD_TESTS=OFF`
+- `MBLINK_ENABLE_LTO=OFF`
 
 请把它们理解成当前仓库默认值，而不是长期稳定 API 承诺。
 
@@ -69,7 +69,7 @@ cmake --build build --config Release
 如果要显式启用测试：
 
 ```powershell
-cmake -B build -DMBINK_BUILD_TESTS=ON
+cmake -B build -DMBLINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure -C Release
 ```
@@ -81,21 +81,21 @@ ctest --test-dir build --output-on-failure -C Release
 如果你的目标是 AI 优先开发循环，那么最值得关心的目标组合是：
 
 ```powershell
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 它会给你：
 
-- `mbink-ui-dev`：用于项目 open/build/snapshot/query/MCP
+- `mblink-ui-dev`：用于项目 open/build/snapshot/query/MCP
 - `esm_loader`：用于最薄的手动宿主路径
 
 ## 运行时形态
 
 运行时模型可以概括为：
 
-- `mbink.dll` 是共享运行时
+- `mblink.dll` 是共享运行时
 - `esm_loader.exe` 是薄宿主
-- `mbink-ui-dev.exe` 是更高层的开发工具面
+- `mblink-ui-dev.exe` 是更高层的开发工具面
 
 这三者之间的关系，请继续阅读 [C API Runtime Parity](C_API_RUNTIME_PARITY.md)。
 
@@ -103,7 +103,7 @@ cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
 
 Python 包通过 `ctypes` 加载运行时，当前构建行为会把运行时产物复制到：
 
-- `bindings/python/mbink/bin/`
+- `bindings/python/mblink/bin/`
 
 更实际的 Python 路径请看 [../bindings/python/README.md](../bindings/python/README.md)。
 

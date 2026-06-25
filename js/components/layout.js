@@ -1,5 +1,5 @@
 /**
- * MBink 布局组件
+ * MBlink 布局组件
  */
 
 import { h } from 'preact';

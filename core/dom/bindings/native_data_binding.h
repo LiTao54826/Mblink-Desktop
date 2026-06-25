@@ -19,7 +19,7 @@
 #include "core/dom/node.h"
 #include "nlohmann/json.hpp"
 
-namespace mbink {
+namespace mblink {
 
 using json = nlohmann::json;
 
@@ -165,4 +165,4 @@ private:
     std::vector<std::string> errors_;
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -10,7 +10,7 @@
 #include "core/dom/event.h"
 #include "tests/test_utils/test_helpers.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class NativeDataBindingTest : public DOMTestBase {};
@@ -18,7 +18,7 @@ class NativeDataBindingTest : public DOMTestBase {};
 TEST_F(NativeDataBindingTest, TextBindingFlushUpdatesOnlyTargetTextNode) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
 
     auto host = CreateElement("span");
     auto sibling = CreateElement("em");
@@ -46,7 +46,7 @@ TEST_F(NativeDataBindingTest, TextBindingFlushUpdatesOnlyTargetTextNode) {
 TEST_F(NativeDataBindingTest, VisibleBindingTogglesHiddenWithoutRebuild) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("panel", json{{"visible", true}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("panel", json{{"visible", true}}), MBlinkError::Ok);
 
     auto panel = CreateElement("div");
     panel->AppendChild(CreateTextNode("content"));
@@ -72,7 +72,7 @@ TEST_F(NativeDataBindingTest, VisibleBindingTogglesHiddenWithoutRebuild) {
 TEST_F(NativeDataBindingTest, AttrBindingSetsAndRemovesAttribute) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("profile", json{{"role", "admin"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("profile", json{{"role", "admin"}}), MBlinkError::Ok);
 
     auto element = CreateElement("div");
     doc_->GetBody()->AppendChild(element);
@@ -91,7 +91,7 @@ TEST_F(NativeDataBindingTest, AttrBindingSetsAndRemovesAttribute) {
 TEST_F(NativeDataBindingTest, ModelBindingValueSupportsDomWriteBackAndGraphSync) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("form", json{{"username", "tom"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("form", json{{"username", "tom"}}), MBlinkError::Ok);
 
     auto input = std::dynamic_pointer_cast<HTMLInputElement>(CreateElement("input"));
     ASSERT_NE(input, nullptr);
@@ -117,7 +117,7 @@ TEST_F(NativeDataBindingTest, ModelBindingValueSupportsDomWriteBackAndGraphSync)
 TEST_F(NativeDataBindingTest, ModelBindingCheckedSupportsDomWriteBackAndGraphSync) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("form", json{{"agreed", true}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("form", json{{"agreed", true}}), MBlinkError::Ok);
 
     auto input = std::dynamic_pointer_cast<HTMLInputElement>(CreateElement("input"));
     ASSERT_NE(input, nullptr);
@@ -144,7 +144,7 @@ TEST_F(NativeDataBindingTest, ModelBindingCheckedSupportsDomWriteBackAndGraphSyn
 TEST_F(NativeDataBindingTest, ReadonlyScopeBlocksModelWriteBack) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBlinkError::Ok);
 
     auto host = CreateElement("div");
     auto input = std::dynamic_pointer_cast<HTMLInputElement>(CreateElement("input"));
@@ -168,9 +168,9 @@ TEST_F(NativeDataBindingTest, ReadonlyScopeBlocksModelWriteBack) {
 TEST_F(NativeDataBindingTest, DeclarativeBindingsSupportTextVisibleAndModel) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
-    ASSERT_EQ(state.createJson("panel", json{{"visible", true}}), MBinkError::Ok);
-    ASSERT_EQ(state.createJson("form", json{{"username", "tom"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
+    ASSERT_EQ(state.createJson("panel", json{{"visible", true}}), MBlinkError::Ok);
+    ASSERT_EQ(state.createJson("form", json{{"username", "tom"}}), MBlinkError::Ok);
 
     auto host = CreateElement("div");
     auto text = CreateElement("span");
@@ -211,7 +211,7 @@ TEST_F(NativeDataBindingTest, DeclarativeBindingsSupportTextVisibleAndModel) {
 TEST_F(NativeDataBindingTest, DeclarativeScopeResolvesAliasAndReadonlyWriteBackFails) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBlinkError::Ok);
 
     auto host = CreateElement("div");
     auto text = CreateElement("span");
@@ -248,7 +248,7 @@ TEST_F(NativeDataBindingTest, DeclarativeScopeResolvesAliasAndReadonlyWriteBackF
 TEST_F(NativeDataBindingTest, StateBatchCoalescesExactPathFlush) {
     StateManager state;
     NativeDataBindingRuntime runtime(state);
-    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
 
     auto host = CreateElement("span");
     auto text = CreateTextNode("");
@@ -273,4 +273,4 @@ TEST_F(NativeDataBindingTest, StateBatchCoalescesExactPathFlush) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

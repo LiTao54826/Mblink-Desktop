@@ -26,7 +26,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 WheelEventDispatcher::WheelEventDispatcher() = default;
 
@@ -482,4 +482,4 @@ bool WheelEventDispatcher::HandleScrollableElementWheel(
     return true;
 }
 
-} // namespace mbink
+} // namespace mblink

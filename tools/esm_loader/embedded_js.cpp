@@ -7,7 +7,7 @@
 
 #include "embedded_js.h"
 
-namespace mbink {
+namespace mblink {
 namespace embedded {
 namespace {
 
@@ -52,5 +52,5 @@ bool HasEmbeddedJS() {
 }
 
 }  // namespace embedded
-}  // namespace mbink
+}  // namespace mblink
 

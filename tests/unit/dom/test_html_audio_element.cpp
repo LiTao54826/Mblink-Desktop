@@ -2,7 +2,7 @@
 
 #include "dom/document.h"
 #include "dom/elements/html_audio_element.h"
-#include "core/api/mbink.h"
+#include "core/api/mblink.h"
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "core/network/fetch_bindings.h"
 #include "core/render/image/image_loader.h"
@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -261,7 +261,7 @@ TEST(HTMLAudioElementTest, PlayStartsSDLStreamWithDummyAudioDriver) {
 }
 
 TEST(HTMLAudioElementTest, MountedResourcePackageResolvesAudioRelativeToLoadedJS) {
-    const auto temp_root = std::filesystem::temp_directory_path() / "mbink-audio-resource-package-test";
+    const auto temp_root = std::filesystem::temp_directory_path() / "mblink-audio-resource-package-test";
     const auto input_dir = temp_root / "app";
     const auto package_file = temp_root / "app.mbrp";
     std::error_code ec;
@@ -283,33 +283,33 @@ globalThis.__audioPackageResult = {
 
     std::string input_text = PathToUtf8(input_dir);
     std::string package_text = PathToUtf8(package_file);
-    ASSERT_EQ(mbink_init(), MBINK_OK);
-    ASSERT_EQ(mbink_compile_resources(input_text.c_str(), package_text.c_str(), ""), MBINK_OK)
-        << mbink_last_error();
+    ASSERT_EQ(mblink_init(), MBLINK_OK);
+    ASSERT_EQ(mblink_compile_resources(input_text.c_str(), package_text.c_str(), ""), MBLINK_OK)
+        << mblink_last_error();
 
     void* resource_data = nullptr;
     size_t resource_size = 0;
     uint32_t resource_flags = 0;
-    ASSERT_EQ(mbink_load_resource_file(package_text.c_str(), "app/tone.wav", "",
-                                       &resource_data, &resource_size, &resource_flags), MBINK_OK)
-        << mbink_last_error();
+    ASSERT_EQ(mblink_load_resource_file(package_text.c_str(), "app/tone.wav", "",
+                                       &resource_data, &resource_size, &resource_flags), MBLINK_OK)
+        << mblink_last_error();
     EXPECT_EQ(resource_size, MakeSilentWav(8000).size());
-    mbink_free(resource_data);
+    mblink_free(resource_data);
 
-    MBinkConfig config = mbink_default_config();
+    MBlinkConfig config = mblink_default_config();
     config.headless = true;
     config.gpu = false;
     config.width = 320;
     config.height = 120;
-    MBinkHandle handle = mbink_create_ex(&config);
-    ASSERT_NE(handle, nullptr) << mbink_last_error();
+    MBlinkHandle handle = mblink_create_ex(&config);
+    ASSERT_NE(handle, nullptr) << mblink_last_error();
 
-    ASSERT_EQ(mbink_mount_resource_package(handle, package_text.c_str(), "", "/"), MBINK_OK)
-        << mbink_last_error();
-    ASSERT_EQ(mbink_load_js_file(handle, "/app/app.js"), MBINK_OK)
-        << mbink_last_error();
+    ASSERT_EQ(mblink_mount_resource_package(handle, package_text.c_str(), "", "/"), MBLINK_OK)
+        << mblink_last_error();
+    ASSERT_EQ(mblink_load_js_file(handle, "/app/app.js"), MBLINK_OK)
+        << mblink_last_error();
 
-    ASSERT_EQ(mbink_eval_js(handle, R"JS(
+    ASSERT_EQ(mblink_eval_js(handle, R"JS(
 (function(result) {
   if (!result || result.src !== 'tone.wav' || result.loaded !== true ||
       result.duration !== 1 || result.error) {
@@ -317,13 +317,13 @@ globalThis.__audioPackageResult = {
   }
   return true;
 })(globalThis.__audioPackageResult)
-)JS"), MBINK_OK) << mbink_last_error();
+)JS"), MBLINK_OK) << mblink_last_error();
 
-    mbink_destroy(handle);
-    mbink_cleanup();
+    mblink_destroy(handle);
+    mblink_cleanup();
     ClearGlobalAssetProviders();
     std::filesystem::remove_all(temp_root, ec);
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

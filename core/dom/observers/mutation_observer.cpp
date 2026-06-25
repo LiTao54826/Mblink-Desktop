@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 // ========== MutationObserver 实现 ==========
 
@@ -327,4 +327,4 @@ void MutationObserverRegistry::NotifyTextChanged(
     }
 }
 
-} // namespace mbink
+} // namespace mblink

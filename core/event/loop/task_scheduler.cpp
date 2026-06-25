@@ -6,7 +6,7 @@
 #include "task_scheduler.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 TaskScheduler& TaskScheduler::Instance() {
     static TaskScheduler instance;
@@ -294,5 +294,5 @@ void TaskScheduler::ProcessMicrotasks() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

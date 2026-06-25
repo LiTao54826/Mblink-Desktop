@@ -19,7 +19,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "css/css_value.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 渐变渲染器
@@ -110,5 +110,5 @@ private:
                                          std::vector<SkScalar>& positions);
 };
 
-} // namespace mbink
+} // namespace mblink
 

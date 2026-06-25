@@ -24,7 +24,7 @@
 #include <unistd.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -48,7 +48,7 @@ bool IsRemoteOrDataUrl(const std::string& src) {
 
 bool AudioDebugEnabled() {
     static const bool enabled = [] {
-        const char* value = std::getenv("MBINK_AUDIO_DEBUG");
+        const char* value = std::getenv("MBLINK_AUDIO_DEBUG");
         return value && value[0] && std::string(value) != "0";
     }();
     return enabled;
@@ -93,7 +93,7 @@ void AudioDebugLog(const std::string& message) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
     std::ostringstream line;
-    line << "[mbink audio pid="
+    line << "[mblink audio pid="
 #if defined(_WIN32)
          << _getpid()
 #else
@@ -105,14 +105,14 @@ void AudioDebugLog(const std::string& message) {
     const std::string text = line.str();
     std::cerr << text << std::endl;
 
-    const char* explicit_path = std::getenv("MBINK_AUDIO_DEBUG_FILE");
+    const char* explicit_path = std::getenv("MBLINK_AUDIO_DEBUG_FILE");
     std::filesystem::path log_path;
     if (explicit_path && explicit_path[0]) {
         log_path = explicit_path;
     } else if (const char* temp = std::getenv("TEMP")) {
-        log_path = std::filesystem::path(temp) / "mbink-audio-debug.log";
+        log_path = std::filesystem::path(temp) / "mblink-audio-debug.log";
     } else if (const char* tmp = std::getenv("TMP")) {
-        log_path = std::filesystem::path(tmp) / "mbink-audio-debug.log";
+        log_path = std::filesystem::path(tmp) / "mblink-audio-debug.log";
     }
     if (!log_path.empty()) {
         std::ofstream file(log_path, std::ios::app);
@@ -158,12 +158,12 @@ void AudioDebugLogDevices() {
 
 void ConfigureAudioDriverHint() {
 #if defined(_WIN32)
-    const char* mbink_driver = std::getenv("MBINK_AUDIO_DRIVER");
-    if (mbink_driver && mbink_driver[0]) {
-        if (SDL_SetHint(SDL_HINT_AUDIO_DRIVER, mbink_driver)) {
-            AudioDebugLog(std::string("audio driver set from MBINK_AUDIO_DRIVER=\"") + mbink_driver + "\"");
+    const char* mblink_driver = std::getenv("MBLINK_AUDIO_DRIVER");
+    if (mblink_driver && mblink_driver[0]) {
+        if (SDL_SetHint(SDL_HINT_AUDIO_DRIVER, mblink_driver)) {
+            AudioDebugLog(std::string("audio driver set from MBLINK_AUDIO_DRIVER=\"") + mblink_driver + "\"");
         } else {
-            AudioDebugLog(std::string("audio driver override ignored by SDL MBINK_AUDIO_DRIVER=\"") + mbink_driver + "\"");
+            AudioDebugLog(std::string("audio driver override ignored by SDL MBLINK_AUDIO_DRIVER=\"") + mblink_driver + "\"");
         }
         return;
     }
@@ -183,7 +183,7 @@ void ConfigureAudioDriverHint() {
 }
 
 SDL_AudioDeviceID ResolvePlaybackDevice() {
-    const char* requested = std::getenv("MBINK_AUDIO_PLAYBACK_DEVICE");
+    const char* requested = std::getenv("MBLINK_AUDIO_PLAYBACK_DEVICE");
     if (!requested || !requested[0]) {
         AudioDebugLog("playback device override not set, using SDL default playback");
         return SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
@@ -1209,4 +1209,4 @@ std::string HTMLAudioElement::LowercasePath(const std::string& value) {
     return lower;
 }
 
-} // namespace mbink
+} // namespace mblink

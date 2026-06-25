@@ -6,9 +6,9 @@ import threading
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from mbink import App
+from mblink import App
 
-app = App("MBink Threading Demo", 1100, 760, gpu=False)
+app = App("MBlink Threading Demo", 1100, 760, gpu=False)
 
 state = app.shared("demo")
 stop_event = threading.Event()

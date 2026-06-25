@@ -19,7 +19,7 @@
 #include <algorithm>
 #include <cctype>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class WordBreakPropertyTestRng {

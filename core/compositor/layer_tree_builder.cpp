@@ -12,7 +12,7 @@
 #include <iostream>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 LayerTreeBuilder::LayerTreeBuilder() = default;
 
@@ -852,4 +852,4 @@ bool LayerTreeBuilder::IncrementalBuild(RenderObject* root,
     return true;
 }
 
-} // namespace mbink
+} // namespace mblink

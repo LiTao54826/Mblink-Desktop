@@ -28,24 +28,24 @@ set(COMPOSITOR_HEADERS
     animation/animation_bounds_calculator.h
 )
 
-add_library(mbink_compositor STATIC ${COMPOSITOR_SOURCES})
+add_library(mblink_compositor STATIC ${COMPOSITOR_SOURCES})
 
-target_include_directories(mbink_compositor PUBLIC
+target_include_directories(mblink_compositor PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
     $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
-target_link_libraries(mbink_compositor PUBLIC
-    mbink_utils
-    mbink_render
-    mbink_property_tree
+target_link_libraries(mblink_compositor PUBLIC
+    mblink_utils
+    mblink_render
+    mblink_property_tree
 )
 
 # 链接 Skia
 if(TARGET skia)
-    target_link_libraries(mbink_compositor PUBLIC skia)
+    target_link_libraries(mblink_compositor PUBLIC skia)
     message(STATUS "Compositor module: Linking Skia")
 else()
     message(WARNING "Compositor module: Skia target not found")
@@ -53,16 +53,16 @@ endif()
 
 # 链接 OpenGL
 if(WIN32)
-    target_link_libraries(mbink_compositor PUBLIC opengl32)
+    target_link_libraries(mblink_compositor PUBLIC opengl32)
 endif()
 
 # MSVC 运行时设置（匹配 Skia）
 if(MSVC)
-    target_compile_options(mbink_compositor PUBLIC
+    target_compile_options(mblink_compositor PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(mbink_compositor PUBLIC
+    target_compile_definitions(mblink_compositor PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()

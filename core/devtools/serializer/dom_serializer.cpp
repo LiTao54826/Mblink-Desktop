@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 std::string DOMSerializer::Serialize(std::shared_ptr<Node> node,
                                       const SerializeOptions& options) {
@@ -280,4 +280,4 @@ bool DOMSerializer::IsSelfClosingTag(const std::string& tag_name) {
     return std::find(self_closing.begin(), self_closing.end(), lower_tag) != self_closing.end();
 }
 
-} // namespace mbink
+} // namespace mblink

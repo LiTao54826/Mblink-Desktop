@@ -5,14 +5,14 @@
  * 紧凑的日志条目结构，8字节头部 + 消息内容。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 日志级别枚举
@@ -112,6 +112,6 @@ private:
     const uint8_t* data_;
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_

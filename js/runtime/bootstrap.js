@@ -56,7 +56,7 @@
         ? function() { return Object.create(null); }
         : function() { return {}; };
 
-    var runtime = global.__mbinkSharedRuntime || (global.__mbinkSharedRuntime = {
+    var runtime = global.__mblinkSharedRuntime || (global.__mblinkSharedRuntime = {
         roots: [],
         pending: false,
         currentDispatcher: null,
@@ -148,8 +148,8 @@
 
         var syncSet = function(prop, value) {
             var changed = true;
-            if (typeof global.__mbinkSharedNativeSet === 'function') {
-                try { changed = global.__mbinkSharedNativeSet(name, prop, value) !== false; } catch (_) {}
+            if (typeof global.__mblinkSharedNativeSet === 'function') {
+                try { changed = global.__mblinkSharedNativeSet(name, prop, value) !== false; } catch (_) {}
             }
             if (changed) {
                 runtime.schedule([runtime.getDependencyKey(name, prop)]);
@@ -159,8 +159,8 @@
 
         var syncDelete = function(prop) {
             var changed = true;
-            if (typeof global.__mbinkSharedNativeDelete === 'function') {
-                try { changed = global.__mbinkSharedNativeDelete(name, prop) !== false; } catch (_) {}
+            if (typeof global.__mblinkSharedNativeDelete === 'function') {
+                try { changed = global.__mblinkSharedNativeDelete(name, prop) !== false; } catch (_) {}
             }
             if (changed) {
                 runtime.schedule([runtime.getDependencyKey(name, prop)]);
@@ -295,7 +295,7 @@
         try { container.__preactRoot = found; } catch (_) {}
     };
 
-    global.__mbinkRegisterPreactRoot = runtime.registerRoot;
+    global.__mblinkRegisterPreactRoot = runtime.registerRoot;
 
     runtime.cleanup = function() {
         runtime.pending = false;
@@ -381,17 +381,17 @@
         runtime.schedule(changedKeys);
     };
 
-    global.__mbinkSharedUpdateDispatcher = runtime.currentDispatcher;
-    global.__mbinkWrapSharedObject = runtime.wrapSharedObject;
-    global.__mbinkBeginRootTracking = runtime.beginTracking;
-    global.__mbinkEndRootTracking = runtime.endTracking;
-    global.__mbinkRuntimeCleanup = function() {
+    global.__mblinkSharedUpdateDispatcher = runtime.currentDispatcher;
+    global.__mblinkWrapSharedObject = runtime.wrapSharedObject;
+    global.__mblinkBeginRootTracking = runtime.beginTracking;
+    global.__mblinkEndRootTracking = runtime.endTracking;
+    global.__mblinkRuntimeCleanup = function() {
         try {
             runtime.cleanup();
         } catch (_) {}
     };
 
-    global.__mbinkShutdown = function() {
+    global.__mblinkShutdown = function() {
         var safe = function(fn) {
             if (typeof fn === 'function') {
                 try { fn(); } catch (_) {}
@@ -401,15 +401,15 @@
         safe(globalThis.__fetchCleanup);
         safe(globalThis.__preactHooksCleanup);
         safe(globalThis.__preactCleanup);
-        safe(globalThis.__mbinkRuntimeCleanup);
+        safe(globalThis.__mblinkRuntimeCleanup);
 
         var keys = ['__fetchCleanup', '__preactHooksCleanup', '__preactCleanup',
-                    '__mbinkRuntimeCleanup', '__mbinkShutdown', '__mbinkDumpNativeLeakStats',
+                    '__mblinkRuntimeCleanup', '__mblinkShutdown', '__mblinkDumpNativeLeakStats',
                     'Preact', 'PreactHooks', 'preact', 'preactHooks',
-                    '__mbinkRegisterPreactRoot', '__preactSetCurrentComponent',
-                    '__mbinkSharedUpdateDispatcher', '__mbinkWrapSharedObject',
-                    '__mbinkBeginRootTracking', '__mbinkEndRootTracking', '__mbinkSharedRuntime',
-                    '__mbinkSharedNativeSet', '__mbinkSharedNativeDelete',
+                    '__mblinkRegisterPreactRoot', '__preactSetCurrentComponent',
+                    '__mblinkSharedUpdateDispatcher', '__mblinkWrapSharedObject',
+                    '__mblinkBeginRootTracking', '__mblinkEndRootTracking', '__mblinkSharedRuntime',
+                    '__mblinkSharedNativeSet', '__mblinkSharedNativeDelete',
                     'data', 'backend', 'py'];
         for (var i = 0; i < keys.length; i++) {
             try { delete globalThis[keys[i]]; } catch (_) {
@@ -418,6 +418,6 @@
         }
     };
 
-    console.log('MBink JavaScript runtime initialized');
+    console.log('MBlink JavaScript runtime initialized');
 })(this);
 

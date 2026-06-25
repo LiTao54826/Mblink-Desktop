@@ -22,7 +22,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace mbink {
+namespace mblink {
 
 BackgroundPainter::BackgroundPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -606,4 +606,4 @@ void BackgroundPainter::CalculateRadii(const CSSBorderRadius& border_radius,
     out_radii[3] = {bl, bl};  // bottom-left
 }
 
-} // namespace mbink
+} // namespace mblink

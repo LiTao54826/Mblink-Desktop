@@ -39,7 +39,7 @@
 #endif
 
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -463,7 +463,7 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     SkColor text_color;
     if (!style.color.empty()) {
-        text_color = mbink::Color::Parse(style.color);
+        text_color = mblink::Color::Parse(style.color);
     } else {
         text_color = SK_ColorBLACK;
     }
@@ -598,7 +598,7 @@ void RenderText::Paint(SkCanvas* canvas) {
                 ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,
                                                      line_x, line_y, text_color, style.text_shadow, text_renderer);
             } else {
-                mbink::Paint text_paint;
+                mblink::Paint text_paint;
                 text_paint.SetColor(text_color);
                 text_renderer.DrawTextWithEmoji(text_to_render, line_x, line_y, font, text_paint);
             }
@@ -664,4 +664,4 @@ void RenderText::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace mbink
+} // namespace mblink

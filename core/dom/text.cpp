@@ -8,7 +8,7 @@
 #include "elements/html_style_element.h"
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 Text::Text(const std::string& data)
     : Node(NodeType::TEXT_NODE)
@@ -50,4 +50,4 @@ void Text::SetTextContent(const std::string& content) {
     SetData(content);
 }
 
-} // namespace mbink
+} // namespace mblink

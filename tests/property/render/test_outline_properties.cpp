@@ -18,7 +18,7 @@
 #include <vector>
 #include <string>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class PropertyTestRng {

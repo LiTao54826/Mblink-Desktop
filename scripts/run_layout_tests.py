@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MBink 布局系统测试运行脚本
+MBlink 布局系统测试运行脚本
 
 功能：
 1. 运行 IFC 单元测试
@@ -28,8 +28,8 @@ CONFIG = {
     'compare_script': 'tests/layout_comparison/compare_unified.py',
     'basic_browser_data': 'tests/layout_comparison/browser_reference_data.json',
     'advanced_browser_data': 'tests/layout_comparison/browser_advanced_data.json',
-    'basic_output': 'tests/layout_comparison/mbink_output.txt',
-    'advanced_output': 'tests/layout_comparison/mbink_advanced_output.txt',
+    'basic_output': 'tests/layout_comparison/mblink_output.txt',
+    'advanced_output': 'tests/layout_comparison/mblink_advanced_output.txt',
     'pass_rate_threshold': 98.0,  # 最低通过率要求
 }
 
@@ -135,7 +135,7 @@ class LayoutTestRunner:
         if not layout_exe.exists():
             return {'status': 'SKIP', 'message': 'layout_compare_test.exe not found'}
         
-        # 生成 MBink 输出
+        # 生成 MBlink 输出
         cmd = [str(layout_exe)]
         if is_advanced:
             cmd.append('--advanced')
@@ -190,7 +190,7 @@ class LayoutTestRunner:
     def run_all_tests(self, build: bool = False) -> bool:
         """运行所有测试"""
         print("=" * 60)
-        print("    MBink Layout System Test Suite")
+        print("    MBlink Layout System Test Suite")
         print("=" * 60)
         
         # 可选：先编译
@@ -273,7 +273,7 @@ class LayoutTestRunner:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='MBink Layout Test Runner')
+    parser = argparse.ArgumentParser(description='MBlink Layout Test Runner')
     parser.add_argument('--build', action='store_true', help='Build tests before running')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     parser.add_argument('--output', '-o', default='layout_test_results.json', help='Output JSON file')

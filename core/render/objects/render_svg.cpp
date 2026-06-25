@@ -16,7 +16,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 float ParseSVGLengthAttribute(const std::string& value, float reference) {
@@ -792,5 +792,5 @@ void RenderSVGText::Layout(float parent_width, float parent_height) {
     layout.height = metrics.fDescent - metrics.fAscent;
 }
 
-} // namespace mbink
+} // namespace mblink
 

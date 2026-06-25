@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 TerminalRenderer::TerminalRenderer() {
     palette_ = ColorPalette::Default();
@@ -456,4 +456,4 @@ void TerminalRenderer::RenderHorizontalScrollbar(SkCanvas* canvas,
     canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
 }
 
-}  // namespace mbink
+}  // namespace mblink

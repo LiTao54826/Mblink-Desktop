@@ -16,7 +16,7 @@
 #include <functional>
 #include <mutex>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 泛型对象池
@@ -304,5 +304,5 @@ private:
     T* object_;            ///< 对象指针
 };
 
-} // namespace mbink
+} // namespace mblink
 

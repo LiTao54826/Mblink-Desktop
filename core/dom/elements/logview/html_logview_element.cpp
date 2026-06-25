@@ -20,7 +20,7 @@
 #undef GetMessage  // Windows 宏冲突
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 constexpr int64_t kStreamingRepaintIntervalMs = 120;
@@ -766,4 +766,4 @@ void HTMLLogViewElement::RequestCoalescedRepaint(RepaintReason reason) {
         weak_from_this(), reason, kStreamingRepaintIntervalMs);
 }
 
-}  // namespace mbink
+}  // namespace mblink

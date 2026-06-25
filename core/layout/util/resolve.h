@@ -14,7 +14,7 @@
 #include <optional>
 #include <functional>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // MaybeResolve - Resolve optional values
@@ -340,5 +340,5 @@ inline Rect<float> RectAdd(const Rect<float>& a, const Rect<float>& b) {
     };
 }
 
-} // namespace mbink
+} // namespace mblink
 

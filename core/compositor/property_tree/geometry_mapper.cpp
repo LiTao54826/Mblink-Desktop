@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 // =========================================================================
 // 构造函数
@@ -315,4 +315,4 @@ SkRect GeometryMapper::TransformRect(const SkRect& rect, const SkM44& matrix) {
     return SkRect::MakeLTRB(min_x, min_y, max_x, max_y);
 }
 
-} // namespace mbink
+} // namespace mblink

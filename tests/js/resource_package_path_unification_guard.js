@@ -27,32 +27,32 @@ function run() {
          !resourcePackageSrc.includes('best_suffix'),
     'Resource package loading must not keep suffix compatibility; callers must use the compiled virtual path exactly');
 
-  const apiPath = path.join(process.cwd(), 'core', 'api', 'mbink.cpp');
+  const apiPath = path.join(process.cwd(), 'core', 'api', 'mblink.cpp');
   const apiSrc = fs.readFileSync(apiPath, 'utf8');
   assert(apiSrc.includes('Utf8PathToFsPath(NormalizeResourcePath(filepath)).parent_path()'),
     'Mounted HTML base path normalization must remain UTF-8 safe on Windows');
 
-  const uiDevPath = path.join(process.cwd(), 'tools', 'mbink_ui_dev', 'daemon_server.cpp');
+  const uiDevPath = path.join(process.cwd(), 'tools', 'mblink_ui_dev', 'daemon_server.cpp');
   const uiDevSrc = fs.readFileSync(uiDevPath, 'utf8');
   assert(uiDevSrc.includes('JoinProjectPath(project_root, config.out_dir) / "app"'),
-    'mbink-ui-dev resource input directory must match the /app.js runtime virtual root');
+    'mblink-ui-dev resource input directory must match the /app.js runtime virtual root');
 
   const pythonTemplate = fs.readFileSync(
-    path.join(process.cwd(), 'tools', 'mbink_ui_dev', 'templates', 'runtime', 'python', 'host', 'main.py'),
+    path.join(process.cwd(), 'tools', 'mblink_ui_dev', 'templates', 'runtime', 'python', 'host', 'main.py'),
     'utf8');
   assert(pythonTemplate.includes('RESOURCE_APP_PATH = "/app/app.js"') &&
-         pythonTemplate.includes('RESOURCE_CONFIG_PATH = "app/mbink.config.json"'),
+         pythonTemplate.includes('RESOURCE_CONFIG_PATH = "app/mblink.config.json"'),
     'Python host template must load resources through the compiled /app virtual root');
 
   const goTemplate = fs.readFileSync(
-    path.join(process.cwd(), 'tools', 'mbink_ui_dev', 'templates', 'runtime', 'go', 'host', 'main.go'),
+    path.join(process.cwd(), 'tools', 'mblink_ui_dev', 'templates', 'runtime', 'go', 'host', 'main.go'),
     'utf8');
   assert(goTemplate.includes('const resourceAppPath = "/app/app.js"') &&
-         goTemplate.includes('const resourceConfigPath = "app/mbink.config.json"'),
+         goTemplate.includes('const resourceConfigPath = "app/mblink.config.json"'),
     'Go host template must load resources through the compiled /app virtual root');
 
   const rustTemplate = fs.readFileSync(
-    path.join(process.cwd(), 'tools', 'mbink_ui_dev', 'templates', 'runtime', 'rust', 'rust_host', 'src', 'main.rs'),
+    path.join(process.cwd(), 'tools', 'mblink_ui_dev', 'templates', 'runtime', 'rust', 'rust_host', 'src', 'main.rs'),
     'utf8');
   assert(rustTemplate.includes('const RESOURCE_APP_PATH: &str = "/app/app.js"') &&
          rustTemplate.includes('app.load_js_file(RESOURCE_APP_PATH)'),

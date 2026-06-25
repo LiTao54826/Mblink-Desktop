@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Events", 900, 640)
+	app, err := autorun.NewApp("MBlink Go Events", 900, 640)
 	if err != nil {
 		log.Fatal(err)
 	}

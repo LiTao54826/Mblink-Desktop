@@ -1,5 +1,5 @@
 /**
- * MBink Text 组件
+ * MBlink Text 组件
  *
  * Props:
  * - size: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl'

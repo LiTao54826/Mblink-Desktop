@@ -1,5 +1,5 @@
 /**
- * MBink Card 组件
+ * MBlink Card 组件
  *
  * Props:
  * - title: string | VNode

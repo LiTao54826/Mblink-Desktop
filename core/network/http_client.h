@@ -12,7 +12,7 @@
 #include <future>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 class BackgroundTaskRunner;
 
@@ -152,5 +152,5 @@ private:
     std::shared_ptr<BackgroundTaskRunner> background_runner_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

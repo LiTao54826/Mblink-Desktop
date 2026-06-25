@@ -18,7 +18,7 @@
 // Forward declaration for Skia SkFont
 class SkFont;
 
-namespace mbink {
+namespace mblink {
 
 class TextAreaEditingController;
 struct TextAreaEditState;
@@ -434,5 +434,5 @@ private:
     float scrollbar_drag_start_scroll_; // 拖动开始时的滚动位置
 };
 
-} // namespace mbink
+} // namespace mblink
 

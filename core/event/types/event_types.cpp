@@ -6,7 +6,7 @@
 #include "event_types.h"
 #include <cstring>
 
-namespace mbink {
+namespace mblink {
 
 // ========== EventTypeRegistry 实现 ==========
 
@@ -151,5 +151,5 @@ EventId EventTypeRegistry::RegisterCustomEvent(const std::string& type,
     return new_id;
 }
 
-} // namespace mbink
+} // namespace mblink
 

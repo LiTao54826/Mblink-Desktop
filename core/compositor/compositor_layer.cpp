@@ -38,7 +38,7 @@
 #define GL_UNPACK_SKIP_ROWS 0x0CF3
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 std::atomic<size_t> g_compositor_layer_live_count{0};
@@ -731,4 +731,4 @@ std::shared_ptr<CompositorLayer> CreateCompositorLayer() {
     return std::make_shared<CompositorLayer>(0);  // 0 表示自动分配 ID
 }
 
-} // namespace mbink
+} // namespace mblink

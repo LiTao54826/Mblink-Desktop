@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 void RenderFlex::Layout(float parent_width, float parent_height) {
     // 🔍 DEBUG: 输出 Layout 调用
@@ -646,4 +646,4 @@ void RenderFlex::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace mbink
+} // namespace mblink

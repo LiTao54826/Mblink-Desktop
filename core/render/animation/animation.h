@@ -1,18 +1,18 @@
 /**
  * @file animation.h
  * @brief CSS animation 属性定义和解析
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
-#ifndef MBINK_CORE_RENDER_ANIMATION_H_
-#define MBINK_CORE_RENDER_ANIMATION_H_
+#ifndef MBLINK_CORE_RENDER_ANIMATION_H_
+#define MBLINK_CORE_RENDER_ANIMATION_H_
 
 #include "transition.h"  // 复用 TimingFunction 和 CubicBezier
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 动画播放方向
@@ -205,7 +205,7 @@ private:
     static AnimationFillMode ParseSingleFillMode(const std::string& str);
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_CORE_RENDER_ANIMATION_H_
+#endif // MBLINK_CORE_RENDER_ANIMATION_H_
 

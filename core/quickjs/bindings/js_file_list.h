@@ -3,7 +3,7 @@
 #include "quickjs.h"
 #include "core/dom/file_list.h"
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 void InitFileListBinding(JSContext* ctx);
@@ -12,4 +12,4 @@ JSValue WrapFileList(JSContext* ctx, const FileList& files);
 bool FileListFromJSValue(JSContext* ctx, JSValueConst value, FileList* files);
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 class HTMLInputElement;
 
@@ -28,5 +28,5 @@ struct InputPaintModel {
     static InputPaintModel FromInputElement(const HTMLInputElement* input);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 

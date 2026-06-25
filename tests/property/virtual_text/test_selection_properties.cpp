@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 // 使用 virtual_text 命名空间中的类型
@@ -333,4 +333,4 @@ TEST_F(MultiLineSelectionPropertyTest, ClearSelectionRemovesSelection) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink

@@ -9,7 +9,7 @@
 
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML FieldSet元素类（fieldset）
@@ -318,5 +318,5 @@ private:
     std::string return_value_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

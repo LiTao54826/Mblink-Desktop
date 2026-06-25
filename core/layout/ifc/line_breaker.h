@@ -14,7 +14,7 @@
 #include "inline_box.h"
 #include "line_box.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 断行类型
@@ -224,5 +224,5 @@ private:
     uint32_t DecodeUTF8(const std::string& str, size_t& pos);
 };
 
-} // namespace mbink
+} // namespace mblink
 

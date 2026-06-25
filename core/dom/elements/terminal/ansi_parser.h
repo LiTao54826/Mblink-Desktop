@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 解析器状态
@@ -238,4 +238,4 @@ private:
     char32_t DecodeUtf8();
 };
 
-}  // namespace mbink
+}  // namespace mblink

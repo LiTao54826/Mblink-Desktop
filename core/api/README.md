@@ -7,8 +7,8 @@
 
 ## Files | 文件
 
-- `mbink.h` — public header / 公开头文件
-- `mbink.cpp` — implementation / 实现文件
+- `mblink.h` — public header / 公开头文件
+- `mblink.cpp` — implementation / 实现文件
 - `CMakeLists.txt` — build integration / 构建接入
 
 ## Role | 作用
@@ -25,23 +25,23 @@ This layer is responsible for:
 
 ## Repository-Visible Exports | 从仓库可见的导出
 
-From `core/api/mbink.cpp`, at least these exports are visible:
-从 `core/api/mbink.cpp` 至少可见这些导出函数：
+From `core/api/mblink.cpp`, at least these exports are visible:
+从 `core/api/mblink.cpp` 至少可见这些导出函数：
 
-- `mbink_init()`
-- `mbink_cleanup()`
-- `mbink_version()`
-- `mbink_create()`
-- `mbink_create_ex()`
-- `mbink_default_config()`
-- `mbink_destroy()`
-- `mbink_run()`
-- `mbink_stop()`
+- `mblink_init()`
+- `mblink_cleanup()`
+- `mblink_version()`
+- `mblink_create()`
+- `mblink_create_ex()`
+- `mblink_default_config()`
+- `mblink_destroy()`
+- `mblink_run()`
+- `mblink_stop()`
 
 ## Limitations | 限制
 
-- exact API shape must follow `mbink.h` and `mbink.cpp`
-  具体 API 形态应以 `mbink.h` 与 `mbink.cpp` 为准
+- exact API shape must follow `mblink.h` and `mblink.cpp`
+  具体 API 形态应以 `mblink.h` 与 `mblink.cpp` 为准
 - this document should not imply verified Rust / Go / Node.js support
   本文档不应暗示 Rust / Go / Node.js 已验证可用
 - naming is not yet fully unified

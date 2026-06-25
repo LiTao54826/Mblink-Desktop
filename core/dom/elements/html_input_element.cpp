@@ -23,7 +23,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_dialog.h>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 HTMLInputElement::FilePicker g_file_picker_for_testing;
@@ -1041,5 +1041,5 @@ void HTMLInputElement::EndRangeDrag() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

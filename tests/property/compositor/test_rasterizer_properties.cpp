@@ -19,7 +19,7 @@
 #include <random>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace testing {
 
 // =========================================================================
@@ -467,4 +467,4 @@ TEST_F(RasterizeStatsTest, StatsResetCorrectly) {
 }
 
 } // namespace testing
-} // namespace mbink
+} // namespace mblink

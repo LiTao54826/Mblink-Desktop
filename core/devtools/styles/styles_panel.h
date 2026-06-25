@@ -11,7 +11,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 class InlineStylesView;
 class BoxModelView;
@@ -127,4 +127,4 @@ public:
     bool HandleMouseWheel(float delta_y);
 };
 
-} // namespace mbink
+} // namespace mblink

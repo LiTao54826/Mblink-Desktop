@@ -18,7 +18,7 @@
 #include <vector>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Flexbox Layout Tree Interface
@@ -117,7 +117,7 @@ struct FlexItem {
     
     /// Returns true if the item is a scroll container
     bool IsScrollContainer() const {
-        return mbink::IsScrollContainer(overflow.x) || mbink::IsScrollContainer(overflow.y);
+        return mblink::IsScrollContainer(overflow.x) || mblink::IsScrollContainer(overflow.y);
     }
 };
 
@@ -188,5 +188,5 @@ LayoutOutput ComputeFlexboxLayout(
     const LayoutInput& inputs
 );
 
-} // namespace mbink
+} // namespace mblink
 

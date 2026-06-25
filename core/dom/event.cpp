@@ -7,7 +7,7 @@
 #include "node.h"
 #include <chrono>
 
-namespace mbink {
+namespace mblink {
 
 // ========== Event 类实现 ==========
 
@@ -169,5 +169,5 @@ ClipboardEvent::ClipboardEvent(const std::string& type,
     , clipboard_data_(clipboard_data) {
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -12,7 +12,7 @@
 #include <vector>
 #include <queue>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 任务类型
@@ -217,5 +217,5 @@ private:
     std::vector<std::function<void()>> microtasks_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

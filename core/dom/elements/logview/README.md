@@ -76,10 +76,10 @@ const json = log.export('json');
 ```cpp
 #include "html_logview_element.h"
 
-mbink::HTMLLogViewElement logview;
+mblink::HTMLLogViewElement logview;
 
 // 添加日志
-logview.Append(mbink::LogLevel::INFO, "app", "Started");
+logview.Append(mblink::LogLevel::INFO, "app", "Started");
 logview.Append("ERROR", "network", "Connection failed");
 
 // 过滤

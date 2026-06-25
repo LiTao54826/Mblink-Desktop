@@ -5,7 +5,7 @@
  * LineBox 表示内联格式化上下文中的一行。
  * 包含该行的所有内联盒、位置信息和对齐方法。
  * 
- * MBink 现代模式：
+ * MBlink 现代模式：
  * - 无 strut：行高完全由内容决定
  * - vertical-align: middle 真正居中
  */
@@ -16,7 +16,7 @@
 #include <string>
 #include "inline_box.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 垂直对齐方式
@@ -24,7 +24,7 @@ namespace mbink {
 enum class VerticalAlign {
     BASELINE,       ///< 基线对齐（默认）
     TOP,            ///< 顶部对齐
-    MIDDLE,         ///< 中线对齐（MBink: 真正居中）
+    MIDDLE,         ///< 中线对齐（MBlink: 真正居中）
     BOTTOM,         ///< 底部对齐
     TEXT_TOP,       ///< 文本顶部对齐
     TEXT_BOTTOM,    ///< 文本底部对齐
@@ -110,7 +110,7 @@ struct LineBox {
      * @brief 对齐内联盒（垂直对齐）
      * 
      * 根据每个盒子的 vertical-align 属性计算其 Y 偏移。
-     * MBink 现代模式：middle 表示真正的垂直居中。
+     * MBlink 现代模式：middle 表示真正的垂直居中。
      */
     void AlignBoxes();
     
@@ -159,5 +159,5 @@ private:
     void DistributeSpace(float extra_space);
 };
 
-} // namespace mbink
+} // namespace mblink
 

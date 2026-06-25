@@ -17,7 +17,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace mbink {
+namespace mblink {
 
 // ========== CSSFilter 静态工厂方法 ==========
 
@@ -500,5 +500,5 @@ std::vector<std::string> CSSFilterParser::SplitFilters(const std::string& value)
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink
 

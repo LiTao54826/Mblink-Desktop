@@ -33,7 +33,7 @@
 #endif
 #endif
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 struct ImageAsyncContextEntry {
@@ -745,5 +745,5 @@ std::string ImageLoader::DetectFormatFromData(const void* data, size_t size) {
     return "unknown";
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -17,7 +17,7 @@
 (function (global) {
     'use strict';
 
-    // 检测 Element 是否可用（在 MBink 中 Element 不作为全局构造函数暴露）
+    // 检测 Element 是否可用（在 MBlink 中 Element 不作为全局构造函数暴露）
     // 我们通过 document.createElement 创建元素来获取 Element 原型
     var ElementProto = null;
     try {

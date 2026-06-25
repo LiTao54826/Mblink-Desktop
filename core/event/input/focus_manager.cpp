@@ -25,7 +25,7 @@
 #include <cstdlib>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -88,7 +88,7 @@ SkFont BuildElementFont(const RenderObject* render_object) {
 }
 
 bool IsImeDebugEnabled() {
-    static const bool enabled = std::getenv("MBINK_DEBUG_IME_AREA") != nullptr;
+    static const bool enabled = std::getenv("MBLINK_DEBUG_IME_AREA") != nullptr;
     return enabled;
 }
 
@@ -684,5 +684,5 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -26,7 +26,7 @@
 #include <functional>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 constexpr float kItemHeight = 20.0f;
 constexpr float kItemPaddingX = 12.0f;
@@ -424,7 +424,7 @@ void SelectDropdownManager::Paint(SkCanvas* canvas) {
                 }
             }
 
-            mbink::Paint text_paint;
+            mblink::Paint text_paint;
             if (row.is_label) {
                 text_paint.SetColor(SkColorSetRGB(90, 90, 90));
             } else if (row.option_index == hovered_index) {
@@ -537,5 +537,5 @@ bool SelectDropdownManager::HitTest(float x, float y) const {
     return current_dropdown_.dropdown_rect.contains(x, y);
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -5,7 +5,7 @@
 
 #pragma once
 
-namespace mbink {
+namespace mblink {
 
 enum class RepaintReason {
     Unknown,
@@ -28,4 +28,4 @@ enum class RepaintReason {
 const char* RepaintReasonName(RepaintReason reason);
 bool RepaintReasonMayAffectLayout(RepaintReason reason);
 
-} // namespace mbink
+} // namespace mblink

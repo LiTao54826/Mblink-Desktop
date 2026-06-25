@@ -7,7 +7,7 @@
 #include "payload.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 AssetManager& AssetManager::Instance() {
     static AssetManager instance;
@@ -15,7 +15,7 @@ AssetManager& AssetManager::Instance() {
 }
 
 void AssetManager::Initialize(const std::vector<uint8_t>& assets_data,
-                               const std::vector<mbink::AssetInfo>& assets_index) {
+                               const std::vector<mblink::AssetInfo>& assets_index) {
     Clear();
     data_ = assets_data;
     
@@ -165,5 +165,5 @@ std::vector<std::string> AssetManager::GetAssetPaths() const {
     return paths;
 }
 
-}  // namespace mbink
+}  // namespace mblink
 

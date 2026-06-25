@@ -21,7 +21,7 @@
 #include "include/core/SkPoint.h"
 #include <unordered_map>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 几何映射器
@@ -233,4 +233,4 @@ private:
         clip_cache_;
 };
 
-} // namespace mbink
+} // namespace mblink

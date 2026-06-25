@@ -2,8 +2,8 @@
 
 ## Overview | 概览
 
-Skia-based 2D rendering infrastructure for the current MBink source tree.
-当前 MBink 源码树中的基于 Skia 的 2D 渲染基础设施。
+Skia-based 2D rendering infrastructure for the current MBlink source tree.
+当前 MBlink 源码树中的基于 Skia 的 2D 渲染基础设施。
 
 ## Directory Layout | 目录结构
 
@@ -40,7 +40,7 @@ paint.SetStyle(PaintStyle::FILL);
 
 ```bash
 cmake -B build
-cmake --build build --target mbink_render
+cmake --build build --target mblink_render
 ```
 
 ## Notes | 说明

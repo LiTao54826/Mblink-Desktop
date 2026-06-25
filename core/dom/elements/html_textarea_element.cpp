@@ -19,7 +19,7 @@
 #include <include/core/SkFont.h>
 #include <include/core/SkTextBlob.h>
 
-namespace mbink {
+namespace mblink {
 
 HTMLTextAreaElement::HTMLTextAreaElement()
     : Element("textarea")
@@ -741,5 +741,5 @@ void HTMLTextAreaElement::EndScrollbarDrag() {
     scrollbar_drag_type_ = ScrollbarType::NONE;
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -16,7 +16,7 @@
 #include <thread>
 #include <algorithm>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class ContentVersionPropertyTestRng {

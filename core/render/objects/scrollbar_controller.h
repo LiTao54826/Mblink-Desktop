@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 滚动条区域类型
@@ -222,4 +222,4 @@ private:
     float drag_start_mouse_ = 0.0f;   ///< 拖动开始时的鼠标位置
 };
 
-} // namespace mbink
+} // namespace mblink

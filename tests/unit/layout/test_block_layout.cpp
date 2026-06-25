@@ -9,7 +9,7 @@
 #include "layout/types/geometry.h"
 #include "layout/util/resolve.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class BlockLayoutTest : public ::testing::Test {
@@ -255,4 +255,4 @@ TEST_F(BlockLayoutTest, MinMaxWidthConstraint) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

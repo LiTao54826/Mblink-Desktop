@@ -19,7 +19,7 @@
 #include "core/render/pipeline/render_tree_synchronizer.h"
 #include "core/render/objects/render_object.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class IncrementalUpdateSystemTest : public DOMTestBase {
@@ -639,4 +639,4 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerDisplayClassChangeReplacesRender
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

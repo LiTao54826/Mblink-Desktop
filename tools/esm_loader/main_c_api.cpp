@@ -1,5 +1,5 @@
-#include "core/api/mbink.h"
-#include "core/devtools/mbink_devtools.h"
+#include "core/api/mblink.h"
+#include "core/devtools/mblink_devtools.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -26,23 +26,23 @@ struct DevtoolsApi {
 #ifdef _WIN32
     HMODULE module = nullptr;
 #endif
-    int (*open)(MBinkHandle) = nullptr;
-    MBinkDevToolsHttpOptions (*default_http_options)() = nullptr;
-    int (*http_start)(MBinkHandle, const MBinkDevToolsHttpOptions*, MBinkDevToolsHttpInfo*) = nullptr;
-    int (*http_stop)(MBinkHandle) = nullptr;
-    void (*http_info_free)(MBinkDevToolsHttpInfo*) = nullptr;
-    MBinkUiDevSnapshotOptions (*default_snapshot_options)() = nullptr;
-    int (*snapshot_file)(MBinkHandle, const char*, const MBinkUiDevSnapshotOptions*) = nullptr;
-    int (*command_json)(MBinkHandle, const char*, char**) = nullptr;
+    int (*open)(MBlinkHandle) = nullptr;
+    MBlinkDevToolsHttpOptions (*default_http_options)() = nullptr;
+    int (*http_start)(MBlinkHandle, const MBlinkDevToolsHttpOptions*, MBlinkDevToolsHttpInfo*) = nullptr;
+    int (*http_stop)(MBlinkHandle) = nullptr;
+    void (*http_info_free)(MBlinkDevToolsHttpInfo*) = nullptr;
+    MBlinkUiDevSnapshotOptions (*default_snapshot_options)() = nullptr;
+    int (*snapshot_file)(MBlinkHandle, const char*, const MBlinkUiDevSnapshotOptions*) = nullptr;
+    int (*command_json)(MBlinkHandle, const char*, char**) = nullptr;
 };
 
 fs::path devtoolsLibraryName() {
 #ifdef _WIN32
-    return "mbink_devtools.dll";
+    return "mblink_devtools.dll";
 #elif defined(__APPLE__)
-    return "libmbink_devtools.dylib";
+    return "libmblink_devtools.dylib";
 #else
-    return "libmbink_devtools.so";
+    return "libmblink_devtools.so";
 #endif
 }
 
@@ -67,7 +67,7 @@ std::optional<fs::path> currentExecutableDirectory() {
 
 std::vector<fs::path> devtoolsLibraryCandidates() {
     std::vector<fs::path> candidates;
-    if (const char* env_path = std::getenv("MBINK_DEVTOOLS_PATH"); env_path && *env_path) {
+    if (const char* env_path = std::getenv("MBLINK_DEVTOOLS_PATH"); env_path && *env_path) {
         fs::path path(env_path);
         if (!path.is_absolute()) {
             candidates.push_back(path);
@@ -96,14 +96,14 @@ bool loadDevtoolsApi(DevtoolsApi* api, std::string* error) {
     if (!api) return false;
     if (api->module) return true;
 #ifndef _WIN32
-    if (error) *error = "mbink_devtools dynamic loading is only implemented on Windows";
+    if (error) *error = "mblink_devtools dynamic loading is only implemented on Windows";
     return false;
 #else
     std::string last_error;
     for (const auto& candidate : devtoolsLibraryCandidates()) {
         std::error_code ec;
         if (!candidate.is_absolute()) {
-            if (error) *error = "MBINK_DEVTOOLS_PATH must be absolute";
+            if (error) *error = "MBLINK_DEVTOOLS_PATH must be absolute";
             return false;
         }
         const auto path = fs::absolute(candidate, ec);
@@ -120,23 +120,23 @@ bool loadDevtoolsApi(DevtoolsApi* api, std::string* error) {
         }
         DevtoolsApi loaded;
         loaded.module = module;
-        if (!loadSymbol(&loaded, "mbink_devtools_open", &loaded.open) ||
-            !loadSymbol(&loaded, "mbink_devtools_default_http_options", &loaded.default_http_options) ||
-            !loadSymbol(&loaded, "mbink_devtools_http_start", &loaded.http_start) ||
-            !loadSymbol(&loaded, "mbink_devtools_http_stop", &loaded.http_stop) ||
-            !loadSymbol(&loaded, "mbink_devtools_http_info_free", &loaded.http_info_free) ||
-            !loadSymbol(&loaded, "mbink_ui_dev_default_snapshot_options", &loaded.default_snapshot_options) ||
-            !loadSymbol(&loaded, "mbink_ui_dev_snapshot_file", &loaded.snapshot_file) ||
-            !loadSymbol(&loaded, "mbink_ui_dev_command_json", &loaded.command_json)) {
+        if (!loadSymbol(&loaded, "mblink_devtools_open", &loaded.open) ||
+            !loadSymbol(&loaded, "mblink_devtools_default_http_options", &loaded.default_http_options) ||
+            !loadSymbol(&loaded, "mblink_devtools_http_start", &loaded.http_start) ||
+            !loadSymbol(&loaded, "mblink_devtools_http_stop", &loaded.http_stop) ||
+            !loadSymbol(&loaded, "mblink_devtools_http_info_free", &loaded.http_info_free) ||
+            !loadSymbol(&loaded, "mblink_ui_dev_default_snapshot_options", &loaded.default_snapshot_options) ||
+            !loadSymbol(&loaded, "mblink_ui_dev_snapshot_file", &loaded.snapshot_file) ||
+            !loadSymbol(&loaded, "mblink_ui_dev_command_json", &loaded.command_json)) {
             FreeLibrary(module);
-            last_error = "mbink_devtools is missing required C API symbols at " + path.string();
+            last_error = "mblink_devtools is missing required C API symbols at " + path.string();
             continue;
         }
         *api = loaded;
         return true;
     }
     if (error) {
-        *error = last_error.empty() ? "mbink_devtools.dll not found" : last_error;
+        *error = last_error.empty() ? "mblink_devtools.dll not found" : last_error;
     }
     return false;
 #endif
@@ -163,18 +163,18 @@ bool writeTextFile(const std::string& path, const std::string& value) {
 }
 
 void writeOwnedJsonFile(const std::string& path,
-                        int (*producer)(MBinkHandle, char**),
-                        MBinkHandle handle) {
+                        int (*producer)(MBlinkHandle, char**),
+                        MBlinkHandle handle) {
     if (path.empty() || !producer) return;
     char* json = nullptr;
-    if (producer(handle, &json) == MBINK_OK && json) {
+    if (producer(handle, &json) == MBLINK_OK && json) {
         writeTextFile(path, json);
     }
-    if (json) mbink_free(json);
+    if (json) mblink_free(json);
 }
 
 void printUsage(const char* program_name) {
-    std::cout << "MBink Loader - ES module / HTML app loader\n\n";
+    std::cout << "MBlink Loader - ES module / HTML app loader\n\n";
     std::cout << "Usage: " << program_name << " <entry.js|index.html> [options]\n\n";
     std::cout << "Options:\n";
     std::cout << "  --width <n>\n";
@@ -211,7 +211,7 @@ struct Options {
     std::string entry_path;
     int width = 1200;
     int height = 800;
-    std::string title = "MBink App";
+    std::string title = "MBlink App";
     bool open_devtools = false;
     bool borderless = false;
     bool transparent = false;
@@ -348,7 +348,7 @@ bool parseArgs(int argc, char** argv, Options* options) {
     return true;
 }
 
-void writeSnapshotIfRequested(MBinkHandle handle, const Options& options, const DevtoolsApi& devtools) {
+void writeSnapshotIfRequested(MBlinkHandle handle, const Options& options, const DevtoolsApi& devtools) {
     if (options.snapshot_file.empty()) return;
     auto snapshot_options = devtools.default_snapshot_options();
     snapshot_options.runtime_epoch = options.runtime_epoch.empty() ? nullptr : options.runtime_epoch.c_str();
@@ -358,18 +358,18 @@ void writeSnapshotIfRequested(MBinkHandle handle, const Options& options, const 
     snapshot_options.include_screenshot = options.snapshot_include_screenshot;
     snapshot_options.inline_screenshot = options.snapshot_inline_screenshot;
     snapshot_options.screenshot_file = options.snapshot_screenshot_file.empty() ? nullptr : options.snapshot_screenshot_file.c_str();
-    if (devtools.snapshot_file(handle, options.snapshot_file.c_str(), &snapshot_options) != MBINK_OK) {
-        std::cerr << "snapshot failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+    if (devtools.snapshot_file(handle, options.snapshot_file.c_str(), &snapshot_options) != MBLINK_OK) {
+        std::cerr << "snapshot failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
     }
 }
 
-void writeObservabilityFiles(MBinkHandle handle, const Options& options) {
-    writeOwnedJsonFile(options.console_file, mbink_observe_console_json, handle);
-    writeOwnedJsonFile(options.errors_file, mbink_observe_errors_json, handle);
-    writeOwnedJsonFile(options.lifecycle_file, mbink_observe_lifecycle_json, handle);
+void writeObservabilityFiles(MBlinkHandle handle, const Options& options) {
+    writeOwnedJsonFile(options.console_file, mblink_observe_console_json, handle);
+    writeOwnedJsonFile(options.errors_file, mblink_observe_errors_json, handle);
+    writeOwnedJsonFile(options.lifecycle_file, mblink_observe_lifecycle_json, handle);
 }
 
-void maybeWriteObservabilityFiles(MBinkHandle handle,
+void maybeWriteObservabilityFiles(MBlinkHandle handle,
                                   const Options& options,
                                   UiDevRuntimeState* state,
                                   bool force = false) {
@@ -380,7 +380,7 @@ void maybeWriteObservabilityFiles(MBinkHandle handle,
     state->next_observability_flush = now + std::chrono::milliseconds(250);
 }
 
-void handleCommandFile(MBinkHandle handle,
+void handleCommandFile(MBlinkHandle handle,
                        const Options& options,
                        const DevtoolsApi& devtools,
                        std::string* last_command_id,
@@ -413,7 +413,7 @@ void handleCommandFile(MBinkHandle handle,
     if (command_id.empty() || command_id == *last_command_id) return;
 
     char* response = nullptr;
-    if (devtools.command_json(handle, content.c_str(), &response) == MBINK_OK && response) {
+    if (devtools.command_json(handle, content.c_str(), &response) == MBLINK_OK && response) {
         writeTextFile(options.response_file, response);
         *last_command_id = command_id;
         std::error_code ec;
@@ -422,23 +422,23 @@ void handleCommandFile(MBinkHandle handle,
         nlohmann::json error{{"ok", false},
                              {"id", command_id},
                              {"error", {{"code", "ui_dev_command_failed"},
-                                         {"message", mbink_last_error() ? mbink_last_error() : ""}}}};
+                                         {"message", mblink_last_error() ? mblink_last_error() : ""}}}};
         writeTextFile(options.response_file, error.dump(2));
     }
-    if (response) mbink_free(response);
+    if (response) mblink_free(response);
 }
 
-bool startDevToolsHttpMcp(MBinkHandle handle,
+bool startDevToolsHttpMcp(MBlinkHandle handle,
                           const Options& options,
                           const DevtoolsApi& devtools,
-                          MBinkDevToolsHttpInfo* info) {
+                          MBlinkDevToolsHttpInfo* info) {
     if (!options.devtools_http_mcp || !info) return true;
     auto http_options = devtools.default_http_options();
     http_options.port = options.devtools_http_port;
     http_options.auth_token = options.devtools_http_token.empty() ? nullptr : options.devtools_http_token.c_str();
     http_options.require_auth = true;
-    if (devtools.http_start(handle, &http_options, info) != MBINK_OK) {
-        std::cerr << "devtools HTTP MCP failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+    if (devtools.http_start(handle, &http_options, info) != MBLINK_OK) {
+        std::cerr << "devtools HTTP MCP failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
         return false;
     }
     std::cout << nlohmann::json{{"event", "devtools_http_mcp"},
@@ -473,12 +473,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (mbink_init() != MBINK_OK) {
-        std::cerr << "mbink_init failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+    if (mblink_init() != MBLINK_OK) {
+        std::cerr << "mblink_init failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
         return 1;
     }
 
-    MBinkConfig config = mbink_default_config();
+    MBlinkConfig config = mblink_default_config();
     config.title = options.title.c_str();
     config.width = options.width;
     config.height = options.height;
@@ -491,28 +491,28 @@ int main(int argc, char** argv) {
     config.max_width = options.max_width;
     config.max_height = options.max_height;
 
-    MBinkHandle app = mbink_create_ex(&config);
+    MBlinkHandle app = mblink_create_ex(&config);
     if (!app) {
-        std::cerr << "mbink_create_ex failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
-        mbink_cleanup();
+        std::cerr << "mblink_create_ex failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
+        mblink_cleanup();
         return 1;
     }
 
-    MBinkRuntimeOptions runtime_options = mbink_default_runtime_options();
+    MBlinkRuntimeOptions runtime_options = mblink_default_runtime_options();
     runtime_options.runtime_epoch = options.runtime_epoch.empty() ? nullptr : options.runtime_epoch.c_str();
     runtime_options.load_embedded_runtime = true;
     runtime_options.load_official_preact = options.load_official_preact;
-    if (mbink_configure_runtime(app, &runtime_options) != MBINK_OK) {
-        std::cerr << "runtime configure failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
-        mbink_destroy(app);
-        mbink_cleanup();
+    if (mblink_configure_runtime(app, &runtime_options) != MBLINK_OK) {
+        std::cerr << "runtime configure failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
+        mblink_destroy(app);
+        mblink_cleanup();
         return 1;
     }
 
-    if (mbink_load_entry_file(app, options.entry_path.c_str(), options.execute_scripts) != MBINK_OK) {
-        std::cerr << "load failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
-        mbink_destroy(app);
-        mbink_cleanup();
+    if (mblink_load_entry_file(app, options.entry_path.c_str(), options.execute_scripts) != MBLINK_OK) {
+        std::cerr << "load failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
+        mblink_destroy(app);
+        mblink_cleanup();
         return 1;
     }
 
@@ -522,33 +522,33 @@ int main(int argc, char** argv) {
         std::string devtools_error;
         if (!loadDevtoolsApi(&devtools, &devtools_error)) {
             std::cerr << "devtools runtime failed: " << devtools_error << "\n";
-            mbink_destroy(app);
-            mbink_cleanup();
+            mblink_destroy(app);
+            mblink_cleanup();
             return 1;
         }
     }
     if (options.open_devtools) {
-        if (devtools.open(app) != MBINK_OK) {
-            std::cerr << "devtools failed: " << (mbink_last_error() ? mbink_last_error() : "") << "\n";
+        if (devtools.open(app) != MBLINK_OK) {
+            std::cerr << "devtools failed: " << (mblink_last_error() ? mblink_last_error() : "") << "\n";
         }
     }
 
-    mbink_show(app);
-    mbink_render_frame(app, 2);
-    mbink_poll_events(app);
+    mblink_show(app);
+    mblink_render_frame(app, 2);
+    mblink_poll_events(app);
     writeSnapshotIfRequested(app, options, devtools);
     UiDevRuntimeState ui_dev_state;
-    MBinkDevToolsHttpInfo http_info{};
+    MBlinkDevToolsHttpInfo http_info{};
     if (!startDevToolsHttpMcp(app, options, devtools, &http_info)) {
-        mbink_destroy(app);
-        mbink_cleanup();
+        mblink_destroy(app);
+        mblink_cleanup();
         return 1;
     }
     maybeWriteObservabilityFiles(app, options, &ui_dev_state, true);
 
     auto start = std::chrono::steady_clock::now();
     std::string last_command_id;
-    while (mbink_wait_events(app)) {
+    while (mblink_wait_events(app)) {
         if (ui_dev_enabled) {
             handleCommandFile(app, options, devtools, &last_command_id, &ui_dev_state);
             maybeWriteObservabilityFiles(app, options, &ui_dev_state);
@@ -558,7 +558,7 @@ int main(int argc, char** argv) {
             const auto elapsed = std::chrono::duration<float>(
                 std::chrono::steady_clock::now() - start).count();
             if (elapsed >= options.quit_after_seconds) {
-                mbink_stop(app);
+                mblink_stop(app);
                 break;
             }
         }
@@ -569,7 +569,7 @@ int main(int argc, char** argv) {
         devtools.http_stop(app);
         devtools.http_info_free(&http_info);
     }
-    mbink_destroy(app);
-    mbink_cleanup();
+    mblink_destroy(app);
+    mblink_cleanup();
     return 0;
 }

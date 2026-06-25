@@ -18,7 +18,7 @@
 #include <memory>
 #include "quickjs.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class DataTransfer;
@@ -54,4 +54,4 @@ std::shared_ptr<DataTransfer> UnwrapDataTransfer(JSContext* ctx, JSValue value);
 JSClassID GetDataTransferClassID();
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

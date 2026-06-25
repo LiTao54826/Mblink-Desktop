@@ -13,15 +13,15 @@
 ## 运行方法
 
 ```powershell
-cd d:\code\C\MBink
+cd d:\code\C\MBlink
 
-# 完整对比（MBink vs Chrome）
+# 完整对比（MBlink vs Chrome）
 .venv\Scripts\python.exe tests/css_compare/run_compare.py
 
 # 调整容差
 .venv\Scripts\python.exe tests/css_compare/run_compare.py --tolerance 2
 
-# 仅查看 MBink 采集数据（不启动 Chrome）
+# 仅查看 MBlink 采集数据（不启动 Chrome）
 .venv\Scripts\python.exe tests/css_compare/run_compare.py --no-chrome
 ```
 
@@ -77,7 +77,7 @@ cd d:\code\C\MBink
 | `display/inline-2` | X +20.4px, Y +30.5px | inline 宽度 + 累积 Y 偏差 |
 | `display/block-1` | Y +34.5px | 上方 inline 区域高度累积偏差 |
 | `nested/outer` | Y +34.5px | 同上 |
-| `minmax/max-height` | overflow 状态不一致 | MBink 未检测到溢出（overflow detection Bug） |
+| `minmax/max-height` | overflow 状态不一致 | MBlink 未检测到溢出（overflow detection Bug） |
 
 ## 已修复的问题
 
@@ -86,7 +86,7 @@ cd d:\code\C\MBink
 **文件**：`core/quickjs/window_bindings.cpp`
 
 **问题**：`window.innerWidth` 错误地将物理像素除以 DPI 缩放，导致：
-- MBink viewport 报告为 600×400（200% DPI 屏幕，实际物理像素 1200×800）
+- MBlink viewport 报告为 600×400（200% DPI 屏幕，实际物理像素 1200×800）
 - Chrome headless 报告为 1200×800
 - 产生 viewport 不一致警告
 
@@ -116,7 +116,7 @@ return width;  // ✅ 直接返回物理像素（与布局坐标系一致）
 
 **文件**：滚动/overflow 相关代码
 
-**现象**：`minmax/max-height` 元素设置了 `max-height: 50px` 但内容超出时，MBink 的 `scrollHeight > clientHeight` 判断未触发。
+**现象**：`minmax/max-height` 元素设置了 `max-height: 50px` 但内容超出时，MBlink 的 `scrollHeight > clientHeight` 判断未触发。
 
 **排查方向**：
 1. 元素的 `scrollHeight` 是否正确计算
@@ -126,7 +126,7 @@ return width;  // ✅ 直接返回物理像素（与布局坐标系一致）
 
 ```
 Python 脚本 (run_compare.py)
-├── MBink 端
+├── MBlink 端
 │   ├── 启动 esm_loader.exe（--borderless --no-gpu --width 1200 --height 800）
 │   ├── 解析 stdout 中的 LAYOUT_DATA: JSON
 │   └── 提取 relX/relY/centerOff/overflow 等字段

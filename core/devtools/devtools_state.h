@@ -9,7 +9,7 @@
 #include <vector>
 #include "devtools_manager.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief DevTools 状态数据
@@ -42,4 +42,4 @@ struct DevToolsState {
     static DevToolsState FromJSON(const std::string& json);
 };
 
-} // namespace mbink
+} // namespace mblink

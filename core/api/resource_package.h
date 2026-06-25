@@ -7,7 +7,7 @@
 
 struct JSContext;
 
-namespace mbink::resourcepkg {
+namespace mblink::resourcepkg {
 
 constexpr uint32_t kResourceFlagBytecode = 1u;
 
@@ -32,5 +32,5 @@ bool EvalMaybeMergedBytecode(JSContext* js_ctx,
                              size_t size,
                              std::string& error);
 
-}  // namespace mbink::resourcepkg
+}  // namespace mblink::resourcepkg
 

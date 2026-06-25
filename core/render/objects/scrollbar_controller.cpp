@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 constexpr float kScrollTolerance = 1.0f;
@@ -228,4 +228,4 @@ void ScrollbarController::CalculateThumbMetrics(float track_size, float content_
     out_track_length = track_size - out_thumb_size;
 }
 
-} // namespace mbink
+} // namespace mblink

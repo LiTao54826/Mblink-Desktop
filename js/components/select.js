@@ -1,5 +1,5 @@
 /**
- * MBink Select 组件
+ * MBlink Select 组件
  *
  * Props:
  * - value: any

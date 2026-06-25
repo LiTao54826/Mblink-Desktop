@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "quickjs/quickjs_runtime.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class QuickJSRuntimeTest : public ::testing::Test {
@@ -281,4 +281,4 @@ TEST_F(QuickJSRuntimeTest, GetRuntime) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -12,7 +12,7 @@
 #include <cstdint>
 #include "inline_box.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 垂直对齐方式（现代模式）
@@ -223,5 +223,5 @@ private:
     );
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -12,7 +12,7 @@
 // 调试开关
 #define VA_DEBUG 0
 
-namespace mbink {
+namespace mblink {
 
 // ========== 盒子度量 ==========
 
@@ -428,5 +428,5 @@ VerticalAlignInfo VerticalAligner::ParseVerticalAlign(
     return info;
 }
 
-} // namespace mbink
+} // namespace mblink
 

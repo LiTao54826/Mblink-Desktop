@@ -5,7 +5,7 @@
 #include <cmath>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // 公共接口
@@ -501,5 +501,5 @@ std::string PropertyInterpolation::ColorToString(SkColor color) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

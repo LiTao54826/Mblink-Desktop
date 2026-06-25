@@ -20,7 +20,7 @@
 #include <cstring>
 #include <thread>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Unix PTY 后端
@@ -162,6 +162,6 @@ std::unique_ptr<PtyBackend> PtyBackend::Create() {
     return std::make_unique<UnixPtyBackend>();
 }
 
-}  // namespace mbink
+}  // namespace mblink
 
 #endif  // !_WIN32

@@ -6,7 +6,7 @@
 #include "clip_optimizer.h"
 #include "core/render/objects/render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 // ========== ClipOptimizer 实现 ==========
 
@@ -140,5 +140,5 @@ void ClipOptimizer::ApplyClip(SkCanvas* canvas) const {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

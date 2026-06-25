@@ -4,7 +4,7 @@
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/utils/utf8_utils.h"
 
-namespace mbink {
+namespace mblink {
 
 TextAreaEditingController::TextAreaEditingController(
     HTMLTextAreaElement* owner,
@@ -151,5 +151,5 @@ void TextAreaEditingController::MarkScrollToCursor() {
     if (owner_) owner_->MarkScrollToCursor();
 }
 
-}  // namespace mbink
+}  // namespace mblink
 

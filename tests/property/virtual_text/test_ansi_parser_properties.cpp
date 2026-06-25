@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 class RandomGenerator {
@@ -422,4 +422,4 @@ TEST_F(Utf8BoundaryPropertyTest, ConsecutiveMultibyteCharacters) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink

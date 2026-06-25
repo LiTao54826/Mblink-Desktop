@@ -13,7 +13,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkSurface.h"
 
-using namespace mbink;
+using namespace mblink;
 
 class ClipRenderObject : public RenderObject {
 public:

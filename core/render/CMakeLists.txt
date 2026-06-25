@@ -194,9 +194,9 @@ set(RENDER_HEADERS
     painters/audio_element_painter.h
 )
 
-add_library(mbink_render STATIC ${RENDER_SOURCES})
+add_library(mblink_render STATIC ${RENDER_SOURCES})
 
-target_include_directories(mbink_render PUBLIC
+target_include_directories(mblink_render PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/core/render
@@ -204,27 +204,27 @@ target_include_directories(mbink_render PUBLIC
     $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
-target_link_libraries(mbink_render PUBLIC
-    mbink_utils
-    mbink_dom
-    mbink_quickjs
+target_link_libraries(mblink_render PUBLIC
+    mblink_utils
+    mblink_dom
+    mblink_quickjs
 )
 
 # Link Skia (if enabled)
 if(TARGET skia)
-    target_link_libraries(mbink_render PUBLIC skia)
+    target_link_libraries(mblink_render PUBLIC skia)
     message(STATUS "Render module: Linking Skia")
 
     # Skia prebuilt library uses static Release runtime (MT)
     # We need to match this setting
     if(MSVC)
         # Use static Release runtime to match Skia
-        target_compile_options(mbink_render PUBLIC
+        target_compile_options(mblink_render PUBLIC
             $<$<CONFIG:Debug>:/MT>
             $<$<CONFIG:Release>:/MT>
         )
         # Disable iterator debugging to match Skia
-        target_compile_definitions(mbink_render PUBLIC
+        target_compile_definitions(mblink_render PUBLIC
             $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
         )
     endif()

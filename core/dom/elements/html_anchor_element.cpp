@@ -9,7 +9,7 @@
 #include "../event.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 HTMLAnchorElement::HTMLAnchorElement()
     : Element("a")
@@ -167,7 +167,7 @@ void HTMLAnchorElement::UpdatePseudoClasses() {
 }
 
 void HTMLAnchorElement::Navigate() {
-    // 在MBink中，导航由应用层处理
+    // 在MBlink中，导航由应用层处理
     // 这里触发一个自定义的navigate事件
     
     auto event = std::make_shared<Event>("navigate");
@@ -188,7 +188,7 @@ void HTMLAnchorElement::Navigate() {
 }
 
 void HTMLAnchorElement::Download() {
-    // 在MBink中，下载由应用层处理
+    // 在MBlink中，下载由应用层处理
     // 这里触发一个自定义的download事件
     
     auto event = std::make_shared<Event>("download");
@@ -203,5 +203,5 @@ void HTMLAnchorElement::Download() {
     // 3. 保存到本地文件系统
 }
 
-} // namespace mbink
+} // namespace mblink
 

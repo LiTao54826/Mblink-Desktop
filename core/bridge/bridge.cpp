@@ -5,8 +5,8 @@
 
 #include "bridge.h"
 
-namespace mbink {
+namespace mblink {
 
 // TODO: 实现函数
 
-} // namespace mbink
+} // namespace mblink

@@ -5,7 +5,7 @@
 
 #include "input_handler.h"
 
-namespace mbink {
+namespace mblink {
 
 InputHandler::InputHandler()
     : mouse_x_(0)
@@ -178,5 +178,5 @@ void InputHandler::GetModifierKeys(bool& ctrl, bool& shift, bool& alt) const {
     alt = (mod & SDL_KMOD_ALT) != 0;
 }
 
-} // namespace mbink
+} // namespace mblink
 

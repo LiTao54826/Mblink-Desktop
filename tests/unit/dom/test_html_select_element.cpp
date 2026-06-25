@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -378,4 +378,4 @@ TEST_F(HTMLSelectElementTest, BlockDisplaySelectDoesNotPaintOptionChildren) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -30,7 +30,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数/析构函数 ==========
 
@@ -2567,4 +2567,4 @@ void ContentEditableHandler::EndUndoGroup() {
     redo_stack_.clear();
 }
 
-} // namespace mbink
+} // namespace mblink

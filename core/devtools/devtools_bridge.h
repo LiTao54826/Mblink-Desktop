@@ -5,7 +5,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 class Document;
 class Element;
@@ -112,7 +112,7 @@ struct DevToolsBridgeApi {
 
 using DevToolsRegisterBridgeFn = bool (*)(unsigned int, const DevToolsBridgeApi*);
 using DevToolsUnregisterBridgeFn = void (*)(unsigned int, const DevToolsBridgeApi*);
-using MbinkDevToolsAttachFn = int (*)(unsigned int,
+using MblinkDevToolsAttachFn = int (*)(unsigned int,
                                       const DevToolsHostServices*,
                                       DevToolsRegisterBridgeFn,
                                       DevToolsUnregisterBridgeFn);
@@ -161,4 +161,4 @@ int DevToolsHttpStart(const DevToolsHostContext& context,
                       char** out_error);
 int DevToolsHttpStop(const DevToolsHostContext& context);
 
-}  // namespace mbink
+}  // namespace mblink

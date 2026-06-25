@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -212,4 +212,4 @@ private:
     std::vector<std::shared_ptr<Range>> ranges_;
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -1,16 +1,16 @@
-#ifndef MBINK_LAYOUT_ENGINE_H
-#define MBINK_LAYOUT_ENGINE_H
+#ifndef MBLINK_LAYOUT_ENGINE_H
+#define MBLINK_LAYOUT_ENGINE_H
 
 #include <memory>
 #include "native_layout_engine.h"
 
 // Forward declarations
-namespace mbink {
+namespace mblink {
 class RenderObject;
 struct ComputedStyle;
 }
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Layout engine using native C++ implementation
@@ -96,6 +96,6 @@ private:
     NativeLayoutEngine native_engine_;
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_LAYOUT_ENGINE_H
+#endif // MBLINK_LAYOUT_ENGINE_H

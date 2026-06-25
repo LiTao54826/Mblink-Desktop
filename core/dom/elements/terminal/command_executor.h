@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 命令执行器
@@ -86,4 +86,4 @@ private:
     void Cleanup();
 };
 
-}  // namespace mbink
+}  // namespace mblink

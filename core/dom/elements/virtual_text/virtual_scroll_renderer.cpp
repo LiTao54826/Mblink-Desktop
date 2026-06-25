@@ -12,7 +12,7 @@
 
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 VirtualScrollRenderer::VirtualScrollRenderer() {
     // 使用空字体作为默认值，实际使用时应通过 SetFont 设置
@@ -155,4 +155,4 @@ void VirtualScrollRenderer::ClampScrollOffset() {
     }
 }
 
-}  // namespace mbink
+}  // namespace mblink

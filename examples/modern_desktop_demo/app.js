@@ -79,7 +79,7 @@ function App() {
             }
         },
             // 标题栏
-            h(TitleBar, { title: 'MBink Modern Desktop Demo' }),
+            h(TitleBar, { title: 'MBlink Modern Desktop Demo' }),
 
             // 主体区域：侧边栏 + 内容
             h('div', {

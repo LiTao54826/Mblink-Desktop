@@ -25,11 +25,11 @@ Current test-related directories include:
 The following targets can be confirmed from `tests/CMakeLists.txt`:
 从 `tests/CMakeLists.txt` 可确认以下目标：
 
-- `mbink_unit_tests`
-- `mbink_render_tests`
-- `mbink_integration_tests`
-- `mbink_property_tests`
-- `mbink_performance_tests` (optional / 可选)
+- `mblink_unit_tests`
+- `mblink_render_tests`
+- `mblink_integration_tests`
+- `mblink_property_tests`
+- `mblink_performance_tests` (optional / 可选)
 
 ## Confirmed Facts | 当前可确认事实
 
@@ -55,7 +55,7 @@ If you need to validate the current repository state, start with:
 如果你要验证当前仓库状态，建议先执行：
 
 ```bash
-cmake -B build -DMBINK_BUILD_TESTS=ON
+cmake -B build -DMBLINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```

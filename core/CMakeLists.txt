@@ -1,13 +1,13 @@
-# MBink 核心库 CMake配置
+# MBlink 核心库 CMake配置
 
 message(STATUS "Configuring core library...")
 
 # 添加各个模块
-add_library(mbink_devtools_bridge STATIC
+add_library(mblink_devtools_bridge STATIC
     devtools/devtools_bridge.cpp
 )
 
-target_include_directories(mbink_devtools_bridge PUBLIC
+target_include_directories(mblink_devtools_bridge PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
@@ -28,27 +28,27 @@ add_subdirectory(devtools)
 add_subdirectory(compositor)
 
 # 创建主库 (使用INTERFACE库，因为所有实现都在子模块中)
-add_library(mbink INTERFACE)
+add_library(mblink INTERFACE)
 
 # 链接所有子模块
-target_link_libraries(mbink INTERFACE
-    mbink_window
-    mbink_quickjs
-    mbink_dom
-    mbink_editing
-    mbink_event
-    mbink_layout
-    mbink_render
-    mbink_bridge
-    mbink_api
-    mbink_utils
-    mbink_network
-    mbink_devtools_bridge
-    mbink_compositor
+target_link_libraries(mblink INTERFACE
+    mblink_window
+    mblink_quickjs
+    mblink_dom
+    mblink_editing
+    mblink_event
+    mblink_layout
+    mblink_render
+    mblink_bridge
+    mblink_api
+    mblink_utils
+    mblink_network
+    mblink_devtools_bridge
+    mblink_compositor
 )
 
 # 包含目录
-target_include_directories(mbink INTERFACE
+target_include_directories(mblink INTERFACE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )

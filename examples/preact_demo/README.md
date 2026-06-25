@@ -2,8 +2,8 @@
 
 ## Overview | 概览
 
-MBink example application built with Preact.
-一个基于 Preact 构建的 MBink 示例应用。
+MBlink example application built with Preact.
+一个基于 Preact 构建的 MBlink 示例应用。
 
 ## Run | 运行方式
 
@@ -22,7 +22,7 @@ If `Release` is unavailable, use the actual build output path.
 
 - Preact-based component structure / 基于 Preact 的组件组织
 - state updates and interaction / 状态更新与交互
-- loading a JS app inside the MBink runtime / 在 MBink 运行时中加载 JS 应用
+- loading a JS app inside the MBlink runtime / 在 MBlink 运行时中加载 JS 应用
 
 ## Notes | 说明
 

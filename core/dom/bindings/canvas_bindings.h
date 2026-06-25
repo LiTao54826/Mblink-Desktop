@@ -19,7 +19,7 @@
 #include "core/render/canvas/canvas_image_data.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Canvas 绑定类
@@ -86,5 +86,5 @@ private:
     static void InitImageDataClass(JSContext* ctx);
 };
 
-} // namespace mbink
+} // namespace mblink
 

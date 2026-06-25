@@ -37,7 +37,7 @@
 #include <cstdio>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -3582,5 +3582,5 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(Text*
     return CreateRenderObjectForText(text_shared, parent_style);
 }
 
-} // namespace mbink
+} // namespace mblink
 

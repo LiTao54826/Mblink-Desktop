@@ -12,7 +12,7 @@
 #include <deque>
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 泛型环形缓冲区
@@ -189,4 +189,4 @@ private:
     }
 };
 
-}  // namespace mbink
+}  // namespace mblink

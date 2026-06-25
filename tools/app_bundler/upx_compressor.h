@@ -9,7 +9,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief UPX 压缩器
@@ -68,4 +68,4 @@ private:
     size_t compressed_size_ = 0;
 };
 
-}  // namespace mbink
+}  // namespace mblink

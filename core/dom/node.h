@@ -21,7 +21,7 @@
 #include <memory>
 #include "include/core/SkRect.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -493,5 +493,5 @@ protected:
     friend class Document;
 };
 
-} // namespace mbink
+} // namespace mblink
 

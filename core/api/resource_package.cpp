@@ -18,7 +18,7 @@ extern "C" {
 
 namespace fs = std::filesystem;
 
-namespace mbink::resourcepkg {
+namespace mblink::resourcepkg {
 namespace {
 
 constexpr uint32_t PKG_MAGIC = 0x5052424d;  // MBRP
@@ -27,7 +27,7 @@ constexpr uint32_t BC_MAGIC = 0x4342424d;   // MBBC
 
 fs::path Utf8PathToFsPath(const char* path) {
 #ifdef _WIN32
-    return fs::path(mbink::utils::UTF8ToWide(path ? path : ""));
+    return fs::path(mblink::utils::UTF8ToWide(path ? path : ""));
 #else
     return fs::path(path ? path : "");
 #endif
@@ -35,7 +35,7 @@ fs::path Utf8PathToFsPath(const char* path) {
 
 std::string FsPathToUtf8String(const fs::path& path) {
 #ifdef _WIN32
-    return mbink::utils::WideToUTF8(path.wstring());
+    return mblink::utils::WideToUTF8(path.wstring());
 #else
     return path.string();
 #endif
@@ -160,7 +160,7 @@ std::string BuildOfficialPreactModule(const fs::path& entry_path) {
 }
 
 std::string EmbeddedOfficialPreactModule(const char* path) {
-    auto source = mbink::embedded::GetEmbeddedJS(path);
+    auto source = mblink::embedded::GetEmbeddedJS(path);
     if (source.empty()) {
         throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
     }
@@ -178,7 +178,7 @@ std::string OfficialPreactModuleId(const char* path) {
     std::string id(path ? path : "");
     static const std::string prefix = "third_party/preact/";
     if (id.rfind(prefix, 0) == 0) {
-        id.replace(0, prefix.size(), "__mbink_official_preact/");
+        id.replace(0, prefix.size(), "__mblink_official_preact/");
     }
     return id;
 }
@@ -187,14 +187,14 @@ std::string BuildEmbeddedOfficialPreactModule(const char* path) {
     return "export * from '" + OfficialPreactModuleId(path) + "';";
 }
 
-void RegisterOfficialPreactSource(mbink::ModuleResolver& resolver, const char* path) {
+void RegisterOfficialPreactSource(mblink::ModuleResolver& resolver, const char* path) {
     const auto source = EmbeddedOfficialPreactModule(path);
     const auto module_id = OfficialPreactModuleId(path);
     resolver.RegisterBuiltinModule(module_id, source);
     resolver.RegisterBuiltinModule(StripJsExtension(module_id), source);
 }
 
-void RegisterOfficialPreactBuiltinModules(mbink::ModuleResolver& resolver) {
+void RegisterOfficialPreactBuiltinModules(mblink::ModuleResolver& resolver) {
     static constexpr const char* kOfficialPreactSources[] = {
         "third_party/preact/src/index.js",
         "third_party/preact/src/render.js",
@@ -225,7 +225,7 @@ void RegisterOfficialPreactBuiltinModules(mbink::ModuleResolver& resolver) {
 std::vector<uint8_t> CompileJsFile(const fs::path& path,
                                    const std::string& package_module_path,
                                    std::string& error) {
-    mbink::ModuleResolver resolver;
+    mblink::ModuleResolver resolver;
     RegisterOfficialPreactBuiltinModules(resolver);
 
     auto modules = resolver.Resolve(FsPathToUtf8String(path));
@@ -270,7 +270,7 @@ std::vector<uint8_t> CompileJsFile(const fs::path& path,
         }
     }
 
-    mbink::BytecodeCompiler compiler;
+    mblink::BytecodeCompiler compiler;
     compiler.SetStripSource(true);
     compiler.SetStripDebug(true);
     compiler.SetEntryDir(NormalizeFsPath(virtual_entry_path.parent_path()));
@@ -280,7 +280,7 @@ std::vector<uint8_t> CompileJsFile(const fs::path& path,
         return {};
     }
 
-    auto merged = mbink::BytecodeCompiler::MergeBytecode(compiled);
+    auto merged = mblink::BytecodeCompiler::MergeBytecode(compiled);
     std::vector<uint8_t> out;
     W32(out, BC_MAGIC);
     out.insert(out.end(), merged.begin(), merged.end());
@@ -469,7 +469,7 @@ bool EvalMaybeMergedBytecode(JSContext* js_ctx,
 
     if (magic == BC_MAGIC) {
         std::vector<uint8_t> merged(bytes + 4, bytes + size);
-        auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(merged);
+        auto modules = mblink::BytecodeCompiler::ParseMergedBytecode(merged);
         for (auto& module : modules) {
             JSValue obj = JS_ReadObject(js_ctx, module.bytecode.data(), module.bytecode.size(), JS_READ_OBJ_BYTECODE);
             if (JS_IsException(obj)) {
@@ -514,5 +514,5 @@ bool EvalMaybeMergedBytecode(JSContext* js_ctx,
     return true;
 }
 
-}  // namespace mbink::resourcepkg
+}  // namespace mblink::resourcepkg
 

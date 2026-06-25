@@ -1,5 +1,5 @@
 /**
- * MBink Checkbox 组件
+ * MBlink Checkbox 组件
  *
  * Props:
  * - checked: boolean

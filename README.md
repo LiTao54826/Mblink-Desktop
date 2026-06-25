@@ -1,31 +1,31 @@
 <p align="center">
-  <img src="./assets/logo.svg" alt="MBink logo" width="140" />
+  <img src="./assets/logo.svg" alt="MBlink logo" width="140" />
 </p>
 
-# MBink
+# Mblink Desktop
 
 English | [中文](README.zh-CN.md)
 
-MBink is a Windows-first desktop UI framework and tooling stack for building small and medium desktop apps with a lightweight native runtime, modern JS UI, and AI-friendly development workflows.
+MBlink is a Windows-first desktop UI framework and tooling stack for building small and medium desktop apps with a lightweight native runtime, modern JS UI, and AI-friendly development workflows.
 
-## What MBink is
+## What MBlink is
 
-- A shared runtime centered on `mbink.dll`
+- A shared runtime centered on `mblink.dll`
 - A thin manual runner in `esm_loader.exe`
-- An AI-first development surface in `mbink-ui-dev.exe`
+- An AI-first development surface in `mblink-ui-dev.exe`
 - Python integration today, plus early Rust and Go bindings in the tree
 
-## What MBink is not
+## What MBlink is not
 
 - Not a complete browser
 - Not a WebView wrapper
 - Not a polished cross-platform release yet
 
-MBink is aimed at desktop apps that want a smaller, more controllable runtime and a development loop that works well for both humans and AI agents.
+MBlink is aimed at desktop apps that want a smaller, more controllable runtime and a development loop that works well for both humans and AI agents.
 
 ## Current UI compatibility target
 
-MBink currently centers its JS UI compatibility around the lightweight official Preact ESM path:
+MBlink currently centers its JS UI compatibility around the lightweight official Preact ESM path:
 
 - `preact`
 - `preact/hooks`
@@ -34,7 +34,7 @@ MBink currently centers its JS UI compatibility around the lightweight official 
 
 This is the clearest supported lane today for small and medium desktop apps.
 
-Those official Preact modules are not just examples in the tree. They are registered as embedded runtime modules in the MBink runtime path, so the verified default experience is based on direct ESM imports such as:
+Those official Preact modules are not just examples in the tree. They are registered as embedded runtime modules in the MBlink runtime path, so the verified default experience is based on direct ESM imports such as:
 
 - `import { h, render } from 'preact'`
 - `import { useState } from 'preact/hooks'`
@@ -44,7 +44,7 @@ Other framework layers may partly work, but they are not a supported compatibili
 
 ## Imports and package model
 
-MBink supports real ESM `import`-based UI code. The runtime and tooling can handle:
+MBlink supports real ESM `import`-based UI code. The runtime and tooling can handle:
 
 - local relative imports inside your project
 - the embedded official Preact modules above
@@ -61,19 +61,19 @@ For the current supported API surface, read [docs/SKILLS.md](docs/SKILLS.md), [d
 
 ## Why it is interesting
 
-- `mbink-ui-dev` gives you a practical loop for `open`, `build`, `snapshot`, `query`, `inspect`, `click`, and `serve`
-- `mbink.dll` stays the core runtime surface across tools and bindings
+- `mblink-ui-dev` gives you a practical loop for `open`, `build`, `snapshot`, `query`, `inspect`, `click`, and `serve`
+- `mblink.dll` stays the core runtime surface across tools and bindings
 - `esm_loader` gives you a direct manual lane for running a single entry file without hiding the DLL/runtime shape
 - The repository already contains runnable examples for app shells, todo apps, log views, native controls, and desktop-style layouts
 
 ## What it looks like
 
-The screenshots below were captured from real `mbink-ui-dev` sessions on Windows.
+The screenshots below were captured from real `mblink-ui-dev` sessions on Windows.
 
-![MBink todo_app_js example](docs/assets/todo_app_js.png)
-![MBink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
-![MBink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
-![MBink html_demo example](docs/assets/html_demo.png)
+![MBlink todo_app_js example](docs/assets/todo_app_js.png)
+![MBlink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
+![MBlink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
+![MBlink html_demo example](docs/assets/html_demo.png)
 
 ## Quick Start
 
@@ -81,15 +81,15 @@ From the repository root on Windows:
 
 ```powershell
 cmake -B build
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
 ```
 
 What this gives you:
 
-- a real MBink runtime window for `examples/todo_app_js`
+- a real MBlink runtime window for `examples/todo_app_js`
 - a structured UI snapshot you can inspect from the CLI
 - an optional PNG screenshot written by the same runtime path when you add `--include-screenshot`
 
@@ -103,13 +103,13 @@ Start with the full guide in [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## AI-First Workflow
 
-MBink is designed so an AI agent can work through the same development surface a human uses:
+MBlink is designed so an AI agent can work through the same development surface a human uses:
 
-- shell/CLI agents can drive `mbink-ui-dev.exe` directly
-- MCP-capable clients can use `mbink-ui-dev.exe serve`
-- direct C API hosts can expose live UI analysis through the optional `mbink_devtools.dll`
+- shell/CLI agents can drive `mblink-ui-dev.exe` directly
+- MCP-capable clients can use `mblink-ui-dev.exe serve`
+- direct C API hosts can expose live UI analysis through the optional `mblink_devtools.dll`
 
-The repository ships a reusable skill at [tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md](tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md).
+The repository ships a reusable skill at [tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md](tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md).
 
 Start with [docs/SKILLS.md](docs/SKILLS.md) for the skillbook layout and how to use it with AI agents, then read [docs/AI_WORKFLOW.md](docs/AI_WORKFLOW.md) for the recommended workflow.
 
@@ -117,10 +117,10 @@ Start with [docs/SKILLS.md](docs/SKILLS.md) for the skillbook layout and how to 
 
 If you want to understand the project surface without the dev tooling layer, start here:
 
-- `mbink.dll`: the shared runtime
+- `mblink.dll`: the shared runtime
 - `esm_loader.exe`: the thinnest manual host in this repository
-- `mbink-ui-dev.exe`: project tooling, snapshots, build/watch, MCP, and inspection
-- `mbink_devtools.dll`: optional development companion for UI snapshots, control, and runtime HTTP MCP
+- `mblink-ui-dev.exe`: project tooling, snapshots, build/watch, MCP, and inspection
+- `mblink_devtools.dll`: optional development companion for UI snapshots, control, and runtime HTTP MCP
 
 Read [docs/BINDINGS.md](docs/BINDINGS.md) and [docs/C_API_RUNTIME_PARITY.md](docs/C_API_RUNTIME_PARITY.md) for the runtime model.
 
@@ -128,15 +128,15 @@ Read [docs/BINDINGS.md](docs/BINDINGS.md) and [docs/C_API_RUNTIME_PARITY.md](doc
 
 Good starting points in `examples/`:
 
-- `todo_app_js`: smallest verified `mbink-ui-dev` example for quick checks
+- `todo_app_js`: smallest verified `mblink-ui-dev` example for quick checks
 - `modern_desktop_demo`: desktop-style app shell and layout demo
-- `terminal_logview_demo`: MBink native terminal/logview elements
+- `terminal_logview_demo`: MBlink native terminal/logview elements
 - `component_demo`: smaller UI component combinations
 - `official_preact_jsx_dev`: a tracked reference for the official Preact ESM path
 
 ## Project Status
 
-MBink is in an early but usable repository stage:
+MBlink is in an early but usable repository stage:
 
 - Windows has the strongest build and runtime evidence
 - the dev tooling and example workflow are more mature than the public packaging story
@@ -148,7 +148,7 @@ The goal of this repository is not "ship a full browser." It is to make modern d
 
 ## Project Reality
 
-MBink is primarily maintained as a personal project.
+MBlink is primarily maintained as a personal project.
 
 Because development time and testing capacity are limited, not every example, platform, binding, framework combination, or edge case can be verified one by one before public release.
 
@@ -158,7 +158,7 @@ If a path is not clearly documented with current verification evidence, treat it
 
 ## Support the Author
 
-If MBink is useful to you, sponsorship helps fund time for:
+If MBlink is useful to you, sponsorship helps fund time for:
 
 - testing more examples and workflows
 - improving documentation and onboarding
@@ -182,7 +182,7 @@ You can add a public sponsor QR image at `docs/assets/sponsor_qr.png` and refere
 
 ```text
 core/        Runtime, DOM, layout, render, and public C API
-tools/       mbink-ui-dev, esm_loader, and build tooling
+tools/       mblink-ui-dev, esm_loader, and build tooling
 bindings/    Python, Rust, and Go bindings
 examples/    Runnable examples and validation targets
 docs/        Project documentation

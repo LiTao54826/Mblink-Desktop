@@ -1,5 +1,5 @@
 @echo off
-REM MBink Third-Party Dependencies Download Script (Windows)
+REM MBlink Third-Party Dependencies Download Script (Windows)
 REM Purpose: Automatically download and configure all dependencies
 REM
 REM NOTE: This script uses English only to avoid encoding issues.
@@ -9,7 +9,7 @@ REM       .\scripts\download_deps.ps1
 setlocal enabledelayedexpansion
 
 echo ==========================================
-echo   MBink Dependencies Download Script
+echo   MBlink Dependencies Download Script
 echo ==========================================
 echo.
 

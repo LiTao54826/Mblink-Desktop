@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/paint/display_item.h"
 
-namespace mbink {
+namespace mblink {
 
 // =========================================================================
 // 构造函数
@@ -16,4 +16,4 @@ DisplayItem::DisplayItem(DisplayItemType type, RenderObject* client)
     , client_(client) {
 }
 
-} // namespace mbink
+} // namespace mblink

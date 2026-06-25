@@ -18,7 +18,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class DataTransfer;
@@ -152,4 +152,4 @@ private:
     int screen_y_ = 0;
 };
 
-} // namespace mbink
+} // namespace mblink

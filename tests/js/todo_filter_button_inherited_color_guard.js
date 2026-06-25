@@ -11,8 +11,8 @@ function assert(condition, message) {
   }
 }
 
-function runMbinkUiDev(args) {
-  const exe = path.join(process.cwd(), 'build', 'bin', 'Release', 'mbink-ui-dev.exe');
+function runMblinkUiDev(args) {
+  const exe = path.join(process.cwd(), 'build', 'bin', 'Release', 'mblink-ui-dev.exe');
   const output = execFileSync(exe, args, {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -29,13 +29,13 @@ function evalState(project) {
       computedColor: getComputedStyle(button).color
     })))
   `;
-  const result = runMbinkUiDev(['eval', '--project', project, code]);
+  const result = runMblinkUiDev(['eval', '--project', project, code]);
   assert(result.ok === true, 'eval_state failed');
   return JSON.parse(result.result);
 }
 
 function click(project, index) {
-  const result = runMbinkUiDev([
+  const result = runMblinkUiDev([
     'click',
     '--project',
     project,
@@ -45,17 +45,17 @@ function click(project, index) {
 }
 
 function clickSelector(project, selector) {
-  const result = runMbinkUiDev(['click', '--project', project, selector]);
+  const result = runMblinkUiDev(['click', '--project', project, selector]);
   assert(result.ok === true && result.result.clicked === true, `click ${selector} failed`);
 }
 
 function inputText(project, selector, text) {
-  const result = runMbinkUiDev(['input-text', '--project', project, selector, text]);
+  const result = runMblinkUiDev(['input-text', '--project', project, selector, text]);
   assert(result.ok === true && result.result.value === text, `input ${selector} failed`);
 }
 
 function evalJson(project, code) {
-  const result = runMbinkUiDev(['eval', '--project', project, `JSON.stringify(${code})`]);
+  const result = runMblinkUiDev(['eval', '--project', project, `JSON.stringify(${code})`]);
   assert(result.ok === true, 'eval_json failed');
   return JSON.parse(result.result);
 }
@@ -81,8 +81,8 @@ function assertButtons(state, activeIndex) {
 function run() {
   const project = path.join(process.cwd(), 'examples', 'todo_app_js');
 
-  runMbinkUiDev(['daemon', 'stop', '--project', project]);
-  runMbinkUiDev(['open', project, '--force']);
+  runMblinkUiDev(['daemon', 'stop', '--project', project]);
+  runMblinkUiDev(['open', project, '--force']);
 
   assertButtons(evalState(project), 0);
   click(project, 2);

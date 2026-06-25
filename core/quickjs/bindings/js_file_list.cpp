@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 namespace {
 
@@ -152,4 +152,4 @@ bool FileListFromJSValue(JSContext* ctx, JSValueConst value, FileList* files) {
 }
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

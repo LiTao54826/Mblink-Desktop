@@ -15,7 +15,7 @@
 #include <vector>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 脏区域管理器
@@ -190,5 +190,5 @@ public:
     virtual bool NeedsPaint() const = 0;
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -5,7 +5,7 @@
 
 #include "image_cache.h"
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -122,5 +122,5 @@ size_t ImageCache::CalculateImageSize(sk_sp<SkImage> image) const {
     return image->width() * image->height() * 4;
 }
 
-} // namespace mbink
+} // namespace mblink
 

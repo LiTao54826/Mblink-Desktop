@@ -8,7 +8,7 @@
 #include "core/dom/element.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 void DirtyNodeTracker::RecordNodeAdded(std::shared_ptr<Node> node, 
                                        std::shared_ptr<Node> parent, 
@@ -436,4 +436,4 @@ void DirtyNodeTracker::Optimize() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

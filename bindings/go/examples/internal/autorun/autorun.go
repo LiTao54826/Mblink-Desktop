@@ -6,38 +6,38 @@ import (
 	"os"
 	"strconv"
 
-	"mbink-go/mbink"
+	"mblink-go/mblink"
 )
 
 func Enabled() bool {
-	return os.Getenv("MBINK_AUTORUN") == "1"
+	return os.Getenv("MBLINK_AUTORUN") == "1"
 }
 
 func Headless() bool {
-	return os.Getenv("MBINK_AUTORUN_HEADLESS") == "1"
+	return os.Getenv("MBLINK_AUTORUN_HEADLESS") == "1"
 }
 
-func NewApp(title string, width, height int) (*mbink.App, error) {
+func NewApp(title string, width, height int) (*mblink.App, error) {
 	if !Enabled() {
-		return mbink.New(title, width, height)
+		return mblink.New(title, width, height)
 	}
-	cfg := mbink.DefaultConfig().
+	cfg := mblink.DefaultConfig().
 		WithTitle(title).
 		WithSize(width, height).
 		WithGPU(false)
 	if Headless() {
 		cfg = cfg.WithHeadless(true)
 	}
-	return mbink.NewWithConfig(cfg)
+	return mblink.NewWithConfig(cfg)
 }
 
-func Run(app *mbink.App, step func(int) error) error {
+func Run(app *mblink.App, step func(int) error) error {
 	if !Enabled() {
 		app.Run()
 		return nil
 	}
 	maxTicks := 12
-	if value := os.Getenv("MBINK_AUTORUN_TICKS"); value != "" {
+	if value := os.Getenv("MBLINK_AUTORUN_TICKS"); value != "" {
 		if n, err := strconv.Atoi(value); err == nil && n > 0 {
 			maxTicks = n
 		}

@@ -223,7 +223,7 @@ export const hostApi = {
     return callBackend('getTemplateInfo', defaults, async () => ({
       purpose: defaults.purpose ?? 'desktop-app',
       runtime: 'tool',
-      host: 'mbink-ui-dev mock backend',
+      host: 'mblink-ui-dev mock backend',
       mode: 'dev-mock',
       capabilities: {
         backend: false,

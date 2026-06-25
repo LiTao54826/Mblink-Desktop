@@ -24,7 +24,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -161,4 +161,4 @@ bool EditorInputSession::HandleTextEditing(const SDL_Event& event, const std::sh
     return focus_element->IsContentEditable() && contenteditable_controller && document ? contenteditable_controller->HandleTextEditing(focus_element, document, text) : false;
 }
 
-}  // namespace mbink
+}  // namespace mblink

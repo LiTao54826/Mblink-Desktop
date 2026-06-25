@@ -13,9 +13,9 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Set-Location $repoRoot
 
-$exe = Join-Path $repoRoot 'build/bin/Release/mbink-ui-dev.exe'
-$project = Join-Path $repoRoot 'tmp/mbink_idle_cpu_probe/large_snapshot_app'
-$fallbackProject = Join-Path $repoRoot 'tmp/mbink_ui_dev_responsiveness/large_snapshot_app'
+$exe = Join-Path $repoRoot 'build/bin/Release/mblink-ui-dev.exe'
+$project = Join-Path $repoRoot 'tmp/mblink_idle_cpu_probe/large_snapshot_app'
+$fallbackProject = Join-Path $repoRoot 'tmp/mblink_ui_dev_responsiveness/large_snapshot_app'
 $esbuildBin = Join-Path $repoRoot 'tmp/esbuild_tools/node_modules/.bin'
 $resultDir = Join-Path $repoRoot 'tmp/perf'
 $resultPath = Join-Path $resultDir 'esm_loader_idle_cpu.json'
@@ -32,7 +32,7 @@ if (!(Test-Path -LiteralPath $project)) {
     if (Test-Path -LiteralPath $fallbackProject) {
         $project = $fallbackProject
     } else {
-        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'tests/regression/test_mbink_ui_dev_responsiveness.ps1')
+        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'tests/regression/test_mblink_ui_dev_responsiveness.ps1')
         if (Test-Path -LiteralPath $fallbackProject) {
             $project = $fallbackProject
         }
@@ -48,7 +48,7 @@ New-Item -ItemType Directory -Path $resultDir -Force | Out-Null
 function Invoke-Json([string[]]$Arguments) {
     $raw = & $exe @Arguments 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
-        throw "mbink-ui-dev $($Arguments -join ' ') failed`n$raw"
+        throw "mblink-ui-dev $($Arguments -join ' ') failed`n$raw"
     }
     return $raw | ConvertFrom-Json
 }

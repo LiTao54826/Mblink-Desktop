@@ -10,7 +10,7 @@
 #include <numeric>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ========== PerformanceStats ==========
 
@@ -180,5 +180,5 @@ float PerformanceTimer::GetElapsed() const {
     return std::chrono::duration_cast<std::chrono::duration<float, std::milli>>(end - start_).count();
 }
 
-} // namespace mbink
+} // namespace mblink
 

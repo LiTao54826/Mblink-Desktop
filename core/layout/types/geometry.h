@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Axis Types
@@ -389,5 +389,5 @@ struct MinMax {
     Max max;
 };
 
-} // namespace mbink
+} // namespace mblink
 

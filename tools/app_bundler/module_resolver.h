@@ -11,7 +11,7 @@
 #include <unordered_set>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Import 语句信息
@@ -126,4 +126,4 @@ private:
                   size_t line = 0);
 };
 
-}  // namespace mbink
+}  // namespace mblink

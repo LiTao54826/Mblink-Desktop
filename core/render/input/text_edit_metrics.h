@@ -5,7 +5,7 @@
 
 class SkFont;
 
-namespace mbink::text_edit_metrics {
+namespace mblink::text_edit_metrics {
 
 float MeasureTextWidth(const std::string& text,
                        const SkFont& font,
@@ -24,4 +24,4 @@ int HitTestTextPosition(const std::string& text,
 std::vector<int> ComputeRenderedLineStartOffsets(const std::string& text,
                                                  const std::vector<std::string>& lines);
 
-}  // namespace mbink::text_edit_metrics
+}  // namespace mblink::text_edit_metrics

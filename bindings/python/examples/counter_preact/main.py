@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mbink import App
+from mblink import App
 
 app = App("Preact Counter", 800, 600)
 

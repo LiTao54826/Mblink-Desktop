@@ -75,7 +75,7 @@ set(COMPOSITOR_TEST_SOURCES
 )
 
 # 创建单元测试可执行文件
-add_executable(mbink_unit_tests
+add_executable(mblink_unit_tests
     main.cpp
     ${DOM_TEST_SOURCES}
     ${EVENT_TEST_SOURCES}
@@ -88,9 +88,9 @@ add_executable(mbink_unit_tests
     ${COMPOSITOR_TEST_SOURCES}
 )
 
-target_link_libraries(mbink_unit_tests
+target_link_libraries(mblink_unit_tests
     PRIVATE
-    mbink
+    mblink
     test_utils
     GTest::gtest
     GTest::gtest_main
@@ -98,4 +98,4 @@ target_link_libraries(mbink_unit_tests
 
 # 添加到 CTest
 include(GoogleTest)
-gtest_discover_tests(mbink_unit_tests)
+gtest_discover_tests(mblink_unit_tests)

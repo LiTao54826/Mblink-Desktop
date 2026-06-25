@@ -15,7 +15,7 @@
 #include "quickjs.h"
 #include "core/dom/element.h"
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 void InitElementBinding(JSContext* ctx);
@@ -61,4 +61,4 @@ std::shared_ptr<Element> UnwrapElement(JSContext* ctx, JSValue value);
 JSClassID GetElementClassID();
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

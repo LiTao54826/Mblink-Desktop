@@ -6,7 +6,7 @@
 #include "paint.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -164,4 +164,4 @@ void Paint::Reset() {
     paint_.setStyle(SkPaint::kFill_Style);
 }
 
-} // namespace mbink
+} // namespace mblink

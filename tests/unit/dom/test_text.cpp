@@ -8,7 +8,7 @@
 #include "dom/text.h"
 #include "dom/element.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class TextTest : public DOMTestBase {};
@@ -89,4 +89,4 @@ TEST_F(TextTest, MultipleTextNodes) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -16,7 +16,7 @@ function run() {
   const mouseSrc = fs.readFileSync(mousePath, 'utf8');
   const domObserverSrc = fs.readFileSync(domObserverPath, 'utf8');
 
-  assert(windowSrc.includes('MBINK_DISABLE_RETAINED_PRESENT'),
+  assert(windowSrc.includes('MBLINK_DISABLE_RETAINED_PRESENT'),
     'Retained-present default must keep an emergency disable switch');
   assert(windowSrc.includes('retained_present_experiment_enabled') &&
          windowSrc.includes('retained_present_safety_ok'),

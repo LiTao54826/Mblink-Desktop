@@ -24,7 +24,7 @@
 // 全局变量：用于控制调试日志输出（放在全局命名空间，方便其他编译单元访问）
 int g_debug_frames_remaining = 0;
 
-namespace mbink {
+namespace mblink {
 
 // =========================================================================
 // 辅助函数（复制自 V2）
@@ -38,17 +38,17 @@ namespace {
     }
 
     bool IsAnimFrameDebugEnabled() {
-        static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
+        static const bool enabled = (std::getenv("MBLINK_DEBUG_ANIM_FRAME") != nullptr);
         return enabled;
     }
 
     bool IsLayerRebuildDebugEnabled() {
-        static const bool enabled = (std::getenv("MBINK_DEBUG_LAYER_REBUILD") != nullptr);
+        static const bool enabled = (std::getenv("MBLINK_DEBUG_LAYER_REBUILD") != nullptr);
         return enabled;
     }
 
     bool IsBaselineFrameStatsEnabled() {
-        static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+        static const bool enabled = (std::getenv("MBLINK_BASELINE_FRAME_STATS") != nullptr);
         return enabled;
     }
 
@@ -478,7 +478,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas,
     // 如果没有渲染树，直接返回
     if (!render_tree_) {
         if (IsBaselineFrameStatsEnabled()) {
-            std::cout << "[MBINK_BASELINE_FRAME]"
+            std::cout << "[MBLINK_BASELINE_FRAME]"
                       << " boundary=pipeline"
                       << " frame=" << frame_seq
                       << " class=no_render_tree"
@@ -601,7 +601,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas,
     last_frame_stats_ = current_frame_stats_;
 
     if (IsBaselineFrameStatsEnabled()) {
-        std::cout << "[MBINK_BASELINE_FRAME]"
+        std::cout << "[MBLINK_BASELINE_FRAME]"
                   << " boundary=pipeline"
                   << " frame=" << frame_seq
                   << " class=rendered"
@@ -783,7 +783,7 @@ void RenderPipeline::DoLayerTreeBuild() {
                   << "\n";
     }
 
-    static bool debug_layer_build = std::getenv("MBINK_DEBUG_LAYER_BUILD") != nullptr;
+    static bool debug_layer_build = std::getenv("MBLINK_DEBUG_LAYER_BUILD") != nullptr;
 
     // 递减调试帧计数器
     if (g_debug_frames_remaining > 0) {
@@ -976,7 +976,7 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
     }
 
     // 🐛 hover bug 调试日志
-    static bool debug_hover = std::getenv("MBINK_DEBUG_HOVER_BUG") != nullptr;
+    static bool debug_hover = std::getenv("MBLINK_DEBUG_HOVER_BUG") != nullptr;
 
     auto rect_differs = [](const SkRect& a, const SkRect& b) {
         const float eps = 0.01f;
@@ -1050,7 +1050,7 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
 
             // 小尺寸层阈值（可通过环境变量配置）
             static float small_layer_threshold = []() {
-                const char* env = std::getenv("MBINK_SMALL_LAYER_THRESHOLD");
+                const char* env = std::getenv("MBLINK_SMALL_LAYER_THRESHOLD");
                 return env ? std::atof(env) : 200.0f;
             }();
 
@@ -1192,8 +1192,8 @@ void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
 
             // 只对 position: fixed 元素输出详细日志（默认关闭）
             bool is_fixed = (reason == LayerPromotionReason::PositionFixed);
-            static bool debug_layers = std::getenv("MBINK_DEBUG_LAYERS") != nullptr ||
-                                       std::getenv("MBINK_DEBUG_DIRTY") != nullptr;
+            static bool debug_layers = std::getenv("MBLINK_DEBUG_LAYERS") != nullptr ||
+                                       std::getenv("MBLINK_DEBUG_DIRTY") != nullptr;
             if (is_fixed && debug_layers) {
                 if (!element_id.empty()) {
                 }
@@ -1447,4 +1447,4 @@ void RenderPipeline::OnAnimationEnd(RenderObject* object, const std::string& ani
     }
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -17,7 +17,7 @@
 #include <random>
 #include <vector>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class CacheVersionPropertyTestRng {

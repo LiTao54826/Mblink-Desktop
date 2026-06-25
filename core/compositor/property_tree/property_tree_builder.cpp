@@ -7,7 +7,7 @@
 #include "core/render/objects/render_object.h"
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 PropertyTreeBuilder::PropertyTreeBuilder(PropertyTrees& trees)
     : trees_(trees) {
@@ -479,4 +479,4 @@ void PropertyTreeBuilder::ApplyStatesToRenderObjects() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

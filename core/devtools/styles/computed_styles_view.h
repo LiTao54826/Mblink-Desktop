@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -92,4 +92,4 @@ private:
     bool IsDefaultValue(const std::string& property_name, const std::string& value) const;
 };
 
-} // namespace mbink
+} // namespace mblink

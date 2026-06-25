@@ -12,7 +12,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 DevToolsManager& DevToolsManager::GetInstance() {
     static DevToolsManager instance;
@@ -517,4 +517,4 @@ void DevToolsManager::OnTextChanged(Node* node,
     panel_->RefreshDOMTree();
 }
 
-} // namespace mbink
+} // namespace mblink

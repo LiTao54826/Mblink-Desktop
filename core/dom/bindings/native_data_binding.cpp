@@ -12,7 +12,7 @@
 #include <sstream>
 #include <unordered_set>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -552,4 +552,4 @@ void NativeDataBindingRuntime::clear() {
     flushContext_.reentrantMutationCount = 0;
 }
 
-} // namespace mbink
+} // namespace mblink

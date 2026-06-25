@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 enum class AppTrayMenuItemType {
     Action,
@@ -42,4 +42,4 @@ public:
     static std::unique_ptr<AppTray> CreateForPlatform(const AppTrayConfig& config);
 };
 
-}  // namespace mbink
+}  // namespace mblink

@@ -1,7 +1,7 @@
 /**
  * @file animation.cpp
  * @brief CSS animation 属性实现
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
@@ -10,7 +10,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // 辅助函数
@@ -402,5 +402,5 @@ std::vector<CSSAnimation> CSSAnimation::Parse(const std::string& str) {
     return animations;
 }
 
-} // namespace mbink
+} // namespace mblink
 

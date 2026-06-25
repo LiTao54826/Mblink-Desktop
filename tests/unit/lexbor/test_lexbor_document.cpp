@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "lexbor/lexbor_document.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class LexborDocumentTest : public ::testing::Test {
@@ -292,4 +292,4 @@ TEST_F(LexborDocumentTest, ParseHTMLEntities) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

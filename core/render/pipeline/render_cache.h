@@ -20,7 +20,7 @@
 #include <string>
 #include <chrono>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 缓存条目
@@ -298,5 +298,5 @@ private:
     std::vector<RenderCommand> commands_; // 命令列表
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -22,7 +22,7 @@
 #include "event/input/focus_manager.h"
 
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class DocumentTest : public DOMTestBase {};
@@ -217,7 +217,7 @@ TEST_F(DocumentTest, LoadHTMLWithNestedElements) {
 TEST_F(DocumentTest, LoadHTMLAutoMountsDeclarativeBindingsWhenStateManagerExists) {
     auto doc = CreateDocument();
     StateManager state;
-    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
     doc->SetStateManager(&state);
 
     ASSERT_TRUE(doc->LoadHTML("<html><body><span id='name' mb-text='profile.name'></span></body></html>"));
@@ -415,4 +415,4 @@ TEST_F(DocumentTest, ResolvePath) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

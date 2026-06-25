@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -768,4 +768,4 @@ std::shared_ptr<RenderObject> Node::GetRenderObject() const {
     return render_object_.lock();
 }
 
-} // namespace mbink
+} // namespace mblink

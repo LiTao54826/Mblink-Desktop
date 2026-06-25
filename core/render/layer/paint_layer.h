@@ -2,7 +2,7 @@
  * @file paint_layer.h
  * @brief PaintLayer - 统一的绘制层系统
  *
- * PaintLayer 是 MBink 统一层系统的核心类，整合了：
+ * PaintLayer 是 MBlink 统一层系统的核心类，整合了：
  * - Stacking Context 管理
  * - Z-index 排序
  * - Compositing 判断
@@ -25,7 +25,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkMatrix.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -359,4 +359,4 @@ private:
         bool is_root = false);
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -5,8 +5,8 @@
  * 支持普通文本和正则表达式搜索。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_
 
 #include "log_buffer.h"
 
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 搜索匹配结果
@@ -152,6 +152,6 @@ private:
                             const std::regex& re);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_

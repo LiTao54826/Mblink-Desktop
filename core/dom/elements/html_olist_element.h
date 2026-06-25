@@ -13,7 +13,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML OList元素类
@@ -84,5 +84,5 @@ public:
     void SetType(const std::string& type);
 };
 
-} // namespace mbink
+} // namespace mblink
 

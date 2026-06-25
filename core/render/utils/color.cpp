@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 // 静态成员初始化
 std::unordered_map<std::string, SkColor> Color::named_colors_;
@@ -339,4 +339,4 @@ SkColor Color::HslToRgb(float h, float s, float l, float a) {
     );
 }
 
-} // namespace mbink
+} // namespace mblink

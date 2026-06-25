@@ -14,7 +14,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class EventLoopTest : public ::testing::Test {
@@ -86,7 +86,7 @@ TEST_F(EventLoopTest, SetRenderCallback) {
 }
 
 TEST_F(EventLoopTest, FileDialogResultQueueUpdatesInputOnRunOnce) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-dialog-result-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-event-loop-file-dialog-result-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "picked.txt";
     {
@@ -231,7 +231,7 @@ TEST_F(EventLoopTest, FixedDialogTextRemovalKeepsRenderTreeCached) {
 }
 
 TEST_F(EventLoopTest, FileDropRequiresDragOverDefaultPrevention) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-drop-reject-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-event-loop-file-drop-reject-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "drop.txt";
     {
@@ -295,7 +295,7 @@ TEST_F(EventLoopTest, FileDropRequiresDragOverDefaultPrevention) {
 }
 
 TEST_F(EventLoopTest, FileDropWritesOnlyWhenAcceptedAndNotCanceled) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-drop-accept-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-event-loop-file-drop-accept-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "drop.txt";
     const auto json_path = temp_dir / "drop.json";
@@ -384,7 +384,7 @@ TEST_F(EventLoopTest, FileDropWritesOnlyWhenAcceptedAndNotCanceled) {
 }
 
 TEST_F(EventLoopTest, FileDropDirectoryWritesAllFilesWithoutMultiple) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-directory-drop-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-event-loop-directory-drop-test";
     const auto directory_path = temp_dir / "folder";
     const auto nested_path = directory_path / "nested";
     const auto first_path = directory_path / "a.txt";
@@ -474,4 +474,4 @@ TEST_F(EventLoopTest, CursorVisibility) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

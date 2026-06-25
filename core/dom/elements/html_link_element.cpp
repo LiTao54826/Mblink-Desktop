@@ -6,7 +6,7 @@
 #include "html_link_element.h"
 #include "../document.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLLinkElement::HTMLLinkElement()
     : Element("link") {
@@ -63,5 +63,5 @@ bool HTMLLinkElement::IsStylesheet() const {
     return rel == "stylesheet";
 }
 
-} // namespace mbink
+} // namespace mblink
 

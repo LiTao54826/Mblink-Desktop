@@ -13,7 +13,7 @@
 #include <fstream>
 #include <random>
 
-using namespace mbink;
+using namespace mblink;
 
 namespace fs = std::filesystem;
 

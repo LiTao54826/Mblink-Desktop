@@ -11,7 +11,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 盒模型数据
@@ -131,4 +131,4 @@ private:
     BoxAreaType HitTest(int x, int y) const;
 };
 
-} // namespace mbink
+} // namespace mblink

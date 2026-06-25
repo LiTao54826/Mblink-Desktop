@@ -26,7 +26,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class CompositorLayer;
@@ -340,4 +340,4 @@ private:
     mutable Statistics statistics_;
 };
 
-} // namespace mbink
+} // namespace mblink

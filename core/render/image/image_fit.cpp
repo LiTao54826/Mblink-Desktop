@@ -18,7 +18,7 @@
 #include <sstream>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -280,4 +280,4 @@ ObjectFitResult CalculateObjectFit(
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink

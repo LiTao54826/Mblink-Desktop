@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 Selection::Selection(std::shared_ptr<Document> document)
     : document_(document)
@@ -751,4 +751,4 @@ void Selection::DispatchSelectionChangeEvent() {
     });
 }
 
-} // namespace mbink
+} // namespace mblink

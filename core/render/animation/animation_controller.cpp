@@ -1,7 +1,7 @@
 /**
  * @file animation_controller.cpp
  * @brief CSS 动画控制器实现
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // RunningAnimation 实现
@@ -59,8 +59,8 @@ void AnimationController::RegisterKeyframes(const KeyframesRule& rule) {
 
 void AnimationController::StartAnimation(std::shared_ptr<Element> element, const CSSAnimation& animation) {
     static bool debug_animation =
-        std::getenv("MBINK_DEBUG_ANIMATION") != nullptr ||
-        std::getenv("MBINK_DEBUG_ANIM") != nullptr;
+        std::getenv("MBLINK_DEBUG_ANIMATION") != nullptr ||
+        std::getenv("MBLINK_DEBUG_ANIM") != nullptr;
 
     if (!element || !animation.IsValid()) {
         if (debug_animation) {
@@ -703,4 +703,4 @@ void AnimationController::FireAnimationEvent(const RunningAnimation& anim,
     element->DispatchEvent(event);
 }
 
-} // namespace mbink
+} // namespace mblink

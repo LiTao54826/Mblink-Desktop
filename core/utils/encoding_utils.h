@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace mbink {
+namespace mblink {
 namespace utils {
 
 /**
@@ -44,4 +44,4 @@ std::string WideToUTF8(const std::wstring& wide_str);
 std::string UTF8ToLocal(const std::string& utf8_str);
 
 }  // namespace utils
-}  // namespace mbink
+}  // namespace mblink

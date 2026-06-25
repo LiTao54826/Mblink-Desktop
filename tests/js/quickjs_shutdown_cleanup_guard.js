@@ -17,7 +17,7 @@ function run() {
   const domBindingMapHeader = fs.readFileSync(path.join(root, 'core', 'quickjs', 'dom_binding_map.h'), 'utf8');
   const renderTreeSynchronizerSrc = fs.readFileSync(path.join(root, 'core', 'render', 'pipeline', 'render_tree_synchronizer.cpp'), 'utf8');
 
-  assert(preactRenderSrc.includes('__mbinkRegisterPreactRoot(vnode, parentDom, render)'),
+  assert(preactRenderSrc.includes('__mblinkRegisterPreactRoot(vnode, parentDom, render)'),
     'Preact render roots must be registered so shutdown can unmount them');
   assert(bootstrapSrc.includes('item.renderImpl(null, item.container)') &&
          bootstrapSrc.includes('item.container.__preactRoot = null'),

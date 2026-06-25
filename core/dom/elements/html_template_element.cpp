@@ -4,7 +4,7 @@
 #include "../document.h"
 #include "../text.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLTemplateElement::HTMLTemplateElement()
     : Element("template")
@@ -78,4 +78,4 @@ void HTMLTemplateElement::SetInnerHTML(const std::string& html) {
     MarkDirty();
 }
 
-} // namespace mbink
+} // namespace mblink

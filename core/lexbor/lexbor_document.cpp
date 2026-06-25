@@ -10,7 +10,7 @@
 #include <fstream>
 #include <functional>
 
-namespace mbink {
+namespace mblink {
 
 // ========== LexborDocument 实现 ==========
 
@@ -1006,5 +1006,5 @@ std::vector<LexborElement*> LexborElement::QuerySelectorAll(const std::string& s
     return results;
 }
 
-} // namespace mbink
+} // namespace mblink
 

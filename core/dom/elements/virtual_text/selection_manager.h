@@ -10,7 +10,7 @@
 #include <functional>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 namespace virtual_text {
 
 /**
@@ -197,4 +197,4 @@ private:
 };
 
 }  // namespace virtual_text
-}  // namespace mbink
+}  // namespace mblink

@@ -5,7 +5,7 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mbink import App
+from mblink import App
 
 WINDOW_W = 980
 WINDOW_H = 720

@@ -17,7 +17,7 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkPoint3.h"
 
-namespace mbink {
+namespace mblink {
 
 // Forward declarations
 class RenderObject;
@@ -232,4 +232,4 @@ private:
     mutable bool accumulated_transform_valid_ = false;
 };
 
-} // namespace mbink
+} // namespace mblink

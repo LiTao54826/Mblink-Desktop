@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 AttributeEditor::AttributeEditor() = default;
 
@@ -79,4 +79,4 @@ bool AttributeEditor::ValidateAttributeName(const std::string& name) {
     return true;
 }
 
-} // namespace mbink
+} // namespace mblink

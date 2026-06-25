@@ -20,7 +20,7 @@
 #include <memory>
 #include <vector>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class LayoutScopePropertyTestRng {

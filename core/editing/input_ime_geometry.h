@@ -5,7 +5,7 @@
 class SkFont;
 struct SkFontMetrics;
 
-namespace mbink::input_ime_geometry {
+namespace mblink::input_ime_geometry {
 
 struct Request {
     const InputPaintModel* model = nullptr;
@@ -31,4 +31,4 @@ struct Result {
 
 Result ResolveInputGeometry(const Request& request);
 
-}  // namespace mbink::input_ime_geometry
+}  // namespace mblink::input_ime_geometry

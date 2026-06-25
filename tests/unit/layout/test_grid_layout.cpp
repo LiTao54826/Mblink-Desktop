@@ -15,7 +15,7 @@
 #include "layout/types/geometry.h"
 #include <unordered_map>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class GridLayoutTest : public ::testing::Test {
@@ -720,4 +720,4 @@ TEST_F(GridLayoutTest, NonFitContentReturnsInfinity) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

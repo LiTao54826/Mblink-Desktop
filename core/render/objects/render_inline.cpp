@@ -18,7 +18,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 
 // ========== RenderInline 实现 ==========
@@ -383,4 +383,4 @@ void RenderInline::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace mbink
+} // namespace mblink

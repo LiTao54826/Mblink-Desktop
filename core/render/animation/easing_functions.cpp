@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 float EasingFunctions::Linear(float t) {
     return t;
@@ -126,5 +126,5 @@ float EasingFunctions::Apply(float t, TimingFunction timing, const CubicBezier& 
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

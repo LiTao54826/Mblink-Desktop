@@ -23,7 +23,7 @@
 #include <vector>
 #include <limits>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -621,4 +621,4 @@ bool ContentEditableController::FindTextNodeAtPosition(
     return true;
 }
 
-} // namespace mbink
+} // namespace mblink

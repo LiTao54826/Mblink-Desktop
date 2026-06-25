@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 class BackgroundTaskRunner {
 public:
@@ -34,4 +34,4 @@ private:
     std::shared_ptr<State> state_;
 };
 
-} // namespace mbink
+} // namespace mblink

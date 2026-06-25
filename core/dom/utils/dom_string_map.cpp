@@ -12,7 +12,7 @@
 #include <cctype>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 DOMStringMap::DOMStringMap(std::weak_ptr<Element> element)
     : element_(element) {
@@ -141,5 +141,5 @@ bool DOMStringMap::IsDataAttribute(const std::string& attr_name) const {
     return attr_name.substr(0, 5) == "data-";
 }
 
-} // namespace mbink
+} // namespace mblink
 

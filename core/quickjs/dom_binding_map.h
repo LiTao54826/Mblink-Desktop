@@ -16,7 +16,7 @@
 #include "quickjs.h"
 #include "core/dom/node.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief DOM 绑定映射表（单例）
@@ -101,4 +101,4 @@ private:
     std::unordered_map<Node*, JSValueEntry> node_to_js_map_;
 };
 
-} // namespace mbink
+} // namespace mblink

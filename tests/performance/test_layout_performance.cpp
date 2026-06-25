@@ -11,7 +11,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class LayoutPerformanceTest : public DOMTestBase {
@@ -301,4 +301,4 @@ TEST_F(LayoutPerformanceTest, TableLayout) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

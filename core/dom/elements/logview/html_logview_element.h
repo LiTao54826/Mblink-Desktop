@@ -5,8 +5,8 @@
  * 提供 <logview> 标签的完整实现。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
 
 #include "log_buffer.h"
 #include "log_filter.h"
@@ -24,7 +24,7 @@
 // 前向声明
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 日志视图元素
@@ -295,6 +295,6 @@ private:
     void RequestCoalescedRepaint(RepaintReason reason);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_

@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/css/css_value.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class CSSValueTest : public ::testing::Test {};
@@ -201,4 +201,4 @@ TEST_F(CSSValueTest, ParseWithWhitespace) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

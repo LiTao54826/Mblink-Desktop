@@ -8,7 +8,7 @@
 #include "core/dom/node.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数和析构函数 ==========
 
@@ -180,5 +180,5 @@ void StyleCache::EvictIfNeeded() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

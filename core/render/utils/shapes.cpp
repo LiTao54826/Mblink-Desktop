@@ -5,7 +5,7 @@
 
 #include "shapes.h"
 
-namespace mbink {
+namespace mblink {
 
 Shapes::Shapes(SkCanvas* canvas) : canvas_(canvas) {}
 
@@ -176,4 +176,4 @@ void PathBuilder::Reset() {
     path_.reset();
 }
 
-} // namespace mbink
+} // namespace mblink

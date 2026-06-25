@@ -14,7 +14,7 @@
 #include <thread>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 class MainThreadQueue {
 public:
@@ -75,5 +75,5 @@ private:
     std::shared_ptr<std::atomic<bool>> alive_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

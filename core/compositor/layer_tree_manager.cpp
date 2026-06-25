@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // 构造和析构
@@ -723,4 +723,4 @@ std::vector<LayerTreeManager::LayerInspectionInfo> LayerTreeManager::InspectAllL
 void LayerTreeManager::DumpLayerTree() const {
 }
 
-} // namespace mbink
+} // namespace mblink

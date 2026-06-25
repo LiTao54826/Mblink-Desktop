@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace mbink {
+namespace mblink {
 
 // CRC32 查找表
 static uint32_t crc32_table[256];
@@ -471,4 +471,4 @@ bool PayloadBuilder::ParseFromFile(const std::string& filepath, PayloadData& out
     return Parse(data, out_data);
 }
 
-}  // namespace mbink
+}  // namespace mblink

@@ -41,7 +41,7 @@
 #include <GL/gl.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // DisplayBackend 静态方法
@@ -1379,5 +1379,5 @@ void GDIDisplayBackend::Shutdown() {
 
 #endif // _WIN32
 
-} // namespace mbink
+} // namespace mblink
 

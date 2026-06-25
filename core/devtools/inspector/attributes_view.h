@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 属性信息
@@ -56,4 +56,4 @@ private:
                              const std::vector<AttributeInfo>& attributes);
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -15,7 +15,7 @@
 #include <cmath>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -169,7 +169,7 @@ void PaintAudioElementControl(
         canvas->save();
         canvas->clipRect(geometry.time_label);
         TextRenderer text_renderer(canvas);
-        mbink::Paint text_paint;
+        mblink::Paint text_paint;
         text_paint.SetColor(SkColorSetRGB(82, 91, 105));
         text_renderer.DrawTextWithEmoji(time_text, text_x, text_y, font, text_paint);
         canvas->restore();
@@ -180,4 +180,4 @@ void PaintAudioElementControl(
     audio->ScheduleControlsRepaint();
 }
 
-} // namespace mbink
+} // namespace mblink

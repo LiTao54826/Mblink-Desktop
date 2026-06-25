@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 enum class ScrollInvalidationReason {
     None,
@@ -43,4 +43,4 @@ inline std::uint64_t ConservativeScrollFallbacks(const ScrollInvalidationStats& 
            stats.missing_layer_target_scrolls;
 }
 
-} // namespace mbink
+} // namespace mblink

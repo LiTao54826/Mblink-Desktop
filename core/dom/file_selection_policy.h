@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 struct FileSelectionOptions {
     bool allow_multiple = false;
@@ -29,4 +29,4 @@ FileSelectionResult ResolveFileSelection(const FileList& current,
                                          const FileSelectionOptions& options);
 std::vector<FileDialogAcceptFilter> BuildFileDialogAcceptFilters(const std::string& accept);
 
-} // namespace mbink
+} // namespace mblink

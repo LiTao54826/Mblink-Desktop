@@ -29,7 +29,7 @@ static const unsigned char upx_exe_data[] = {};
 static const size_t upx_exe_size = 0;
 #endif
 
-namespace mbink {
+namespace mblink {
 
 bool UPXCompressor::IsAvailable() const {
 #if HAS_EMBEDDED_UPX
@@ -51,7 +51,7 @@ std::string UPXCompressor::ExtractUPX() {
 
     // 获取临时目录
     fs::path temp_dir = fs::temp_directory_path();
-    fs::path upx_path = temp_dir / "mbink_upx.exe";
+    fs::path upx_path = temp_dir / "mblink_upx.exe";
 
     // 检查是否已经存在且大小匹配
     if (fs::exists(upx_path)) {
@@ -177,4 +177,4 @@ bool UPXCompressor::Compress(const std::string& exe_path, CompressionLevel level
     return true;
 }
 
-}  // namespace mbink
+}  // namespace mblink

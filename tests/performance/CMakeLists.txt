@@ -9,17 +9,17 @@ set(PERFORMANCE_TEST_SOURCES
     test_property_tree_performance.cpp
 )
 
-add_executable(mbink_performance_tests
+add_executable(mblink_performance_tests
     ${PERFORMANCE_TEST_SOURCES}
 )
 
-target_link_libraries(mbink_performance_tests
+target_link_libraries(mblink_performance_tests
     PRIVATE
-    mbink
+    mblink
     test_utils
     GTest::gtest
     GTest::gtest_main
 )
 
 include(GoogleTest)
-gtest_discover_tests(mbink_performance_tests)
+gtest_discover_tests(mblink_performance_tests)

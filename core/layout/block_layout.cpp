@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Helper Functions
@@ -730,8 +730,8 @@ PerformFinalLayoutOnInFlowChildren(
 //------------------------------------------------------------------------------
 
 // Debug flag for absolute positioning - set to true to enable debug logging
-#ifndef MBINK_DEBUG_ABSOLUTE_POSITIONING
-#define MBINK_DEBUG_ABSOLUTE_POSITIONING 0
+#ifndef MBLINK_DEBUG_ABSOLUTE_POSITIONING
+#define MBLINK_DEBUG_ABSOLUTE_POSITIONING 0
 #endif
 
 Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
@@ -740,7 +740,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     Size<float> area_size,
     Point<float> area_offset
 ) {
-#if MBINK_DEBUG_ABSOLUTE_POSITIONING
+#if MBLINK_DEBUG_ABSOLUTE_POSITIONING
 #endif
 
     Size<float> absolute_content_size = Size<float>::Zero();
@@ -768,7 +768,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             ? Point<float>{0.0f, 0.0f}
             : area_offset;
 
-#if MBINK_DEBUG_ABSOLUTE_POSITIONING
+#if MBLINK_DEBUG_ABSOLUTE_POSITIONING
         if (is_fixed) {
         }
 #endif
@@ -780,7 +780,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         auto top = MaybeResolve(child_style.inset.top, std::optional<float>(containing_block_size.height));
         auto bottom = MaybeResolve(child_style.inset.bottom, std::optional<float>(containing_block_size.height));
 
-#if MBINK_DEBUG_ABSOLUTE_POSITIONING
+#if MBLINK_DEBUG_ABSOLUTE_POSITIONING
 #endif
 
         // Resolve margin - use containing block size for percentage resolution
@@ -911,7 +911,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             location.y = item.static_position.y + resolved_margin.top;
         }
 
-#if MBINK_DEBUG_ABSOLUTE_POSITIONING
+#if MBLINK_DEBUG_ABSOLUTE_POSITIONING
         if (left.has_value()) {
         } else if (right.has_value()) {
         } else {
@@ -936,5 +936,5 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     return absolute_content_size;
 }
 
-} // namespace mbink
+} // namespace mblink
 

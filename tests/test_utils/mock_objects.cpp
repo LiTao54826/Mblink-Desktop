@@ -5,7 +5,7 @@
 
 #include "mock_objects.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 // ========== MockEventListener ==========
@@ -68,4 +68,4 @@ void MockDOMObserver::Reset() {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

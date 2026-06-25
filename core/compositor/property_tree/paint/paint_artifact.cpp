@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/paint/paint_artifact.h"
 #include <unordered_set>
 
-namespace mbink {
+namespace mblink {
 
 // =========================================================================
 // 绘制指令
@@ -143,4 +143,4 @@ size_t PaintArtifact::GetMemoryUsage() const {
     return usage;
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -11,7 +11,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 HTMLImageElement::HTMLImageElement()
     : Element("img")
@@ -299,5 +299,5 @@ unsigned long HTMLImageElement::ParseDimension(const std::string& value) const {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

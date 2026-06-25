@@ -15,9 +15,9 @@ set(UTILS_HEADERS
     async_resource_context.h
 )
 
-add_library(mbink_utils STATIC ${UTILS_SOURCES})
+add_library(mblink_utils STATIC ${UTILS_SOURCES})
 
-target_include_directories(mbink_utils PUBLIC
+target_include_directories(mblink_utils PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )

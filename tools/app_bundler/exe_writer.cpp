@@ -21,7 +21,7 @@
 
 namespace fs = std::filesystem;
 
-namespace mbink {
+namespace mblink {
 
 // PE 文件常量（避免与 windows.h 宏冲突）
 constexpr uint16_t kSubsystemWindowsGUI = 2;
@@ -365,4 +365,4 @@ std::string ExeWriter::FindTemplate(const std::string& bundler_path) {
     return "";
 }
 
-}  // namespace mbink
+}  // namespace mblink

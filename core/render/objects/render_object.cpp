@@ -63,7 +63,7 @@
 #include "include/core/SkSurface.h"
 #include "include/effects/SkDashPathEffect.h"
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 std::atomic<size_t> g_render_object_live_count{0};
@@ -891,7 +891,7 @@ SkRect RenderObject::GetViewportBoundingRect() const {
 
 void RenderObject::MarkNeedsPaint() {
     // 🐛 hover bug 调试日志
-    static bool debug_hover = std::getenv("MBINK_DEBUG_HOVER_BUG") != nullptr;
+    static bool debug_hover = std::getenv("MBLINK_DEBUG_HOVER_BUG") != nullptr;
     if (debug_hover) {
         std::string tag = "unknown";
         std::string id = "";
@@ -2248,5 +2248,5 @@ void RenderObject::UpdateLayoutBoundaryCache() {
     boundary_cache_valid_ = true;
 }
 
-} // namespace mbink
+} // namespace mblink
 

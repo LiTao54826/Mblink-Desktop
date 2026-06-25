@@ -8,19 +8,19 @@
  * - 提供 JavaScript 可访问的 Terminal/LogView API
  */
 
-#ifndef MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
-#define MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#ifndef MBLINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#define MBLINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
 
 #include "quickjs/quickjs.h"
 
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 class HTMLTerminalElement;
 class HTMLLogViewElement;
 }
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Terminal 和 LogView 绑定类
@@ -74,6 +74,6 @@ private:
     static void InitLogViewClass(JSContext* ctx);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#endif  // MBLINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_

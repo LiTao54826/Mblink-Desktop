@@ -14,7 +14,7 @@
 #include <sstream>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -752,4 +752,4 @@ TEST_F(TableStickyLayoutTest, BottomStickyFooterStaysAtScrollContainerBottomAfte
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

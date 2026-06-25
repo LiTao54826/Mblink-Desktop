@@ -1,5 +1,5 @@
 /**
- * MBink 组件库演示 - ES Module 版本
+ * MBlink 组件库演示 - ES Module 版本
  */
 
 import { h, render } from 'preact';
@@ -60,7 +60,7 @@ function App() {
 
   return h(Column, { gap: 24, style: { padding: '20px', maxWidth: '800px' } }, [
     // Title
-    h(Text, { size: '2xl', weight: 'bold', key: 'title' }, 'MBink Components'),
+    h(Text, { size: '2xl', weight: 'bold', key: 'title' }, 'MBlink Components'),
 
     // Buttons
     h(Card, { key: 'buttons', title: 'Buttons' }, [

@@ -17,7 +17,7 @@
 #include "core/render/css/style_resolver.h"
 #include "layout/native_layout_engine.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class InputHandlerTest : public ::testing::Test {
@@ -934,4 +934,4 @@ TEST(WheelEventDispatcherTest, SmallFixedTopLayerDoesNotBlockPageWheel) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

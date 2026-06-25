@@ -18,7 +18,7 @@
 #include <iostream>
 #include <thread>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Windows ConPTY 后端
@@ -297,6 +297,6 @@ std::unique_ptr<PtyBackend> PtyBackend::Create() {
     return std::make_unique<ConPtyBackend>();
 }
 
-}  // namespace mbink
+}  // namespace mblink
 
 #endif  // _WIN32

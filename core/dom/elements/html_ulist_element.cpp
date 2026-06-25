@@ -5,7 +5,7 @@
 
 #include "html_ulist_element.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLUListElement::HTMLUListElement()
     : Element("ul") {
@@ -17,5 +17,5 @@ HTMLUListElement::HTMLUListElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace mbink
+} // namespace mblink
 

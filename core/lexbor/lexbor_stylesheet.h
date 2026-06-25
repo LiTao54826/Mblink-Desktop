@@ -12,7 +12,7 @@
 #include <functional>
 #include <lexbor/css/css.h>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 资源提供者回调 - 用于从嵌入资源加载
@@ -173,5 +173,5 @@ private:
     static CSSAssetProvider asset_provider_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -21,7 +21,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "css/css_value.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class TextRenderer;
@@ -107,5 +107,5 @@ private:
     static sk_sp<SkMaskFilter> CreateBlurFilter(float blur_radius);
 };
 
-} // namespace mbink
+} // namespace mblink
 

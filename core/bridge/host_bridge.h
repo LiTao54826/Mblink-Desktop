@@ -23,7 +23,7 @@ extern "C" {
 #include "quickjs/quickjs.h"
 }
 
-namespace mbink {
+namespace mblink {
 
 class StateManager;
 class BackgroundTaskRunner;
@@ -239,4 +239,4 @@ private:
     static JSValue jsonToJsValue(JSContext* ctx, const std::string& json);
 };
 
-} // namespace mbink
+} // namespace mblink

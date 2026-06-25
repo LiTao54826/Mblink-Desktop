@@ -70,7 +70,7 @@ export function DashboardPage({ addToast }) {
                         borderBottom: '1px solid ' + colors.border
                     }
                 }, 'Project Progress'),
-                h(ProjectProgress, { name: 'MBink Core Engine', progress: 78, color: colors.gradPrimary }),
+                h(ProjectProgress, { name: 'MBlink Core Engine', progress: 78, color: colors.gradPrimary }),
                 h(ProjectProgress, { name: 'Preact Integration', progress: 92, color: colors.gradSuccess }),
                 h(ProjectProgress, { name: 'CSS Layout System', progress: 65, color: colors.gradWarning }),
                 h(ProjectProgress, { name: 'DevTools Panel', progress: 45, color: colors.gradInfo }),

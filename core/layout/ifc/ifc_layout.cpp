@@ -26,7 +26,7 @@
 // 调试开关
 #define IFC_DEBUG 0
 
-namespace mbink {
+namespace mblink {
 bool IFCLayout::HasInlineContent(RenderObject* container) {
     if (!container) return false;
 
@@ -1336,5 +1336,5 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

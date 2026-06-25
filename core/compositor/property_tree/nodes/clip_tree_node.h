@@ -19,7 +19,7 @@
 #include "include/core/SkPath.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -217,4 +217,4 @@ private:
     mutable bool accumulated_clip_valid_ = false;
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -27,7 +27,7 @@
 #include <vector>
 
 // 前向声明
-namespace mbink {
+namespace mblink {
     class LexborDocument;
     class StyleManager;
     class QuickJSRuntime;
@@ -36,7 +36,7 @@ namespace mbink {
     class Window;
 }
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Document 类
@@ -181,12 +181,12 @@ public:
     std::string SaveHTML();
 
     /**
-     * @brief 从 Lexbor DOM 同步到 MBink DOM
+     * @brief 从 Lexbor DOM 同步到 MBlink DOM
      */
     void SyncFromLexbor();
 
     /**
-     * @brief 从 MBink DOM 同步到 Lexbor DOM
+     * @brief 从 MBlink DOM 同步到 Lexbor DOM
      */
     void SyncToLexbor();
 
@@ -512,7 +512,7 @@ private:
 
     // Lexbor 集成
     std::unique_ptr<LexborDocument> lexbor_doc_;
-    bool lexbor_dirty_;  // 标记 MBink DOM 是否已修改，需要同步到 Lexbor
+    bool lexbor_dirty_;  // 标记 MBlink DOM 是否已修改，需要同步到 Lexbor
 
     // 批量更新 (Week 2 - Task 2.3)
     int batch_depth_ = 0;  // 批量更新嵌套深度（支持嵌套BeginBatch/EndBatch）
@@ -584,4 +584,4 @@ public:
     void ClearDirtyRects() { dirty_rects_.clear(); }
 };
 
-} // namespace mbink
+} // namespace mblink

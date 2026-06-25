@@ -11,8 +11,8 @@
  * - 支持属性树系统的直接属性更新（不触发光栅化）
  */
 
-#ifndef MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
-#define MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#ifndef MBLINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#define MBLINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
 
 #include "animation_controller.h"
 #include "core/render/objects/render_object.h"
@@ -22,7 +22,7 @@
 #include <memory>
 #include <cstddef>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class PaintArtifactCompositor;
@@ -278,6 +278,6 @@ private:
     SkColor ParseColor(const std::string& str) const;
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#endif // MBLINK_CORE_RENDER_ANIMATION_APPLICATOR_H_

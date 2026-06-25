@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 // 随机数生成器
@@ -234,4 +234,4 @@ TEST_F(VirtualBufferClearPropertyTest, MultipleClearsAreIdempotent) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink

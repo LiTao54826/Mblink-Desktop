@@ -9,7 +9,7 @@
 #include <sstream>
 #include <regex>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -535,4 +535,4 @@ ClipPolygon ParseClipPolygon(const std::string& params) {
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink

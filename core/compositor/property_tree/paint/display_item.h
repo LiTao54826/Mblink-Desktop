@@ -17,7 +17,7 @@
 #include "include/core/SkRect.h"
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -248,4 +248,4 @@ private:
     uint32_t fragment_index_ = 0;
 };
 
-} // namespace mbink
+} // namespace mblink

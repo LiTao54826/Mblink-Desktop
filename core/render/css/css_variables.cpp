@@ -8,7 +8,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 // ========== CSSVariables 实现 ==========
 
@@ -242,5 +242,5 @@ std::string NormalizeCustomPropertyName(const std::string& name) {
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -17,7 +17,7 @@
 #include "core/compositor/property_tree/geometry_mapper.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 层化器
@@ -137,4 +137,4 @@ private:
     bool layer_merging_enabled_ = true;
 };
 
-} // namespace mbink
+} // namespace mblink

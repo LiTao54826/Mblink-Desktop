@@ -16,7 +16,7 @@
 #include <iostream>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -657,4 +657,4 @@ void LogRenderer::RenderHorizontalScrollbar(SkCanvas* canvas,
     canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
 }
 
-}  // namespace mbink
+}  // namespace mblink

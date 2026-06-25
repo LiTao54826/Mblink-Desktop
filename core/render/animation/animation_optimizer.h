@@ -20,7 +20,7 @@
 #include <optional>
 #include <chrono>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -337,5 +337,5 @@ private:
     BatchAnimationUpdater batch_updater_;            ///< 批量更新器
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input) {
     InputPaintModel model;
@@ -61,4 +61,4 @@ InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input)
     return model;
 }
 
-}  // namespace mbink
+}  // namespace mblink

@@ -8,7 +8,7 @@
 #include "core/dom/document.h"
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -489,4 +489,4 @@ std::shared_ptr<Range> UnwrapRange(JSContext* ctx, JSValue value) {
 }
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

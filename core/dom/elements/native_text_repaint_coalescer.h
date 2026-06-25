@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 class NativeTextRepaintCoalescer {
 public:
@@ -148,4 +148,4 @@ private:
     std::vector<Entry> entries_;
 };
 
-}  // namespace mbink
+}  // namespace mblink

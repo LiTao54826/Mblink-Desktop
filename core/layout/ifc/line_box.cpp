@@ -2,7 +2,7 @@
  * @file line_box.cpp
  * @brief LineBox 结构的实现
  *
- * MBink 现代模式实现：
+ * MBlink 现代模式实现：
  * - 无 strut：行高完全由内容决定
  * - vertical-align: middle 真正居中
  */
@@ -15,7 +15,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 static bool ShouldTraceTrackedLineBox(const std::vector<InlineBox*>& boxes) {
     for (auto* box : boxes) {
@@ -58,7 +58,7 @@ void LineBox::CalculateHeight() {
         return;
     }
 
-    // MBink 现代模式：行高完全由内容决定，无 strut
+    // MBlink 现代模式：行高完全由内容决定，无 strut
     // 计算最大 ascent（基线以上）和 descent（基线以下）
     // 需要考虑 vertical-align 对行高的影响
     float max_ascent = 0.0f;
@@ -148,7 +148,7 @@ void LineBox::ApplyVerticalAlign(InlineBox* box, VerticalAlign align, float offs
             break;
             
         case VerticalAlign::MIDDLE:
-            // MBink 现代模式：真正的垂直居中
+            // MBlink 现代模式：真正的垂直居中
             // 盒子中心与行盒中心对齐
             box->y = y + (height - box->height) / 2.0f;
             break;
@@ -195,7 +195,7 @@ void LineBox::ApplyTextAlign(const std::string& align) {
         return;
     }
 
-    static bool debug_gutter_align = std::getenv("MBINK_DEBUG_GUTTER_ALIGN") != nullptr;
+    static bool debug_gutter_align = std::getenv("MBLINK_DEBUG_GUTTER_ALIGN") != nullptr;
 
     if (align == "right" || align == "end") {
         if (debug_gutter_align) {
@@ -328,5 +328,5 @@ void LineBox::DistributeSpace(float extra_space) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -11,7 +11,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief PTY 后端抽象基类
@@ -91,4 +91,4 @@ protected:
     ExitCallback exit_cb_;
 };
 
-}  // namespace mbink
+}  // namespace mblink

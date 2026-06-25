@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/text/text_renderer.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class TextRendererTest : public ::testing::Test {
@@ -146,4 +146,4 @@ TEST_F(TextRendererTest, WrapTextPrefersWordBoundaryForButtonLabel) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

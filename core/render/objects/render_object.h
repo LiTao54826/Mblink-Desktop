@@ -47,7 +47,7 @@
 // 前向声明 Skia 类
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -983,7 +983,7 @@ public:
      * @brief Compute the visual offset applied by position: sticky.
      *
      * The returned offset is in viewport-aligned CSS pixels and can be applied
-     * in paint coordinates because MBink currently uses an unscaled 2D canvas
+     * in paint coordinates because MBlink currently uses an unscaled 2D canvas
      * for normal table/block painting.
      */
     SkPoint ComputeStickyOffset() const;
@@ -1115,7 +1115,7 @@ public:
      * @brief 滚动条区域类型（使用 ScrollbarController 中定义的枚举）
      * @note 为了向后兼容，保留此类型别名
      */
-    using ScrollbarHitArea = mbink::ScrollbarHitArea;
+    using ScrollbarHitArea = mblink::ScrollbarHitArea;
 
     /**
      * @brief 检测点是否在滚动条区域内
@@ -1649,5 +1649,5 @@ public:
     void Paint(SkCanvas* canvas) override;
 };
 
-} // namespace mbink
+} // namespace mblink
 

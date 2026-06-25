@@ -18,7 +18,7 @@
 #include "include/core/SkCanvas.h"
 #include "core/render/utils/paint.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 渲染状态
@@ -192,5 +192,5 @@ private:
     RenderState current_state_;             ///< 当前状态
 };
 
-} // namespace mbink
+} // namespace mblink
 

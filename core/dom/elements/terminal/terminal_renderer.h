@@ -15,7 +15,7 @@
 
 class SkTypeface;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 终端渲染器
@@ -188,4 +188,4 @@ private:
     bool IsSelected(int row, int col) const;
 };
 
-}  // namespace mbink
+}  // namespace mblink

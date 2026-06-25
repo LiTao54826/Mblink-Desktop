@@ -21,7 +21,7 @@
 #include <set>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
     const float ROW_HEIGHT = 20.0f;
@@ -779,4 +779,4 @@ std::string DOMTreeView::GetCSSSelector(std::shared_ptr<Node> node) {
     return selector;
 }
 
-} // namespace mbink
+} // namespace mblink

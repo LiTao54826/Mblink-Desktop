@@ -22,7 +22,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace mbink {
+namespace mblink {
 
 BoxRenderer::BoxRenderer(SkCanvas* canvas)
     : canvas_(canvas)
@@ -902,5 +902,5 @@ void BoxRenderer::RenderRoundedBorderAdvanced(const Box& box,
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -10,7 +10,7 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 namespace {
 
@@ -345,4 +345,4 @@ TEST(InputMouseInteractionTest, DraggingPastRightEdgeAutoScrollsAndExtendsSelect
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

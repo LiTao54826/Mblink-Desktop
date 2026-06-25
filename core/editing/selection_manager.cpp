@@ -22,14 +22,14 @@
 
 namespace {
 
-std::shared_ptr<mbink::Element> FindContentEditableRootFromNode(
-    const std::shared_ptr<mbink::Node>& node) {
-    return mbink::GetContentEditableEditingHost(node);
+std::shared_ptr<mblink::Element> FindContentEditableRootFromNode(
+    const std::shared_ptr<mblink::Node>& node) {
+    return mblink::GetContentEditableEditingHost(node);
 }
 
 } // namespace
 
-namespace mbink {
+namespace mblink {
 
 SelectionManager::SelectionManager() = default;
 
@@ -425,4 +425,4 @@ CaretPosition SelectionManager::MoveCaretByCharacter(std::shared_ptr<Document> d
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink

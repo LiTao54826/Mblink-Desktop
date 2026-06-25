@@ -7,7 +7,7 @@
  * - MDN Web Docs: https://developer.mozilla.org/en-US/docs/Web/HTML/Element/form
  * - Web IDL: https://html.spec.whatwg.org/multipage/forms.html#htmlformelement
  * 
- * @author MBink Team
+ * @author MBlink Team
  * @date 2025-11-12
  */
 
@@ -18,7 +18,7 @@
 #include <memory>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML Form元素类
@@ -155,5 +155,5 @@ private:
     static std::string URLEncode(const std::string& str);
 };
 
-} // namespace mbink
+} // namespace mblink
 

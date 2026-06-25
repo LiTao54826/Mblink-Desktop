@@ -5,12 +5,12 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import mbink as ui
+import mblink as ui
 
 ROOT = os.path.dirname(__file__)
 UI_DIR = os.path.join(ROOT, 'todo_app')
 PACKAGE_FILE = os.path.join(ROOT, 'todo_app.mbrp')
-KEY = 'mbink-demo-key'
+KEY = 'mblink-demo-key'
 print(UI_DIR)
 ui.compile_resources(UI_DIR, PACKAGE_FILE, KEY)
 

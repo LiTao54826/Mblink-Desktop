@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 class InputEditingController;
 
@@ -405,5 +405,5 @@ void HandleFileDialogResultEvent(const SDL_Event& event);
 void ProcessPendingFileDialogResults();
 void QueueFileDialogResultForTesting(std::shared_ptr<HTMLInputElement> input, std::vector<std::string> paths);
 
-} // namespace mbink
+} // namespace mblink
 

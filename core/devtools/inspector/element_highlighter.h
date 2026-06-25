@@ -11,7 +11,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 高亮区域类型（与 BoxAreaType 对应）
@@ -96,4 +96,4 @@ private:
     void RenderInfoTooltip(SkCanvas* canvas, std::shared_ptr<Element> element);
 };
 
-} // namespace mbink
+} // namespace mblink

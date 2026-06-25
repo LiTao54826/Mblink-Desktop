@@ -5,7 +5,7 @@
 
 #include "html_div_element.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLDivElement::HTMLDivElement()
     : Element("div") {
@@ -13,5 +13,5 @@ HTMLDivElement::HTMLDivElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace mbink
+} // namespace mblink
 

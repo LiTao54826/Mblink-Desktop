@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class StyleManager;
@@ -343,5 +343,5 @@ private:
     Document* document_ = nullptr;
 };
 
-} // namespace mbink
+} // namespace mblink
 

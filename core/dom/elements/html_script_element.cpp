@@ -6,7 +6,7 @@
 #include "html_script_element.h"
 #include "../document.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLScriptElement::HTMLScriptElement()
     : Element("script") {
@@ -81,4 +81,4 @@ bool HTMLScriptElement::IsModule() const {
     return type == "module";
 }
 
-} // namespace mbink
+} // namespace mblink

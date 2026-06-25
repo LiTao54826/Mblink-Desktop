@@ -18,7 +18,7 @@
 #include <SDL3/SDL.h>
 #include "window.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 窗口管理器（单例）
@@ -134,5 +134,5 @@ private:
     void CleanupDestroyedWindows();
 };
 
-} // namespace mbink
+} // namespace mblink
 

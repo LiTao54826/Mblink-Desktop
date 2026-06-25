@@ -4,8 +4,8 @@
 
 ### Naming | 命名
 
-`MBink` / `mbink` naming still appears in multiple places.
-`MBink` / `mbink` 命名仍出现在多个位置：
+`MBlink` / `mblink` naming still appears in multiple places.
+`MBlink` / `mblink` 命名仍出现在多个位置：
 
 - CMake project names / CMake 项目名
 - library and target names / 库与 target 名称
@@ -40,8 +40,8 @@ The repository should not yet be described as supporting full React runtimes or 
 If another framework happens to run in a specific example, treat that as local evidence, not a general compatibility guarantee.
 即使其他框架在某个局部示例里碰巧能运行，也只能算局部证据，不能上升为整体兼容承诺。
 
-MBink does support real ESM `import`-based UI code, and the official Preact modules are embedded into the verified runtime path.
-MBink 的确支持基于 ESM `import` 的 UI 代码，而且官方 Preact 模块已经嵌入到已验证的运行时链路里。
+MBlink does support real ESM `import`-based UI code, and the official Preact modules are embedded into the verified runtime path.
+MBlink 的确支持基于 ESM `import` 的 UI 代码，而且官方 Preact 模块已经嵌入到已验证的运行时链路里。
 
 Some simple third-party packages may work after bundling and runtime verification, but that still does not make the UI runtime a full Node.js or npm compatibility layer.
 一些简单第三方包在打包并经过运行时验证后也可能可以工作，但这仍然不意味着 UI 运行时已经变成完整的 Node.js 或 npm 兼容层。

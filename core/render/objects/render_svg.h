@@ -17,7 +17,7 @@
 #include "include/core/SkMatrix.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class SVGElement;
@@ -278,5 +278,5 @@ private:
     std::weak_ptr<SVGTextElement> text_element_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

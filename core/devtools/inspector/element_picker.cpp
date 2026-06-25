@@ -17,7 +17,7 @@
 
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 ElementPicker::ElementPicker(Document* document)
     : document_(document) {
@@ -244,4 +244,4 @@ std::shared_ptr<Element> ElementPicker::HitTest(int x, int y) {
     return hit_element ? hit_element : document_->GetBody();
 }
 
-} // namespace mbink
+} // namespace mblink

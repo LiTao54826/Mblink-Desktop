@@ -1,0 +1,25 @@
+{
+  "name": "layout-host-matrix-rust",
+  "template": "custom/layout-host-matrix-rust",
+  "purpose": "showcase",
+  "runtime": "rust",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "window": {
+    "title": "MBlink Layout Host Matrix (Rust)",
+    "width": 1180,
+    "height": 820,
+    "resizable": true,
+    "borderless": false
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false,
+    "hide_console": false
+  }
+}

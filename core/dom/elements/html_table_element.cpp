@@ -5,7 +5,7 @@
 
 #include "html_table_element.h"
 
-namespace mbink {
+namespace mblink {
 
 // 辅助函数：获取父元素
 static std::shared_ptr<Element> GetParentElementOf(const Element* elem) {
@@ -200,5 +200,5 @@ void HTMLTableColElement::SetSpan(int span) {
     SetAttribute("span", std::to_string(span));
 }
 
-} // namespace mbink
+} // namespace mblink
 

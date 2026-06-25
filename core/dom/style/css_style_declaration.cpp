@@ -15,7 +15,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 CSSStyleDeclaration::CSSStyleDeclaration(std::weak_ptr<Element> element)
     : element_(element)
@@ -393,5 +393,5 @@ void CSSStyleDeclaration::UpdateStyleAttribute(bool needs_layout) {
     elem->SetAttribute("style", css_text);
 }
 
-} // namespace mbink
+} // namespace mblink
 

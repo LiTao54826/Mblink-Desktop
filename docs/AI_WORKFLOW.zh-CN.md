@@ -2,21 +2,21 @@
 
 [English](AI_WORKFLOW.md) | 中文
 
-MBink 从一开始就把 AI 辅助开发视为一等工作流，而不是事后补上的能力。
+MBlink 从一开始就把 AI 辅助开发视为一等工作流，而不是事后补上的能力。
 
 ## 推荐的理解方式
 
 先把项目分成这几层：
 
-1. `mbink-ui-dev.exe`：项目级工作入口
-2. `mbink.dll`：运行时行为核心
-3. `mbink_devtools.dll`：只在需要开发期快照/控制或运行时 HTTP MCP 时才启用
+1. `mblink-ui-dev.exe`：项目级工作入口
+2. `mblink.dll`：运行时行为核心
+3. `mblink_devtools.dll`：只在需要开发期快照/控制或运行时 HTTP MCP 时才启用
 
 落到实际使用上：
 
-- 人类开发者和 shell 型代理都可以直接使用 `mbink-ui-dev.exe`
-- 支持 MCP 的客户端可以通过 `mbink-ui-dev.exe serve` 连接
-- 直接基于 C API 的宿主可以通过 `mbink_devtools.dll` 暴露实时 UI 分析能力
+- 人类开发者和 shell 型代理都可以直接使用 `mblink-ui-dev.exe`
+- 支持 MCP 的客户端可以通过 `mblink-ui-dev.exe serve` 连接
+- 直接基于 C API 的宿主可以通过 `mblink_devtools.dll` 暴露实时 UI 分析能力
 
 ## 为什么它适合 AI
 
@@ -36,11 +36,11 @@ MBink 从一开始就把 AI 辅助开发视为一等工作流，而不是事后�
 ## 最快工作流
 
 ```powershell
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
-build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
 ```
 
 一个典型循环是：
@@ -70,19 +70,19 @@ build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_
 启动 MCP 桥：
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe serve
+build\bin\Release\mblink-ui-dev.exe serve
 ```
 
 ## 技能入口
 
-仓库里已经带了一套用于 MBink 项目工作的 repo-local skills / 技能书。
+仓库里已经带了一套用于 MBlink 项目工作的 repo-local skills / 技能书。
 
 如果你想先看完整结构和入口方式，建议先读 [Skills / 技能书说明](SKILLS.zh-CN.md)。
 
 核心文件：
 
-- [tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md](../tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md)
-- [tools/mbink_ui_dev/skills/mbink-ui-dev/agents/openai.yaml](../tools/mbink_ui_dev/skills/mbink-ui-dev/agents/openai.yaml)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md](../tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/agents/openai.yaml](../tools/mblink_ui_dev/skills/mblink-ui-dev/agents/openai.yaml)
 
 它适合作为以下内容的详细参考：
 
@@ -93,13 +93,13 @@ build\bin\Release\mbink-ui-dev.exe serve
 
 ## 新应用的推荐工作流
 
-1. 用 `mbink-ui-dev` 创建或打开项目
+1. 用 `mblink-ui-dev` 创建或打开项目
 2. 先用 mock 数据把 UI 做出来
 3. 通过 `snapshot`、`query`、`inspect` 验证
 4. 之后再接入真实 Python、Rust 或 Go 宿主
 5. 再用同样的验证路径检查真实宿主
 
-这件事很重要，因为 MBink 并不打算伪装成一个完整浏览器。最稳妥的方式，是直接证明运行时行为。
+这件事很重要，因为 MBlink 并不打算伪装成一个完整浏览器。最稳妥的方式，是直接证明运行时行为。
 
 ## 什么时候往下切层
 
@@ -118,7 +118,7 @@ build\bin\Release\mbink-ui-dev.exe serve
 ## 重要约束
 
 - `tool` 运行时很适合做 UI 形态验证，但不能作为宿主特定行为的最终证据
-- `mbink_devtools.dll` 是开发期组件，不应当被视为生产运行时
+- `mblink_devtools.dll` 是开发期组件，不应当被视为生产运行时
 - Windows 是当前证据最充分的工作流平台
 - 仅有构建成功还不够，真实快照才是更好的完成证据
 - 对外示例和文档优先使用 `snapshot --response file --include-screenshot`，这样同时保留结构化数据和 PNG 证据

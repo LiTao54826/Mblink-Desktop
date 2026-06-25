@@ -79,7 +79,7 @@
 #include <cstdint>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 class DocumentBatchScope {
@@ -109,7 +109,7 @@ private:
 };
 
 inline bool IsBaselineFrameStatsEnabled() {
-    static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+    static const bool enabled = (std::getenv("MBLINK_BASELINE_FRAME_STATS") != nullptr);
     return enabled;
 }
 
@@ -296,7 +296,7 @@ bool WaitForIdleWork(const IdleWorkState& state) {
 }
 
 bool IsIdleTraceEnabled() {
-    static const bool enabled = (std::getenv("MBINK_IDLE_TRACE") != nullptr);
+    static const bool enabled = (std::getenv("MBLINK_IDLE_TRACE") != nullptr);
     return enabled;
 }
 
@@ -336,7 +336,7 @@ void TraceIdleWorkState(const char* phase, const IdleWorkState& state) {
         return;
     }
     last_log_ms = now;
-    std::cerr << "[mbink idle trace] phase=" << phase
+    std::cerr << "[mblink idle trace] phase=" << phase
               << " immediate=" << (state.hasImmediateWork() ? 1 : 0)
               << " reasons=" << DescribeIdleWorkState(state) << std::endl;
 }
@@ -1114,7 +1114,7 @@ void EventLoop::Render() {
             }
             if (baseline_stats_enabled) {
                 const bool needs_repaint_after = window->NeedsRepaint();
-                std::cout << "[MBINK_BASELINE_FRAME]"
+                std::cout << "[MBLINK_BASELINE_FRAME]"
                           << " boundary=event_loop"
                           << " class=window_frame"
                           << " render_ms=" << render_ms
@@ -1140,7 +1140,7 @@ void EventLoop::Render() {
             std::cerr << "[EventLoop] UNKNOWN EXCEPTION in render_callback_" << std::endl;
         }
         if (baseline_stats_enabled) {
-            std::cout << "[MBINK_BASELINE_FRAME]"
+            std::cout << "[MBLINK_BASELINE_FRAME]"
                       << " boundary=event_loop"
                       << " class=render_callback"
                       << " loop_render_callback_ms=" << (GetBaselineTimeMs() - callback_start_ms)
@@ -1934,4 +1934,4 @@ void EventLoop::UpdateMouseCursor(const HitTestResult& hit_result, Uint32 /*wind
     SetSystemCursor(target_cursor);
 }
 
-} // namespace mbink
+} // namespace mblink

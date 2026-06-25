@@ -16,7 +16,7 @@
 #include "dom/element.h"
 #include "dom/document.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class EventTest : public DOMTestBase {};
@@ -266,4 +266,4 @@ TEST_F(EventTest, OnceOption) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

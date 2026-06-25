@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 enum class AudioLoadState {
     EMPTY,
@@ -157,4 +157,4 @@ private:
     ControlPart dragging_part_ = ControlPart::None;
 };
 
-} // namespace mbink
+} // namespace mblink

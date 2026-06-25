@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 
 InputEditCommand MakeCommand(InputEditCommandType type) {
     InputEditCommand command;
@@ -78,5 +78,5 @@ InputEditCommand InputEditCommand::CancelComposition() {
     return MakeCommand(InputEditCommandType::CancelComposition);
 }
 
-}  // namespace mbink
+}  // namespace mblink
 

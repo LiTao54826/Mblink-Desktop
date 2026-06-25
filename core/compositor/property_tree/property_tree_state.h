@@ -20,7 +20,7 @@
 #include "core/compositor/property_tree/nodes/effect_tree_node.h"
 #include "core/compositor/property_tree/nodes/scroll_tree_node.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 属性树状态差异
@@ -211,4 +211,4 @@ private:
     ScrollTreeNode* scroll_ = nullptr;
 };
 
-} // namespace mbink
+} // namespace mblink

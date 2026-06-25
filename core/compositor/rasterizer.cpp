@@ -28,7 +28,7 @@
 #endif
 
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -776,4 +776,4 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
     LogTrackedRasterOffset(render_obj, layer, trace_state);
 }
 
-} // namespace mbink
+} // namespace mblink

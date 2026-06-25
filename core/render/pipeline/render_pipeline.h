@@ -36,7 +36,7 @@
 class SkCanvas;
 struct SkRect;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -419,4 +419,4 @@ private:
     double frame_start_time_ = 0.0;
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -39,12 +39,12 @@ set(DEVTOOLS_HEADERS
     serializer/dom_serializer.h
 )
 
-add_library(mbink_devtools SHARED
+add_library(mblink_devtools SHARED
     ${DEVTOOLS_SOURCES}
     ${DEVTOOLS_HEADERS}
 )
 
-target_include_directories(mbink_devtools PUBLIC
+target_include_directories(mblink_devtools PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/tools/esm_loader
@@ -52,41 +52,41 @@ target_include_directories(mbink_devtools PUBLIC
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
-target_link_libraries(mbink_devtools PUBLIC
-    mbink_api
-    mbink_dom
-    mbink_render
-    mbink_event
-    mbink_bridge
-    mbink_utils
-    mbink_network
-    mbink_lexbor
+target_link_libraries(mblink_devtools PUBLIC
+    mblink_api
+    mblink_dom
+    mblink_render
+    mblink_event
+    mblink_bridge
+    mblink_utils
+    mblink_network
+    mblink_lexbor
     quickjs
     nlohmann_json
 )
 
 if(TARGET skia)
-    target_link_libraries(mbink_devtools PUBLIC skia)
+    target_link_libraries(mblink_devtools PUBLIC skia)
 endif()
 
 if(WIN32)
-    target_link_libraries(mbink_devtools PRIVATE ws2_32 bcrypt)
+    target_link_libraries(mblink_devtools PRIVATE ws2_32 bcrypt)
 endif()
 
 if(MSVC)
-    target_compile_options(mbink_devtools PUBLIC
+    target_compile_options(mblink_devtools PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(mbink_devtools PUBLIC
+    target_compile_definitions(mblink_devtools PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()
 
-target_compile_definitions(mbink_devtools PRIVATE MBINK_DEVTOOLS_BUILDING_DLL)
+target_compile_definitions(mblink_devtools PRIVATE MBLINK_DEVTOOLS_BUILDING_DLL)
 
-set_target_properties(mbink_devtools PROPERTIES
-    OUTPUT_NAME "mbink_devtools"
+set_target_properties(mblink_devtools PROPERTIES
+    OUTPUT_NAME "mblink_devtools"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"

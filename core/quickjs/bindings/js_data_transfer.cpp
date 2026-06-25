@@ -16,7 +16,7 @@
 #include "core/event/types/data_transfer.h"
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -279,4 +279,4 @@ JSClassID GetDataTransferClassID() {
 }
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

@@ -20,7 +20,7 @@
 #include "dom/style/incremental_style_recalc.h"
 #include "dom/observers/dirty_node_tracker.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 /**
@@ -467,4 +467,4 @@ TEST_F(IncrementalUpdateTest, CounterAppUpdateCycle) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

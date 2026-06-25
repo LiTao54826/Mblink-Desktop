@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 bool IsNodeInsideEditingHost(const std::shared_ptr<Node>& node,
                              const Element* editing_host);
@@ -284,5 +284,5 @@ std::vector<ContentEditableSelectionRect> ComputeContentEditableSelectionRects(
     return ConvertRangeClientRects(contenteditable_root, range);
 }
 
-} // namespace mbink
+} // namespace mblink
 

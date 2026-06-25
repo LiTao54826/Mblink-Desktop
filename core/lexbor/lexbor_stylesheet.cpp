@@ -14,7 +14,7 @@
 #include <lexbor/css/selectors/selectors.h>
 #include <lexbor/css/stylesheet.h>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -758,5 +758,5 @@ int LexborStyleSheet::CalculateSpecificity(const std::string& selector) {
     return max_specificity;
 }
 
-} // namespace mbink
+} // namespace mblink
 

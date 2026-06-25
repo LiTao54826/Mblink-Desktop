@@ -19,7 +19,7 @@
 #include "include/core/SkPaint.h"
 #include <memory>
 
-using namespace mbink;
+using namespace mblink;
 
 // =========================================================================
 // 测试辅助类

@@ -13,7 +13,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 ListMarkerType ParseListStyleType(const std::string& type_str) {
     if (type_str == "none") return ListMarkerType::NONE;
@@ -265,4 +265,4 @@ void PaintListMarker(
     }
 }
 
-} // namespace mbink
+} // namespace mblink

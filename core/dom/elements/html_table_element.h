@@ -13,7 +13,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML Table元素类
@@ -126,5 +126,5 @@ public:
     void SetSpan(int span);
 };
 
-} // namespace mbink
+} // namespace mblink
 

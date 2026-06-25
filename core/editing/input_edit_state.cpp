@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 constexpr uint32_t ToBits(EditDirtyFlags flags) {
@@ -91,5 +91,5 @@ std::shared_ptr<InputEditState> CreateInputEditState() {
 }
 
 
-}  // namespace mbink
+}  // namespace mblink
 

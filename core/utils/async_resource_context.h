@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 class AsyncResourceContext {
 public:
@@ -59,4 +59,4 @@ private:
     std::atomic<bool> alive_{true};
 };
 
-} // namespace mbink
+} // namespace mblink

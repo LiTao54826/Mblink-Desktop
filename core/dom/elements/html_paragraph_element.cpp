@@ -5,7 +5,7 @@
 
 #include "html_paragraph_element.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLParagraphElement::HTMLParagraphElement()
     : Element("p") {
@@ -13,5 +13,5 @@ HTMLParagraphElement::HTMLParagraphElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace mbink
+} // namespace mblink
 

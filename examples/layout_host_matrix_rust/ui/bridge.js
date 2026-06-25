@@ -22,7 +22,7 @@ function cleanText(value) {
 export const hostApi = {
   getMatrixInfo(payload = {}) {
     return callHost('getMatrixInfo', payload, async () => ({
-      host: 'mbink-ui-dev mock backend',
+      host: 'mblink-ui-dev mock backend',
       runtime: 'tool',
       mode: 'dev-mock',
       receivedPurpose: payload.purpose ?? 'layout-matrix',

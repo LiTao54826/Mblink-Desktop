@@ -14,7 +14,7 @@
 #include <vector>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class HTMLFormElement;
@@ -298,5 +298,5 @@ private:
     void TriggerInputEvent();
 };
 
-} // namespace mbink
+} // namespace mblink
 

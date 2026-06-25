@@ -18,7 +18,7 @@
 #include "dom/text.h"
 #include "dom/node.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 /**
@@ -104,17 +104,17 @@ std::vector<std::shared_ptr<Element>> FindAllElementsByTagName(
     const std::string& tag_name);
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink
 
 // 便捷宏
 #define EXPECT_DOM_EQ(node, expected) \
-    mbink::test::AssertDOMStructure(node, expected)
+    mblink::test::AssertDOMStructure(node, expected)
 
 #define EXPECT_ATTR_EQ(elem, attr, value) \
-    mbink::test::AssertElementAttribute(elem, attr, value)
+    mblink::test::AssertElementAttribute(elem, attr, value)
 
 #define EXPECT_HAS_CLASS(elem, cls) \
-    mbink::test::AssertElementHasClass(elem, cls)
+    mblink::test::AssertElementHasClass(elem, cls)
 
 #define EXPECT_NOT_HAS_CLASS(elem, cls) \
-    mbink::test::AssertElementNotHasClass(elem, cls)
+    mblink::test::AssertElementNotHasClass(elem, cls)

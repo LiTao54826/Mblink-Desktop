@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class TerminalLogViewIntegrationTest : public DOMTestBase {
@@ -465,4 +465,4 @@ TEST_F(TerminalLogViewIntegrationTest, LogViewWithClassAttribute) {
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

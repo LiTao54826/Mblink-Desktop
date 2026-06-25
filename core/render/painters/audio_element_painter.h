@@ -8,7 +8,7 @@
 #include "core/render/objects/render_object.h"
 #include "include/core/SkCanvas.h"
 
-namespace mbink {
+namespace mblink {
 
 class HTMLAudioElement;
 
@@ -18,4 +18,4 @@ void PaintAudioElementControl(
     const Box& box,
     const ComputedStyle& style);
 
-} // namespace mbink
+} // namespace mblink

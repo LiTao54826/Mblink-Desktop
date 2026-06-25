@@ -23,7 +23,7 @@
 // 前向声明
 class SkMatrix;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -240,4 +240,4 @@ private:
     bool has_layer_updates_ = false;
 };
 
-} // namespace mbink
+} // namespace mblink

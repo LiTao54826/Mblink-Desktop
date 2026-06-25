@@ -1,7 +1,7 @@
 /**
  * @file keyframes.cpp
  * @brief CSS @keyframes 规则实现
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
@@ -11,7 +11,7 @@
 #include <regex>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // KeyframesRule 实现
@@ -236,5 +236,5 @@ std::vector<std::string> KeyframesManager::GetAllNames() const {
     return names;
 }
 
-} // namespace mbink
+} // namespace mblink
 

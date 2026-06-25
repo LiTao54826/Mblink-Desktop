@@ -2,16 +2,16 @@
 
 English | [中文](BINDINGS.zh-CN.md)
 
-MBink is organized around one shared runtime and multiple host surfaces.
+MBlink is organized around one shared runtime and multiple host surfaces.
 
 ## The runtime model first
 
 Before thinking in terms of language bindings, think in terms of runtime layers:
 
-- `mbink.dll` is the shared runtime core
+- `mblink.dll` is the shared runtime core
 - `esm_loader.exe` is the clearest manual host in this repository
-- `mbink-ui-dev.exe` is the project-development tool surface
-- `mbink_devtools.dll` is a development-only companion for snapshot/control and runtime HTTP MCP
+- `mblink-ui-dev.exe` is the project-development tool surface
+- `mblink_devtools.dll` is a development-only companion for snapshot/control and runtime HTTP MCP
 
 That means bindings are best understood as host adapters around the same runtime, not separate runtimes.
 
@@ -26,7 +26,7 @@ That means bindings are best understood as host adapters around the same runtime
 
 ## Recommended order for new readers
 
-1. `mbink-ui-dev`
+1. `mblink-ui-dev`
 2. `esm_loader`
 3. Python
 4. Rust or Go as needed
@@ -47,16 +47,16 @@ Start here:
 
 Repository facts that matter:
 
-- runtime artifacts are copied into `bindings/python/mbink/bin/`
-- the package loads `mbink.dll` through `ctypes`
+- runtime artifacts are copied into `bindings/python/mblink/bin/`
+- the package loads `mblink.dll` through `ctypes`
 - UI-dev snapshot/control and HTTP MCP can be enabled through the optional devtools path
 
 ## Rust
 
 Rust bindings live in:
 
-- `bindings/rust/mbink-sys`
-- `bindings/rust/mbink`
+- `bindings/rust/mblink-sys`
+- `bindings/rust/mblink`
 
 They are useful if you want:
 
@@ -72,7 +72,7 @@ Start with:
 
 Go bindings live in:
 
-- `bindings/go/mbink`
+- `bindings/go/mblink`
 
 They are currently Windows-oriented and are a reasonable option if you want:
 
@@ -87,7 +87,7 @@ Start with:
 
 Across Python, Rust, and Go, the important development-only rule is the same:
 
-- `mbink_devtools.dll` should be loaded on demand
+- `mblink_devtools.dll` should be loaded on demand
 - it should not be treated as the production runtime
 - observable runtime behavior should stay aligned with the shared C API surface
 

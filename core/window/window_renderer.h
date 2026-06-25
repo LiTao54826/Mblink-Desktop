@@ -17,7 +17,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Window;
@@ -241,4 +241,4 @@ private:
     float last_body_scroll_y_ = 0.0f;
 };
 
-} // namespace mbink
+} // namespace mblink

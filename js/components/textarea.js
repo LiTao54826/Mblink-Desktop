@@ -1,5 +1,5 @@
 /**
- * MBink Textarea 组件
+ * MBlink Textarea 组件
  *
  * Props:
  * - value: string

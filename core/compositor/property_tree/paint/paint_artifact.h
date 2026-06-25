@@ -16,7 +16,7 @@
 #include "core/compositor/property_tree/paint/paint_chunk.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 绘制产物变化信息
@@ -175,4 +175,4 @@ private:
     bool has_current_chunk_ = false;
 };
 
-} // namespace mbink
+} // namespace mblink

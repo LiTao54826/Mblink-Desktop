@@ -8,7 +8,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class HTMLLoadingTest : public DOMTestBase {};
@@ -365,4 +365,4 @@ TEST_F(HTMLLoadingTest, SaveHTML) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

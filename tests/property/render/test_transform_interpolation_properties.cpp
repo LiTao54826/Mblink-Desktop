@@ -20,8 +20,8 @@
 #include <sstream>
 #include <iomanip>
 
-using namespace mbink;
-using namespace mbink::test;
+using namespace mblink;
+using namespace mblink::test;
 
 class TransformInterpolationPropertyTest : public ::testing::Test {
 protected:

@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 const std::string StateManager::emptyString_;
 
@@ -18,35 +18,35 @@ StateManager::StateManager()
 
 StateManager::~StateManager() = default;
 
-MBinkError StateManager::createNull(const std::string& name) {
+MBlinkError StateManager::createNull(const std::string& name) {
     return createValue(name, nullptr);
 }
 
-MBinkError StateManager::createBool(const std::string& name, bool value) {
+MBlinkError StateManager::createBool(const std::string& name, bool value) {
     return createValue(name, value);
 }
 
-MBinkError StateManager::createInt(const std::string& name, int64_t value) {
+MBlinkError StateManager::createInt(const std::string& name, int64_t value) {
     return createValue(name, value);
 }
 
-MBinkError StateManager::createDouble(const std::string& name, double value) {
+MBlinkError StateManager::createDouble(const std::string& name, double value) {
     return createValue(name, value);
 }
 
-MBinkError StateManager::createString(const std::string& name, const std::string& value) {
+MBlinkError StateManager::createString(const std::string& name, const std::string& value) {
     return createValue(name, value);
 }
 
-MBinkError StateManager::createArray(const std::string& name) {
+MBlinkError StateManager::createArray(const std::string& name) {
     return createValue(name, json::array());
 }
 
-MBinkError StateManager::createObject(const std::string& name) {
+MBlinkError StateManager::createObject(const std::string& name) {
     return createValue(name, json::object());
 }
 
-MBinkError StateManager::createJson(const std::string& name, const json& value) {
+MBlinkError StateManager::createJson(const std::string& name, const json& value) {
     return createValue(name, value);
 }
 
@@ -54,8 +54,8 @@ bool StateManager::exists(const std::string& name) const {
     return graph_->exists(name);
 }
 
-MBinkType StateManager::type(const std::string& name) const {
-    return jsonTypeToMBinkType(graph_->get(name));
+MBlinkType StateManager::type(const std::string& name) const {
+    return jsonTypeToMBlinkType(graph_->get(name));
 }
 
 bool StateManager::getBool(const std::string& name) const {
@@ -112,15 +112,15 @@ size_t StateManager::getLength(const std::string& name) const {
     return 0;
 }
 
-MBinkError StateManager::setNull(const std::string& name) { return set(name, nullptr) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::setBool(const std::string& name, bool value) { return set(name, value) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::setInt(const std::string& name, int64_t value) { return set(name, value) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::setDouble(const std::string& name, double value) { return set(name, value) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::setString(const std::string& name, const std::string& value) { return set(name, value) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::setJson(const std::string& name, const json& value) { return set(name, value) ? MBinkError::Ok : MBinkError::InvalidName; }
-MBinkError StateManager::remove(const std::string& name) { return deletePath(name) ? MBinkError::Ok : MBinkError::InvalidName; }
+MBlinkError StateManager::setNull(const std::string& name) { return set(name, nullptr) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::setBool(const std::string& name, bool value) { return set(name, value) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::setInt(const std::string& name, int64_t value) { return set(name, value) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::setDouble(const std::string& name, double value) { return set(name, value) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::setString(const std::string& name, const std::string& value) { return set(name, value) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::setJson(const std::string& name, const json& value) { return set(name, value) ? MBlinkError::Ok : MBlinkError::InvalidName; }
+MBlinkError StateManager::remove(const std::string& name) { return deletePath(name) ? MBlinkError::Ok : MBlinkError::InvalidName; }
 
-MBinkError StateManager::arrayPush(const std::string& name, const json& item) {
+MBlinkError StateManager::arrayPush(const std::string& name, const json& item) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array()) return false;
         value.push_back(item);
@@ -128,7 +128,7 @@ MBinkError StateManager::arrayPush(const std::string& name, const json& item) {
     });
 }
 
-MBinkError StateManager::arrayPop(const std::string& name) {
+MBlinkError StateManager::arrayPop(const std::string& name) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array() || value.empty()) return false;
         value.erase(value.end() - 1);
@@ -136,7 +136,7 @@ MBinkError StateManager::arrayPop(const std::string& name) {
     });
 }
 
-MBinkError StateManager::arrayShift(const std::string& name) {
+MBlinkError StateManager::arrayShift(const std::string& name) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array() || value.empty()) return false;
         value.erase(value.begin());
@@ -144,7 +144,7 @@ MBinkError StateManager::arrayShift(const std::string& name) {
     });
 }
 
-MBinkError StateManager::arrayUnshift(const std::string& name, const json& item) {
+MBlinkError StateManager::arrayUnshift(const std::string& name, const json& item) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array()) return false;
         value.insert(value.begin(), item);
@@ -152,7 +152,7 @@ MBinkError StateManager::arrayUnshift(const std::string& name, const json& item)
     });
 }
 
-MBinkError StateManager::arrayRemove(const std::string& name, int index) {
+MBlinkError StateManager::arrayRemove(const std::string& name, int index) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array() || index < 0 || static_cast<size_t>(index) >= value.size()) return false;
         value.erase(value.begin() + index);
@@ -160,7 +160,7 @@ MBinkError StateManager::arrayRemove(const std::string& name, int index) {
     });
 }
 
-MBinkError StateManager::arrayClear(const std::string& name) {
+MBlinkError StateManager::arrayClear(const std::string& name) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array()) return false;
         value.clear();
@@ -168,7 +168,7 @@ MBinkError StateManager::arrayClear(const std::string& name) {
     });
 }
 
-MBinkError StateManager::arraySet(const std::string& name, int index, const json& item) {
+MBlinkError StateManager::arraySet(const std::string& name, int index, const json& item) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_array() || index < 0 || static_cast<size_t>(index) >= value.size()) return false;
         value[index] = item;
@@ -176,7 +176,7 @@ MBinkError StateManager::arraySet(const std::string& name, int index, const json
     });
 }
 
-MBinkError StateManager::objectSet(const std::string& name, const std::string& key, const json& value) {
+MBlinkError StateManager::objectSet(const std::string& name, const std::string& key, const json& value) {
     return mutateTopLevel(name, [&](json& object) {
         if (!object.is_object()) return false;
         object[key] = value;
@@ -184,7 +184,7 @@ MBinkError StateManager::objectSet(const std::string& name, const std::string& k
     });
 }
 
-MBinkError StateManager::objectRemove(const std::string& name, const std::string& key) {
+MBlinkError StateManager::objectRemove(const std::string& name, const std::string& key) {
     return mutateTopLevel(name, [&](json& object) {
         if (!object.is_object() || !object.contains(key)) return false;
         object.erase(key);
@@ -192,7 +192,7 @@ MBinkError StateManager::objectRemove(const std::string& name, const std::string
     });
 }
 
-MBinkError StateManager::objectClear(const std::string& name) {
+MBlinkError StateManager::objectClear(const std::string& name) {
     return mutateTopLevel(name, [&](json& object) {
         if (!object.is_object()) return false;
         object.clear();
@@ -200,7 +200,7 @@ MBinkError StateManager::objectClear(const std::string& name) {
     });
 }
 
-MBinkError StateManager::increment(const std::string& name, double delta) {
+MBlinkError StateManager::increment(const std::string& name, double delta) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_number()) return false;
         value = value.get<double>() + delta;
@@ -208,7 +208,7 @@ MBinkError StateManager::increment(const std::string& name, double delta) {
     });
 }
 
-MBinkError StateManager::multiply(const std::string& name, double factor) {
+MBlinkError StateManager::multiply(const std::string& name, double factor) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_number()) return false;
         value = value.get<double>() * factor;
@@ -216,7 +216,7 @@ MBinkError StateManager::multiply(const std::string& name, double factor) {
     });
 }
 
-MBinkError StateManager::stringAppend(const std::string& name, const std::string& suffix) {
+MBlinkError StateManager::stringAppend(const std::string& name, const std::string& suffix) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_string()) return false;
         value = value.get<std::string>() + suffix;
@@ -224,7 +224,7 @@ MBinkError StateManager::stringAppend(const std::string& name, const std::string
     });
 }
 
-MBinkError StateManager::stringPrepend(const std::string& name, const std::string& prefix) {
+MBlinkError StateManager::stringPrepend(const std::string& name, const std::string& prefix) {
     return mutateTopLevel(name, [&](json& value) {
         if (!value.is_string()) return false;
         value = prefix + value.get<std::string>();
@@ -317,28 +317,28 @@ bool StateManager::isValidName(const std::string& name) const {
     });
 }
 
-MBinkType StateManager::jsonTypeToMBinkType(const json& j) const {
-    if (j.is_boolean()) return MBinkType::Bool;
-    if (j.is_number_integer()) return MBinkType::Int;
-    if (j.is_number_float()) return MBinkType::Double;
-    if (j.is_string()) return MBinkType::String;
-    if (j.is_array()) return MBinkType::Array;
-    if (j.is_object()) return MBinkType::Object;
-    return MBinkType::Null;
+MBlinkType StateManager::jsonTypeToMBlinkType(const json& j) const {
+    if (j.is_boolean()) return MBlinkType::Bool;
+    if (j.is_number_integer()) return MBlinkType::Int;
+    if (j.is_number_float()) return MBlinkType::Double;
+    if (j.is_string()) return MBlinkType::String;
+    if (j.is_array()) return MBlinkType::Array;
+    if (j.is_object()) return MBlinkType::Object;
+    return MBlinkType::Null;
 }
 
-MBinkError StateManager::createValue(const std::string& name, const json& value) {
-    if (!isValidName(name)) return MBinkError::InvalidName;
-    return graph_->initialize(name, value) ? MBinkError::Ok : MBinkError::AlreadyExists;
+MBlinkError StateManager::createValue(const std::string& name, const json& value) {
+    if (!isValidName(name)) return MBlinkError::InvalidName;
+    return graph_->initialize(name, value) ? MBlinkError::Ok : MBlinkError::AlreadyExists;
 }
 
-MBinkError StateManager::mutateTopLevel(const std::string& name, const std::function<bool(json&)>& mutator) {
-    if (!isValidName(name)) return MBinkError::InvalidName;
+MBlinkError StateManager::mutateTopLevel(const std::string& name, const std::function<bool(json&)>& mutator) {
+    if (!isValidName(name)) return MBlinkError::InvalidName;
     json value = graph_->get(name);
     if (!mutator(value)) {
-        return MBinkError::TypeMismatch;
+        return MBlinkError::TypeMismatch;
     }
-    return graph_->set(name, value) ? MBinkError::Ok : MBinkError::TypeMismatch;
+    return graph_->set(name, value) ? MBlinkError::Ok : MBlinkError::TypeMismatch;
 }
 
 void StateManager::notifyWatcher(const std::string& name) {
@@ -351,4 +351,4 @@ void StateManager::notifyWatcher(const std::string& name) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

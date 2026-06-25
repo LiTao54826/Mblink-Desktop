@@ -2,21 +2,21 @@
 
 English | [中文](AI_WORKFLOW.zh-CN.md)
 
-MBink is intentionally shaped so AI-assisted development is a first-class workflow, not an afterthought.
+MBlink is intentionally shaped so AI-assisted development is a first-class workflow, not an afterthought.
 
 ## Recommended mental model
 
 Use these layers:
 
-1. `mbink-ui-dev.exe` for project work
-2. `mbink.dll` for runtime behavior
-3. `mbink_devtools.dll` only when you need development-only snapshot/control or runtime HTTP MCP
+1. `mblink-ui-dev.exe` for project work
+2. `mblink.dll` for runtime behavior
+3. `mblink_devtools.dll` only when you need development-only snapshot/control or runtime HTTP MCP
 
 In practice:
 
-- humans and shell-based agents can use `mbink-ui-dev.exe` directly
-- MCP-capable clients can connect through `mbink-ui-dev.exe serve`
-- direct C API hosts can expose live UI analysis through `mbink_devtools.dll`
+- humans and shell-based agents can use `mblink-ui-dev.exe` directly
+- MCP-capable clients can connect through `mblink-ui-dev.exe serve`
+- direct C API hosts can expose live UI analysis through `mblink_devtools.dll`
 
 ## Why the workflow fits AI well
 
@@ -36,11 +36,11 @@ That means an AI agent can work from real runtime evidence instead of only code 
 ## Fastest workflow
 
 ```powershell
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
-build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
 ```
 
 Typical loop:
@@ -70,19 +70,19 @@ Use MCP when:
 Start the MCP bridge with:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe serve
+build\bin\Release\mblink-ui-dev.exe serve
 ```
 
 ## Skill entry point
 
-The repository includes a repo-local skillbook for MBink project work.
+The repository includes a repo-local skillbook for MBlink project work.
 
 Start with [Skills Guide](SKILLS.md) if you want the full layout and entry model.
 
 Core files:
 
-- [tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md](../tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md)
-- [tools/mbink_ui_dev/skills/mbink-ui-dev/agents/openai.yaml](../tools/mbink_ui_dev/skills/mbink-ui-dev/agents/openai.yaml)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md](../tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/agents/openai.yaml](../tools/mblink_ui_dev/skills/mblink-ui-dev/agents/openai.yaml)
 
 Use it as the detailed reference for:
 
@@ -93,13 +93,13 @@ Use it as the detailed reference for:
 
 ## Recommended workflow for new app work
 
-1. create or open a project with `mbink-ui-dev`
+1. create or open a project with `mblink-ui-dev`
 2. build the UI with mock data first
 3. verify through `snapshot`, `query`, and `inspect`
 4. only then wire the real Python, Rust, or Go host
 5. re-run the same verification path against the real host
 
-This is important because MBink is not trying to imitate a complete browser. The safest workflow is to prove runtime behavior directly.
+This is important because MBlink is not trying to imitate a complete browser. The safest workflow is to prove runtime behavior directly.
 
 ## When to drop down to lower layers
 
@@ -118,7 +118,7 @@ Use Python/Rust/Go hosts when:
 ## Important constraints
 
 - `tool` runtime is great for UI shape, but not final proof for host-specific behavior
-- `mbink_devtools.dll` is development-only and should not be treated as the production runtime
+- `mblink_devtools.dll` is development-only and should not be treated as the production runtime
 - Windows has the strongest verified workflow
 - build success alone is not enough; a real snapshot is the better proof
 - for public-facing examples and docs, prefer `snapshot --response file --include-screenshot` so the proof includes both DOM data and a PNG artifact

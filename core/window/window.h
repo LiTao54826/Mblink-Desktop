@@ -50,7 +50,7 @@
 #include "window_event.h"
 #include "display_backend.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -81,7 +81,7 @@ enum class RenderBackend {
 };
 
 struct WindowConfig {
-    std::string title = "MBink Window";
+    std::string title = "MBlink Window";
     int width = 800;
     int height = 600;
     int x = -1;  // -1表示居中
@@ -852,5 +852,5 @@ public:
     FocusManager* GetFocusManager() const { return focus_manager_; }
 };
 
-} // namespace mbink
+} // namespace mblink
 

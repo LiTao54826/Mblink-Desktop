@@ -4,7 +4,7 @@
 
 class SkFont;
 
-namespace mbink::input_text_viewport {
+namespace mblink::input_text_viewport {
 
 constexpr float kNumberSpinnerReservedWidth = 16.0f;
 constexpr float kCaretMargin = 2.0f;
@@ -35,4 +35,4 @@ float TextOriginX(float content_x, const ViewportState& viewport);
 float ContentXFromVisibleX(float local_x, const ViewportState& viewport);
 float ClampVisibleX(float local_x, const ViewportState& viewport);
 
-}  // namespace mbink::input_text_viewport
+}  // namespace mblink::input_text_viewport

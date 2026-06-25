@@ -2,23 +2,23 @@
 
 English | [中文](QUICKSTART.zh-CN.md)
 
-This page is the fastest path to understanding and running MBink on Windows.
+This page is the fastest path to understanding and running MBlink on Windows.
 
 ## What you are starting
 
-MBink has two practical first-run lanes:
+MBlink has two practical first-run lanes:
 
-1. `mbink-ui-dev.exe` for the AI-first development workflow
+1. `mblink-ui-dev.exe` for the AI-first development workflow
 2. `esm_loader.exe` for the thinnest manual runtime path
 
-If you are new to the repository, start with `mbink-ui-dev`.
+If you are new to the repository, start with `mblink-ui-dev`.
 
 ## Framework note
 
 The clearest current UI path is:
 
 - direct JS/ESM app entries
-- `mbink-ui-dev` generated or repo-local projects
+- `mblink-ui-dev` generated or repo-local projects
 - the lightweight official Preact module path
 
 That means the repository should currently be read as Preact-oriented, not as a drop-in runtime for full React apps or large browser-oriented scaffolds.
@@ -46,36 +46,36 @@ From the repository root:
 
 ```powershell
 cmake -B build
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 Expected outputs:
 
-- `build\bin\Release\mbink-ui-dev.exe`
+- `build\bin\Release\mblink-ui-dev.exe`
 - `build\bin\Release\esm_loader.exe`
-- `build\bin\Release\mbink.dll`
+- `build\bin\Release\mblink.dll`
 
 ## Path A: AI-first development loop
 
 Open the verified example project:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
 ```
 
 Useful follow-up commands:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe info --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe info --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
 ```
 
 What you should expect:
 
-- a real MBink runtime window
+- a real MBlink runtime window
 - a structured DOM/UI snapshot
 - an optional PNG screenshot when `--include-screenshot` is used
 
@@ -93,11 +93,11 @@ If you want the clearest direct runtime shape:
 build\bin\Release\esm_loader.exe examples\todo_app_js\app.js
 ```
 
-This path is useful when you want to understand MBink in terms of:
+This path is useful when you want to understand MBlink in terms of:
 
 - one JS entry file
 - one executable host
-- one adjacent `mbink.dll`
+- one adjacent `mblink.dll`
 
 `esm_loader` also exposes explicit UI-dev hooks when you want snapshot/control behavior without the higher-level tool:
 
@@ -113,9 +113,9 @@ build\bin\Release\esm_loader.exe examples\todo_app_js\app.js `
 You can also scaffold a new minimal project:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe init "tmp\my-mbink-app" --purpose minimal --runtime tool
-build\bin\Release\mbink-ui-dev.exe open --project "tmp\my-mbink-app"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "tmp\my-mbink-app"
+build\bin\Release\mblink-ui-dev.exe init "tmp\my-mblink-app" --purpose minimal --runtime tool
+build\bin\Release\mblink-ui-dev.exe open --project "tmp\my-mblink-app"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "tmp\my-mblink-app"
 ```
 
 Notes:
@@ -127,11 +127,11 @@ Available scaffold combinations include:
 - `minimal`, `showcase`, `desktop-app`
 - `tool`, `python`, `rust`, `go`
 
-The safest JS UI expectation today is still a small MBink project built around the official Preact path, not a full React ecosystem stack.
+The safest JS UI expectation today is still a small MBlink project built around the official Preact path, not a full React ecosystem stack.
 
 ## Python as a secondary manual host
 
-Python is the easiest binding to read after `esm_loader`, but it is still a secondary onboarding path compared with `mbink-ui-dev`.
+Python is the easiest binding to read after `esm_loader`, but it is still a secondary onboarding path compared with `mblink-ui-dev`.
 
 See:
 

@@ -25,7 +25,7 @@
 #include <sstream>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -834,4 +834,4 @@ bool WindowDOMObserver::IsInBatch(Node* node) const {
     return document->IsInBatch();
 }
 
-}  // namespace mbink
+}  // namespace mblink

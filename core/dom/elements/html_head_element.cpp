@@ -5,9 +5,9 @@
 
 #include "html_head_element.h"
 
-namespace mbink {
+namespace mblink {
 
 // HTMLHeadElement 目前使用默认实现
 // 未来可以添加特定于 <head> 元素的功能
 
-} // namespace mbink
+} // namespace mblink

@@ -7,7 +7,7 @@
 #include "render/utils/transform.h"
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class TransformTest : public ::testing::Test {};
@@ -120,4 +120,4 @@ TEST_F(TransformTest, TransformOriginDefault) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink
