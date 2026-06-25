@@ -22,19 +22,19 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 0x3A1;
 constexpr UINT kTrayMenuBaseId = 40000;
 
 bool AppendMenuItemsRecursive(HMENU menu,
-                              const std::vector<mbink::AppTrayMenuItem>& items,
+                              const std::vector<mblink::AppTrayMenuItem>& items,
                               std::unordered_map<UINT, std::string>& command_map,
                               UINT& next_id) {
     for (const auto& item : items) {
-        if (item.type == mbink::AppTrayMenuItemType::Separator) {
+        if (item.type == mblink::AppTrayMenuItemType::Separator) {
             if (!AppendMenuW(menu, MF_SEPARATOR, 0, nullptr)) return false;
             continue;
         }
 
-        auto label = mbink::utils::UTF8ToWide(item.label);
+        auto label = mblink::utils::UTF8ToWide(item.label);
         UINT state_flags = (item.enabled ? MF_ENABLED : MF_GRAYED) | (item.checked ? MF_CHECKED : 0);
 
-        if (item.type == mbink::AppTrayMenuItemType::Submenu) {
+        if (item.type == mblink::AppTrayMenuItemType::Submenu) {
             HMENU submenu = CreatePopupMenu();
             if (!submenu) return false;
             if (!AppendMenuItemsRecursive(submenu, item.children, command_map, next_id)) {
@@ -54,7 +54,7 @@ bool AppendMenuItemsRecursive(HMENU menu,
 }
 }
 
-namespace mbink {
+namespace mblink {
 
 class Win32AppTray final : public AppTray {
 public:
@@ -82,7 +82,7 @@ private:
 };
 
 bool Win32AppTray::CreateMessageWindow() {
-    static const wchar_t* kClassName = L"MBinkAppTrayWindow";
+    static const wchar_t* kClassName = L"MBlinkAppTrayWindow";
     static bool registered = false;
     HINSTANCE instance = GetModuleHandleW(nullptr);
     if (!registered) {
@@ -191,6 +191,6 @@ std::unique_ptr<AppTray> CreateWin32AppTray(const AppTrayConfig& config) {
     return std::make_unique<Win32AppTray>(config);
 }
 
-}  // namespace mbink
+}  // namespace mblink
 
 #endif

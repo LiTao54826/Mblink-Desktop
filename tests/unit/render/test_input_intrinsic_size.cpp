@@ -5,7 +5,7 @@
 #include "core/render/text/font_manager.h"
 #include "include/core/SkFontMetrics.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -90,4 +90,4 @@ TEST(InputIntrinsicSizeTest, EditableInputTypesUseTextMetrics) {
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

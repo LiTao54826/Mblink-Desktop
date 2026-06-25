@@ -5,8 +5,8 @@
  * 紧凑存储实现，支持源名注册和导出功能。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_
 
 #include "log_entry.h"
 
@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 日志专用缓冲区
@@ -162,6 +162,6 @@ private:
     static std::string FormatTimestamp(uint32_t timestamp);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_

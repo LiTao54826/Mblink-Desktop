@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstdlib>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // KeyframeInterpolationCache 实现
@@ -85,8 +85,8 @@ void KeyframeInterpolationCache::ResetStats() {
 
 std::string KeyframeInterpolationCache::MakeKey(const std::string& animation_name,
                                                 float progress) const {
-    // 调试开关：MBINK_DEBUG_ANIM_CACHE_FINE=1 时提高量化精度，验证“缓存步进过粗”假设
-    const bool fine_quantization = (std::getenv("MBINK_DEBUG_ANIM_CACHE_FINE") != nullptr);
+    // 调试开关：MBLINK_DEBUG_ANIM_CACHE_FINE=1 时提高量化精度，验证“缓存步进过粗”假设
+    const bool fine_quantization = (std::getenv("MBLINK_DEBUG_ANIM_CACHE_FINE") != nullptr);
 
     // 默认 0.01；调试时 0.001
     int quantized_progress = fine_quantization
@@ -257,5 +257,5 @@ void AnimationOptimizer::Clear() {
     batch_updater_.Clear();
 }
 
-} // namespace mbink
+} // namespace mblink
 

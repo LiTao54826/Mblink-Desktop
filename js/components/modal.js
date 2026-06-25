@@ -1,5 +1,5 @@
 /**
- * MBink Modal 组件
+ * MBlink Modal 组件
  *
  * Props:
  * - visible: boolean

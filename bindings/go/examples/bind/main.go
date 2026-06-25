@@ -8,11 +8,11 @@ import (
 	"log"
 	"strings"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Bind", 900, 600)
+	app, err := autorun.NewApp("MBlink Go Bind", 900, 600)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func main() {
     <pre id="out"></pre>
     <script>
         document.getElementById('btn').onclick = async () => {
-            const result = await backend.greet({ name: 'MBink' });
+            const result = await backend.greet({ name: 'MBlink' });
             document.getElementById('out').textContent = JSON.stringify(result, null, 2);
         };
     </script>
@@ -62,12 +62,12 @@ func main() {
 
 	err = autorun.Run(app, func(tick int) error {
 		if tick == 1 {
-			return app.EvalJS(`(() => { try { const v = backend.greet({ name: 'MBink' }); backend.report(v); } catch (err) { backend.report({ error: String(err) }); } })()`)
+			return app.EvalJS(`(() => { try { const v = backend.greet({ name: 'MBlink' }); backend.report(v); } catch (err) { backend.report({ error: String(err) }); } })()`)
 		}
 		if report == "" {
 			return nil
 		}
-		if !strings.Contains(report, "Hello, MBink!") {
+		if !strings.Contains(report, "Hello, MBlink!") {
 			return fmt.Errorf("unexpected bind result: %s", report)
 		}
 		app.Stop()

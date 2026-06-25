@@ -35,7 +35,7 @@ cmake --build build --config Release
 For test-related changes | 涉及测试的改动：
 
 ```bash
-cmake -B build -DMBINK_BUILD_TESTS=ON
+cmake -B build -DMBLINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```

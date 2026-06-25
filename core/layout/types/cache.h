@@ -14,7 +14,7 @@
 #include <array>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 /// Number of cache entries per node
 constexpr size_t CACHE_SIZE = 9;
@@ -239,5 +239,5 @@ private:
     bool is_empty_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

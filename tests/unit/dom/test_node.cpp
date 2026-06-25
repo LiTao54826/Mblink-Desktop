@@ -17,7 +17,7 @@
 #include "dom/text.h"
 #include "dom/document.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class NodeTest : public DOMTestBase {};
@@ -282,4 +282,4 @@ TEST_F(NodeTest, AppendedChildGetsOwnerDocument) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

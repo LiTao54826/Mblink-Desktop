@@ -5,12 +5,12 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 class Document;
 class Window;
 }
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 
 struct SnapshotExportOptions {
     std::string runtime_epoch;
@@ -40,4 +40,4 @@ bool ExportUiDevSnapshot(Window* window,
                          const SnapshotExportOptions& options,
                          std::string* error = nullptr);
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

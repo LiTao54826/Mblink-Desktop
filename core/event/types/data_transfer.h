@@ -23,7 +23,7 @@
 #include <memory>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 拖拽效果类型
@@ -172,5 +172,5 @@ private:
     DragEffect drop_effect_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

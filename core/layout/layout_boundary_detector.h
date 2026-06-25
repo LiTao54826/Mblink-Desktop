@@ -17,7 +17,7 @@
 
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -116,4 +116,4 @@ public:
     static const char* BoundaryTypeToString(BoundaryType type);
 };
 
-}  // namespace mbink
+}  // namespace mblink

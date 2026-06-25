@@ -1,10 +1,10 @@
 # Tools
 
-This folder contains the main public tool surfaces around the MBink runtime.
+This folder contains the main public tool surfaces around the MBlink runtime.
 
 ## Primary tools
 
-### `mbink-ui-dev`
+### `mblink-ui-dev`
 
 Use this when you want:
 
@@ -19,30 +19,30 @@ Current build/open behavior for generated `tool` projects depends on `esbuild` b
 Build:
 
 ```powershell
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 Common commands:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
-build\bin\Release\mbink-ui-dev.exe info --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe build --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe reload --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe serve
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+build\bin\Release\mblink-ui-dev.exe info --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe build --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe reload --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe serve
 ```
 
 Precision control examples:
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe inspect 'button[type="submit"]' --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe input-text "#todo-input" "hello world" --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe scroll body --y 400 --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe highlight "#todo-input" --color "#ff4d4f" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe inspect 'button[type="submit"]' --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe input-text "#todo-input" "hello world" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe scroll body --y 400 --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe highlight "#todo-input" --color "#ff4d4f" --project "examples\todo_app_js"
 ```
 
 Notes:
@@ -54,12 +54,12 @@ Notes:
 
 Detailed workflow reference:
 
-- `tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md`
+- `tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md`
 - `../docs/SKILLS.md`
 
 ### `esm_loader`
 
-Use this when you want the thinnest manual host path around `mbink.dll`.
+Use this when you want the thinnest manual host path around `mblink.dll`.
 
 Example:
 
@@ -78,8 +78,8 @@ build\bin\Release\esm_loader.exe examples\todo_app_js\app.js `
 
 ## How the tools fit together
 
-- `mbink.dll` is the runtime core
+- `mblink.dll` is the runtime core
 - `esm_loader.exe` is the clearer manual lane
-- `mbink-ui-dev.exe` is the higher-level project and AI workflow layer
+- `mblink-ui-dev.exe` is the higher-level project and AI workflow layer
 
-If you are new to the repo, start with `mbink-ui-dev`. If you want to understand the runtime shape directly, drop to `esm_loader`.
+If you are new to the repo, start with `mblink-ui-dev`. If you want to understand the runtime shape directly, drop to `esm_loader`.

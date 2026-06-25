@@ -7,7 +7,7 @@
 
 #include "quickjs/quickjs.h"
 
-namespace mbink {
+namespace mblink {
 
 class DOMBindings {
 public:
@@ -21,4 +21,4 @@ public:
 // 初始化 Image 构造函数（注册到全局对象）
 void InitImageConstructor(JSContext* ctx);
 
-} // namespace mbink
+} // namespace mblink

@@ -16,7 +16,7 @@
 #include <vector>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 属性树错误码
@@ -376,4 +376,4 @@ private:
         } \
     } while (0)
 
-} // namespace mbink
+} // namespace mblink

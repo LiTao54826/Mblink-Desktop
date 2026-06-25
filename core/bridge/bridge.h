@@ -10,8 +10,8 @@
 
 #pragma once
 
-namespace mbink {
+namespace mblink {
 
 // TODO: 添加类定义和函数声明
 
-} // namespace mbink
+} // namespace mblink

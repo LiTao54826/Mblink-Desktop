@@ -13,7 +13,7 @@
 #include <iterator>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 
 // 格式规范化：转换为小写，处理别名
 static std::string NormalizeFormat(const std::string& format) {
@@ -187,5 +187,5 @@ DragEffect DataTransfer::StringToEffect(const std::string& str) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

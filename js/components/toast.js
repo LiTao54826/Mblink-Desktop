@@ -1,5 +1,5 @@
 /**
- * MBink Toast 组件
+ * MBlink Toast 组件
  *
  * 使用方式：
  * Toast.show('Message')
@@ -20,7 +20,7 @@ let toastId = 0;
 function getContainer() {
   if (!container) {
     container = document.createElement('div');
-    container.id = 'mbink-toast-container';
+    container.id = 'mblink-toast-container';
     Object.assign(container.style, {
       position: 'fixed',
       top: '20px',
@@ -92,7 +92,7 @@ function ToastItem({ content, type, onClose }) {
   const iconStyle = {
     fontSize: '16px',
     color: colorMap[type] || colors.text,
-    animation: type === 'loading' ? 'mbink-spin 1s linear infinite' : 'none',
+    animation: type === 'loading' ? 'mblink-spin 1s linear infinite' : 'none',
   };
 
   return h(

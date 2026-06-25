@@ -9,17 +9,17 @@ set(RENDER_TEST_SOURCES
     test_property_tree_visual.cpp
 )
 
-add_executable(mbink_render_tests
+add_executable(mblink_render_tests
     ${RENDER_TEST_SOURCES}
 )
 
-target_link_libraries(mbink_render_tests
+target_link_libraries(mblink_render_tests
     PRIVATE
-    mbink
+    mblink
     test_utils
     GTest::gtest
     GTest::gtest_main
 )
 
 include(GoogleTest)
-gtest_discover_tests(mbink_render_tests)
+gtest_discover_tests(mblink_render_tests)

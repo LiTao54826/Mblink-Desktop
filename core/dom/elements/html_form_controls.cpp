@@ -5,7 +5,7 @@
 
 #include "html_form_controls.h"
 
-namespace mbink {
+namespace mblink {
 
 // ========== HTMLFieldSetElement ==========
 
@@ -323,5 +323,5 @@ void HTMLDialogElement::Close(const std::string& returnValue) {
     // TODO: 触发 close 事件
 }
 
-} // namespace mbink
+} // namespace mblink
 

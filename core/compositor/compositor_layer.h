@@ -35,7 +35,7 @@
 // 前向声明 OpenGL 类型
 typedef unsigned int GLuint;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -663,4 +663,4 @@ private:
  */
 std::shared_ptr<CompositorLayer> CreateCompositorLayer();
 
-} // namespace mbink
+} // namespace mblink

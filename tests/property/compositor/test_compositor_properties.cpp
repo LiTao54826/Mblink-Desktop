@@ -15,7 +15,7 @@
 #include "include/core/SkBitmap.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 namespace testing {
 
 // =========================================================================
@@ -525,4 +525,4 @@ TEST_F(CompositorDebugTest, ShowLayerBorders) {
 }
 
 } // namespace testing
-} // namespace mbink
+} // namespace mblink

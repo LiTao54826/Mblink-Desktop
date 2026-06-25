@@ -3,7 +3,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 // ==================== 构造函数 ====================
 
@@ -270,5 +270,5 @@ void UnifiedRenderer::EnsureImageRenderer() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

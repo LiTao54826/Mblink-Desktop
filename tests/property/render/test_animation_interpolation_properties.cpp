@@ -23,8 +23,8 @@
 #include <sstream>
 #include <cmath>
 
-using namespace mbink;
-using namespace mbink::test;
+using namespace mblink;
+using namespace mblink::test;
 
 // Random number generator for property tests
 class InterpolationTestRng {

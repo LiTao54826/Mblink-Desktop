@@ -19,11 +19,11 @@
 #include "core/render/objects/render_object.h"
 #include "core/window/window.h"
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 
 namespace {
 
-std::string NodeId(const std::shared_ptr<mbink::Node>& node) {
+std::string NodeId(const std::shared_ptr<mblink::Node>& node) {
     std::ostringstream oss;
     oss << "node@" << node.get();
     return oss.str();
@@ -43,7 +43,7 @@ bool IsInteractiveTag(const std::string& tag) {
     return tags.count(tag) > 0;
 }
 
-bool HasInteractiveAttributes(const std::shared_ptr<mbink::Element>& element) {
+bool HasInteractiveAttributes(const std::shared_ptr<mblink::Element>& element) {
     if (!element) return false;
     if (element->HasAnyEventListeners()) return true;
 
@@ -64,12 +64,12 @@ bool ShouldSkipElementTag(const std::string& tag) {
     return skipped_tags.count(tag) > 0;
 }
 
-std::shared_ptr<mbink::Node> ResolveSnapshotRoot(mbink::Document* document,
+std::shared_ptr<mblink::Node> ResolveSnapshotRoot(mblink::Document* document,
                                                  const std::string& root_selector,
                                                  std::string* error) {
     auto body = document ? document->GetBody() : nullptr;
     if (!root_selector.empty()) {
-        std::shared_ptr<mbink::Element> selected;
+        std::shared_ptr<mblink::Element> selected;
         if (root_selector == "body") {
             selected = body;
         } else if (root_selector == "html") {
@@ -81,13 +81,13 @@ std::shared_ptr<mbink::Node> ResolveSnapshotRoot(mbink::Document* document,
             if (error) *error = "root_selector_not_found";
             return nullptr;
         }
-        return std::static_pointer_cast<mbink::Node>(selected);
+        return std::static_pointer_cast<mblink::Node>(selected);
     }
-    return body ? std::static_pointer_cast<mbink::Node>(body)
-                : std::static_pointer_cast<mbink::Node>(document->GetDocumentElement());
+    return body ? std::static_pointer_cast<mblink::Node>(body)
+                : std::static_pointer_cast<mblink::Node>(document->GetDocumentElement());
 }
 
-nlohmann::json CachedElementRect(const std::shared_ptr<mbink::Element>& element) {
+nlohmann::json CachedElementRect(const std::shared_ptr<mblink::Element>& element) {
     auto render_object = element ? element->GetRenderObject() : nullptr;
     if (!render_object) {
         return nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
@@ -97,7 +97,7 @@ nlohmann::json CachedElementRect(const std::shared_ptr<mbink::Element>& element)
     return nlohmann::json{{"x", rect.x()}, {"y", rect.y()}, {"w", rect.width()}, {"h", rect.height()}};
 }
 
-nlohmann::json ElementScrollState(const std::shared_ptr<mbink::Element>& element) {
+nlohmann::json ElementScrollState(const std::shared_ptr<mblink::Element>& element) {
     auto render_object = element ? element->GetRenderObject() : nullptr;
     if (!render_object) {
         return nlohmann::json{{"x", 0}, {"y", 0}, {"max_x", 0}, {"max_y", 0}};
@@ -182,7 +182,7 @@ bool WriteFileAtomic(const std::filesystem::path& path,
     }
 }
 
-nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
+nlohmann::json SerializeNode(const std::shared_ptr<mblink::Node>& node,
                              SnapshotTraversalState* state,
                              int depth) {
     nlohmann::json j;
@@ -213,8 +213,8 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
     j["visible"] = true;
     j["interactive"] = false;
 
-    if (node->GetNodeType() == mbink::NodeType::TEXT_NODE) {
-        auto text = std::dynamic_pointer_cast<mbink::Text>(node);
+    if (node->GetNodeType() == mblink::NodeType::TEXT_NODE) {
+        auto text = std::dynamic_pointer_cast<mblink::Text>(node);
         const std::string data = text ? text->GetData() : "";
         bool whitespace = true;
         for (char c : data) {
@@ -229,8 +229,8 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
         return j;
     }
 
-    if (node->GetNodeType() == mbink::NodeType::ELEMENT_NODE) {
-        auto el = std::dynamic_pointer_cast<mbink::Element>(node);
+    if (node->GetNodeType() == mblink::NodeType::ELEMENT_NODE) {
+        auto el = std::dynamic_pointer_cast<mblink::Element>(node);
         const std::string tag = el ? el->GetTagName() : "";
         const std::string normalized_tag = ToLowerAscii(tag);
         if (ShouldSkipElementTag(normalized_tag)) return nlohmann::json();
@@ -266,23 +266,23 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
 
 }  // namespace
 
-bool ExportUiDevSnapshot(const std::shared_ptr<mbink::Window>& window,
-                         const std::shared_ptr<mbink::Document>& document,
+bool ExportUiDevSnapshot(const std::shared_ptr<mblink::Window>& window,
+                         const std::shared_ptr<mblink::Document>& document,
                          const std::string& output_path,
                          std::string* error) {
     return ExportUiDevSnapshot(window, document, output_path, SnapshotExportOptions{}, error);
 }
 
-bool ExportUiDevSnapshot(const std::shared_ptr<mbink::Window>& window,
-                         const std::shared_ptr<mbink::Document>& document,
+bool ExportUiDevSnapshot(const std::shared_ptr<mblink::Window>& window,
+                         const std::shared_ptr<mblink::Document>& document,
                          const std::string& output_path,
                          const SnapshotExportOptions& options,
                          std::string* error) {
     return ExportUiDevSnapshot(window.get(), document.get(), output_path, options, error);
 }
 
-bool ExportUiDevSnapshot(mbink::Window* window,
-                         mbink::Document* document,
+bool ExportUiDevSnapshot(mblink::Window* window,
+                         mblink::Document* document,
                          const std::string& output_path,
                          const SnapshotExportOptions& options,
                          std::string* error) {
@@ -387,4 +387,4 @@ bool ExportUiDevSnapshot(mbink::Window* window,
     }
 }
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

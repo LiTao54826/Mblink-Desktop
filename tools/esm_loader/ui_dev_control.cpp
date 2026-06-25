@@ -18,7 +18,7 @@
 #include "core/window/window.h"
 #include "ui_dev_snapshot.h"
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 namespace {
 namespace fs = std::filesystem;
 
@@ -280,7 +280,7 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
             resp["error"] = nlohmann::json{{"code", "shutdown_in_progress"}, {"message", "runtime is shutting down"}};
         } else if (type == "eval") {
             DocumentBatchScope batch_scope(document);
-            resp["result"] = runtime->Eval(cmd.value("code", ""), "<mbink-ui-dev eval>");
+            resp["result"] = runtime->Eval(cmd.value("code", ""), "<mblink-ui-dev eval>");
         } else if (type == "reload_bundle") {
             const std::string bundle_path = cmd.value("bundle_path", "");
             if (bundle_path.empty()) throw std::runtime_error("reload_bundle missing bundle_path");
@@ -352,12 +352,12 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
             } else
             {
                 DocumentBatchScope batch_scope(document);
-                resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mbink-ui-dev dom>");
+                resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mblink-ui-dev dom>");
             }
             if (!native_select_click &&
                 (type == "click" || type == "input_text" || type == "scroll" || type == "highlight")) {
                 ForceWindowFrame(runtime, window, 1);
-                auto latest = runtime->Eval(BuildUiDevDomScript(type, cmd, false), "<mbink-ui-dev dom result>");
+                auto latest = runtime->Eval(BuildUiDevDomScript(type, cmd, false), "<mblink-ui-dev dom result>");
                 if (resp["result"].is_object() && latest.is_object()) {
                     for (auto it = latest.begin(); it != latest.end(); ++it) resp["result"][it.key()] = it.value();
                 } else {
@@ -395,4 +395,4 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
     return true;
 }
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

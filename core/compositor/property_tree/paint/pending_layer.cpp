@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/paint/pending_layer.h"
 
-namespace mbink {
+namespace mblink {
 
 // =========================================================================
 // 绘制块
@@ -50,8 +50,8 @@ bool PendingLayer::CanMergeWith(const PendingLayer& other) const {
     }
     
     // 如果有强制合成原因，不能合并
-    if (mbink::RequiresOwnLayer(compositing_reasons_) ||
-        mbink::RequiresOwnLayer(other.compositing_reasons_)) {
+    if (mblink::RequiresOwnLayer(compositing_reasons_) ||
+        mblink::RequiresOwnLayer(other.compositing_reasons_)) {
         return false;
     }
     
@@ -75,4 +75,4 @@ void PendingLayer::MergeWith(PendingLayer&& other) {
     other.bounds_ = SkRect::MakeEmpty();
 }
 
-} // namespace mbink
+} // namespace mblink

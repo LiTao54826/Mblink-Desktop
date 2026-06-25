@@ -1,5 +1,5 @@
 """
-Todo App 示例 - 展示 MBink Python 绑定的核心功能
+Todo App 示例 - 展示 MBlink Python 绑定的核心功能
 
 功能演示：
   - 多个 SharedState 字段（列表 + 字符串 + 数字）
@@ -12,7 +12,7 @@ import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mbink import App
+from mblink import App
 
 app = App("Todo App", 700, 600)
 

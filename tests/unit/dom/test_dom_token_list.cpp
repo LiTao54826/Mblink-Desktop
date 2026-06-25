@@ -8,7 +8,7 @@
 #include "dom/utils/dom_token_list.h"
 #include "dom/element.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class DOMTokenListTest : public DOMTestBase {
@@ -182,4 +182,4 @@ TEST_F(DOMTokenListTest, EmptyToken) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

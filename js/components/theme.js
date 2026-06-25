@@ -1,5 +1,5 @@
 /**
- * MBink 主题系统
+ * MBlink 主题系统
  */
 
 export const colors = {

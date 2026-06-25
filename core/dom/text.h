@@ -13,7 +13,7 @@
 #include "node.h"
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 文本节点类
@@ -66,4 +66,4 @@ private:
     std::string data_;
 };
 
-} // namespace mbink
+} // namespace mblink

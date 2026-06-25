@@ -13,7 +13,7 @@
 
 #include "render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Inline-Block渲染对象
@@ -87,5 +87,5 @@ private:
     void PaintAudioElement(SkCanvas* canvas, class HTMLAudioElement* audio, const Box& box);
 };
 
-} // namespace mbink
+} // namespace mblink
 

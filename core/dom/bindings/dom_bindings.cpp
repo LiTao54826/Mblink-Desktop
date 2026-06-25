@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 // Forward declaration
 void InitImageConstructor(JSContext* ctx);
@@ -99,4 +99,4 @@ void InitImageConstructor(JSContext* ctx) {
     JS_FreeValue(ctx, global);
 }
 
-} // namespace mbink
+} // namespace mblink

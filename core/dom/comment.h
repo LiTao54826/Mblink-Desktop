@@ -7,7 +7,7 @@
 
 #include "text.h"
 
-namespace mbink {
+namespace mblink {
 
 class Comment : public Text {
 public:
@@ -17,4 +17,4 @@ public:
     std::shared_ptr<Node> CloneNode(bool deep) override;
 };
 
-} // namespace mbink
+} // namespace mblink

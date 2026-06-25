@@ -4,13 +4,13 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 class Document;
 class QuickJSRuntime;
 class Window;
 }
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 
 bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
                            Window* window,
@@ -23,4 +23,4 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
                            bool* handled,
                            std::string* error = nullptr);
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

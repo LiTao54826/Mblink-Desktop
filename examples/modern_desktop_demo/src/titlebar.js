@@ -5,7 +5,7 @@
 import { h } from 'preact';
 import { colors, spacing, fonts, shadows } from './theme.js';
 
-// MBink Logo (内联 SVG — 引擎不支持 img src 加载 SVG)
+// MBlink Logo (内联 SVG — 引擎不支持 img src 加载 SVG)
 function Logo({ size }) {
     var s = size || 22;
     return h('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 100 100', width: s, height: s },

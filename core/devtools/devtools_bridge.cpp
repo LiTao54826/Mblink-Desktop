@@ -2,7 +2,7 @@
 
 #include <mutex>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 std::mutex g_bridge_mutex;
@@ -213,4 +213,4 @@ int DevToolsHttpStop(const DevToolsHostContext& context) {
     return api && api->http_stop ? api->http_stop(&context) : -3;
 }
 
-}  // namespace mbink
+}  // namespace mblink

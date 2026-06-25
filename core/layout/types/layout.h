@@ -11,7 +11,7 @@
 #include "geometry.h"
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Run Mode
@@ -302,5 +302,5 @@ struct CollectedFlexItem {
     std::optional<float> baseline;
 };
 
-} // namespace mbink
+} // namespace mblink
 

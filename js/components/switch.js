@@ -1,5 +1,5 @@
 /**
- * MBink Switch 组件
+ * MBlink Switch 组件
  *
  * Props:
  * - checked: boolean

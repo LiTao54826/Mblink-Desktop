@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -809,4 +809,4 @@ TEST_F(TableLayoutBaselineTest, HitTestingFindsButtonInsideNormalTableCell) {
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

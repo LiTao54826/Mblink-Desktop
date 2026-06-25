@@ -5,8 +5,8 @@
  * 继承自 VirtualScrollRenderer，实现日志专用渲染。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_
 
 #include "log_buffer.h"
 #include "log_search.h"
@@ -18,7 +18,7 @@
 
 #include <string_view>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 日志视图配置
@@ -217,6 +217,6 @@ private:
                                    bool has_vertical_scrollbar);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_

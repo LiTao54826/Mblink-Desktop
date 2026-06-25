@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // CubicBezier Implementation
@@ -316,5 +316,5 @@ std::pair<TimingFunction, CubicBezier> CSSTransition::ParseSingleTimingFunction(
     return {TimingFunction::EASE, CubicBezier(0.25f, 0.1f, 0.25f, 1.0f)};
 }
 
-} // namespace mbink
+} // namespace mblink
 

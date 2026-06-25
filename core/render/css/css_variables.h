@@ -20,7 +20,7 @@
 #include <optional>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief CSS 变量存储
@@ -201,5 +201,5 @@ bool IsValidCustomPropertyName(const std::string& name);
  */
 std::string NormalizeCustomPropertyName(const std::string& name);
 
-} // namespace mbink
+} // namespace mblink
 

@@ -25,7 +25,7 @@
 class SkCanvas;
 class SkSurface;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 合成统计信息
@@ -319,4 +319,4 @@ private:
     double frame_start_time_ = 0.0;
 };
 
-} // namespace mbink
+} // namespace mblink

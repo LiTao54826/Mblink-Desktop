@@ -16,7 +16,7 @@
 
 #include "nlohmann/json.hpp"
 
-namespace mbink {
+namespace mblink {
 
 using json = nlohmann::json;
 
@@ -123,4 +123,4 @@ private:
     uint32_t reentrantMutationCount_ = 0;
 };
 
-} // namespace mbink
+} // namespace mblink

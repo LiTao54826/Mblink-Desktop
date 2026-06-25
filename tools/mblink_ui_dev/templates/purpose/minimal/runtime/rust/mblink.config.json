@@ -1,0 +1,23 @@
+﻿{
+  "template": "minimal/rust",
+  "purpose": "minimal",
+  "runtime": "rust",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "window": {
+    "title": "MBlink minimal (rust)",
+    "width": 900,
+    "height": 640
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false,
+    "hide_console": true,
+    "icon": "assets/app.ico"
+  }
+}

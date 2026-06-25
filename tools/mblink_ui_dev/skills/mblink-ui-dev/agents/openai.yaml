@@ -1,0 +1,4 @@
+interface:
+  display_name: "MBlink UI Dev"
+  short_description: "MBlink UI dev CLI, MCP, devtools, and C API parity"
+  default_prompt: "Use $mblink-ui-dev to build, inspect, and verify MBlink UI behavior across devtools and C API hosts."

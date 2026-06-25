@@ -9,7 +9,7 @@
 
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTMLLinkElement 类
@@ -126,5 +126,5 @@ private:
     bool loaded_ = false;    ///< 是否已加载
 };
 
-} // namespace mbink
+} // namespace mblink
 

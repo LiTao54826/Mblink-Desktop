@@ -16,7 +16,7 @@
 #include <cmath>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 DragManager::DragManager()
     : drag_mode_(DragMode::None)
@@ -565,5 +565,5 @@ void DragManager::SendDragEvents(const std::unordered_set<Element*>& old_items,
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

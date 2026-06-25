@@ -37,8 +37,8 @@ Please include as much of the following as possible:
 Current support is best-effort only.
 当前支持方式仅为 best-effort。
 
-MBink is primarily maintained as a personal project.
-MBink 目前主要还是一个个人维护项目。
+MBlink is primarily maintained as a personal project.
+MBlink 目前主要还是一个个人维护项目。
 
 Because development time and testing capacity are limited, not every example, platform, binding, framework combination, or edge case can be verified one by one before release.
 由于个人开发时间和测试精力有限，不可能在发布前把每个示例、每个平台、每种绑定、每个框架组合和所有边角情况都一一测试完。
@@ -52,8 +52,8 @@ The repository does not currently document:
 
 ## Sponsor the Author | 赞助作者
 
-If MBink is useful to you, sponsorship helps fund more time for:
-如果 MBink 对你有帮助，赞助会直接支持这些工作继续推进：
+If MBlink is useful to you, sponsorship helps fund more time for:
+如果 MBlink 对你有帮助，赞助会直接支持这些工作继续推进：
 
 - more example and workflow testing / 补更多示例和工作流测试
 - better documentation and onboarding / 完善文档和上手体验

@@ -1,5 +1,5 @@
 /**
- * MBink Radio 组件
+ * MBlink Radio 组件
  *
  * Props:
  * - checked: boolean

@@ -6,7 +6,7 @@
 #include "dom_observer.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 void DOMObserverManager::AddObserver(DOMObserver* observer) {
     if (observer && std::find(observers_.begin(), observers_.end(), observer) == observers_.end()) {
@@ -77,5 +77,5 @@ void DOMObserverManager::NotifyPseudoClassChanged(std::shared_ptr<Element> eleme
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

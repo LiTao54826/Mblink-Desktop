@@ -20,7 +20,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace mbink {
+namespace mblink {
 
 BorderPainter::BorderPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -578,4 +578,4 @@ void BorderPainter::PaintSegmentedBorder(const Box& box,
     }
 }
 
-} // namespace mbink
+} // namespace mblink

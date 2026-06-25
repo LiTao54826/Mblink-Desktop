@@ -16,7 +16,7 @@
 #include <vector>
 #include <deque>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 性能统计数据
@@ -211,5 +211,5 @@ private:
     TimePoint start_;                    ///< 开始时间
 };
 
-} // namespace mbink
+} // namespace mblink
 

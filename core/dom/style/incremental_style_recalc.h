@@ -15,7 +15,7 @@
 
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -126,4 +126,4 @@ private:
     Document* current_document_ = nullptr;
 };
 
-} // namespace mbink
+} // namespace mblink

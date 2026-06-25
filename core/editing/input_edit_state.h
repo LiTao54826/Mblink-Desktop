@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 struct InputEditState;
 
@@ -53,5 +53,5 @@ struct InputEditState {
 
 std::shared_ptr<InputEditState> CreateInputEditState();
 
-}  // namespace mbink
+}  // namespace mblink
 

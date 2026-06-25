@@ -2,16 +2,16 @@
 
 [English](BINDINGS.md) | 中文
 
-MBink 的结构核心是“一个共享运行时 + 多个宿主表面”。
+MBlink 的结构核心是“一个共享运行时 + 多个宿主表面”。
 
 ## 先理解运行时模型
 
 与其先按语言来理解，不如先按运行时层次来理解：
 
-- `mbink.dll`：共享运行时核心
+- `mblink.dll`：共享运行时核心
 - `esm_loader.exe`：仓库里最容易直观理解的手动宿主
-- `mbink-ui-dev.exe`：项目开发工具层
-- `mbink_devtools.dll`：仅开发期使用的快照/控制与运行时 HTTP MCP 伴随组件
+- `mblink-ui-dev.exe`：项目开发工具层
+- `mblink_devtools.dll`：仅开发期使用的快照/控制与运行时 HTTP MCP 伴随组件
 
 所以更合适的理解方式是：各种绑定都是围绕同一运行时的宿主适配层，而不是各自独立的一套运行时。
 
@@ -26,7 +26,7 @@ MBink 的结构核心是“一个共享运行时 + 多个宿主表面”。
 
 ## 推荐阅读顺序
 
-1. `mbink-ui-dev`
+1. `mblink-ui-dev`
 2. `esm_loader`
 3. Python
 4. Rust 或 Go（按需）
@@ -47,16 +47,16 @@ Python 是当前最适合先读的语言绑定，原因包括：
 
 一些重要仓库事实：
 
-- 运行时产物会复制到 `bindings/python/mbink/bin/`
-- Python 包通过 `ctypes` 加载 `mbink.dll`
+- 运行时产物会复制到 `bindings/python/mblink/bin/`
+- Python 包通过 `ctypes` 加载 `mblink.dll`
 - UI-dev 快照/控制和 HTTP MCP 可以通过可选 devtools 路径启用
 
 ## Rust
 
 Rust 绑定位于：
 
-- `bindings/rust/mbink-sys`
-- `bindings/rust/mbink`
+- `bindings/rust/mblink-sys`
+- `bindings/rust/mblink`
 
 当你需要下面这些特性时，它会比较有价值：
 
@@ -72,7 +72,7 @@ Rust 绑定位于：
 
 Go 绑定位于：
 
-- `bindings/go/mbink`
+- `bindings/go/mblink`
 
 在下面这些场景下它是一个合理选择：
 
@@ -87,7 +87,7 @@ Go 绑定位于：
 
 对 Python、Rust、Go 而言，有一条共同的开发期规则：
 
-- `mbink_devtools.dll` 需要按需加载
+- `mblink_devtools.dll` 需要按需加载
 - 它不应被视为生产运行时
 - 可观察到的运行时行为应尽量和共享 C API 表面保持一致
 

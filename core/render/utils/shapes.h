@@ -13,7 +13,7 @@
 #include "include/core/SkPoint.h"
 #include "paint.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 图形绘制类
@@ -78,4 +78,4 @@ private:
     SkPath path_;
 };
 
-} // namespace mbink
+} // namespace mblink

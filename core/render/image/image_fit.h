@@ -17,7 +17,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Result of object-fit calculation
@@ -89,4 +89,4 @@ ObjectPositionOffset ParseObjectPosition(
     float available_height
 );
 
-} // namespace mbink
+} // namespace mblink

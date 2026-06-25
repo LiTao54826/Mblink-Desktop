@@ -21,7 +21,7 @@
 // 前向声明
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Window;
@@ -343,4 +343,4 @@ public:
     bool UpdatePanelBorderDrag(float x, float y, float window_width, float window_height);
 };
 
-} // namespace mbink
+} // namespace mblink

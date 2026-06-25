@@ -5,15 +5,15 @@
  * 支持按级别和源名过滤日志。
  */
 
-#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_
-#define MBINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_
+#ifndef MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_
+#define MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_
 
 #include "log_buffer.h"
 
 #include <set>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 日志过滤器
@@ -101,6 +101,6 @@ private:
     bool filter_by_source_;               ///< 是否启用源名过滤
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_
+#endif  // MBLINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_

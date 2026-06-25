@@ -6,7 +6,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Set-Location (Join-Path $PSScriptRoot '..\..')
 
 $exe = Join-Path (Get-Location) 'build/bin/Release/esm_loader.exe'
-$dll = Join-Path (Get-Location) 'build/bin/Release/mbink.dll'
+$dll = Join-Path (Get-Location) 'build/bin/Release/mblink.dll'
 $tmpRoot = Join-Path (Get-Location) 'tmp/esm_loader_c_api_parity'
 $mainRoot = Join-Path $tmpRoot 'main'
 $noScriptRoot = Join-Path $tmpRoot 'no_scripts'
@@ -172,10 +172,10 @@ Write-Utf8File (Join-Path $noScriptRoot 'index.html') @'
 $dumpbin = Find-Dumpbin
 if ($dumpbin) {
     $dependents = & $dumpbin /DEPENDENTS $exe 2>&1 | Out-String
-    Assert ($dependents -like '*mbink.dll*') 'esm_loader does not depend on mbink.dll'
+    Assert ($dependents -like '*mblink.dll*') 'esm_loader does not depend on mblink.dll'
     Assert ($dependents -notlike '*SDL3*') 'esm_loader unexpectedly links SDL directly'
     Assert ($dependents -notlike '*skia*') 'esm_loader unexpectedly links Skia directly'
-    Write-Host '[OK]  esm_loader depends on mbink.dll'
+    Write-Host '[OK]  esm_loader depends on mblink.dll'
 } else {
     Write-Host '[SKIP] dumpbin not found; dependency check skipped'
 }

@@ -34,7 +34,7 @@
 #include "nlohmann/json.hpp"
 #include "quickjs/js_value_wrapper.h"
 
-namespace mbink {
+namespace mblink {
 
 using json = nlohmann::json;
 
@@ -396,5 +396,5 @@ private:
     ErrorCallback error_callback_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

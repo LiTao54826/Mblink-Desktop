@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace mbink::input_ime_geometry {
+namespace mblink::input_ime_geometry {
 
 Result ResolveInputGeometry(const Request& request) {
     Result result;
@@ -54,4 +54,4 @@ Result ResolveInputGeometry(const Request& request) {
     return result;
 }
 
-}  // namespace mbink::input_ime_geometry
+}  // namespace mblink::input_ime_geometry

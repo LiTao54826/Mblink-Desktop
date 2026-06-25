@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mbink import App
+from mblink import App
 
 app = App("Native Controls Demo", 1100, 760, gpu=False)
 
@@ -32,7 +32,7 @@ app.load_html("""<!DOCTYPE html>
 <body>
   <div class="layout">
     <div class="panel">
-      <div class="title">MBink Native Controls</div>
+      <div class="title">MBlink Native Controls</div>
       <div class="desc">左侧是 Preact 控制面板；右侧直接使用原生 &lt;logview&gt; 与 &lt;terminal&gt; 元素，由 Python 通过 C API 直接操作。</div>
       <div id="root"></div>
       <div class="status" id="status"></div>
@@ -62,7 +62,7 @@ def mark(action: str, message: str, level: str = "INFO"):
 
 
 logs.append("INFO", "python", "native controls demo booted")
-term.write("MBink terminal ready.\r\n")
+term.write("MBlink terminal ready.\r\n")
 term.write("Type actions from the left panel.\r\n")
 
 

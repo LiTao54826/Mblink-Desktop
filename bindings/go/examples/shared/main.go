@@ -8,11 +8,11 @@ import (
 	"log"
 	"strings"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Shared", 900, 600)
+	app, err := autorun.NewApp("MBlink Go Shared", 900, 600)
 	if err != nil {
 		log.Fatal(err)
 	}

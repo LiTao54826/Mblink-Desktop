@@ -13,12 +13,12 @@
 #include "text_run.h"
 
 // Forward declarations
-namespace mbink {
+namespace mblink {
 class RenderObject;
 struct ComputedStyle;
 }
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 内联盒类型
@@ -192,5 +192,5 @@ struct InlineBox {
     }
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -17,7 +17,7 @@
 #include <lexbor/css/css.h>
 #include <lexbor/selectors/selectors.h>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class LexborElement;
@@ -473,5 +473,5 @@ private:
     LexborDocument* document_;      // 所属文档
 };
 
-} // namespace mbink
+} // namespace mblink
 

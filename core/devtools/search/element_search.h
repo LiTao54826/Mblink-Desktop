@@ -11,7 +11,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 搜索类型
@@ -89,4 +89,4 @@ private:
     std::vector<std::shared_ptr<Element>> SearchByText(const std::string& text);
 };
 
-} // namespace mbink
+} // namespace mblink

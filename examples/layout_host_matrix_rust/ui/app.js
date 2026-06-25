@@ -318,7 +318,7 @@ function App() {
   return h('main', { id: 'app-shell', style: S.shell },
     h('header', { id: 'matrix-header', style: S.header },
       h('div', null,
-        h('p', { style: S.eyebrow }, 'MBink Layout + Host Matrix'),
+        h('p', { style: S.eyebrow }, 'MBlink Layout + Host Matrix'),
         h('h1', { style: S.title }, 'Common Layout Combinations for Framework Bug Tests'),
         h('p', { style: S.summary }, `Generated ${generatedAt}. Provider: ${info.host} / ${info.mode}.`)
       ),

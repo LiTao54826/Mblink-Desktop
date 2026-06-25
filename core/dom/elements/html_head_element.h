@@ -7,7 +7,7 @@
 
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTMLHeadElement 类
@@ -27,4 +27,4 @@ public:
     ~HTMLHeadElement() override = default;
 };
 
-} // namespace mbink
+} // namespace mblink

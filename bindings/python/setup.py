@@ -1,5 +1,5 @@
 """
-MBink Python绑定安装脚本
+MBlink Python绑定安装脚本
 
 功能：
 - 安装Python包
@@ -19,7 +19,7 @@ import sys
 # 项目根目录
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 版本信息（与 mbink/__init__.py / mbink/__init__.py 保持一致）
+# 版本信息（与 mblink/__init__.py / mblink/__init__.py 保持一致）
 VERSION = "0.5.0"
 
 # 本目录的 README（Python 绑定专用文档）
@@ -29,20 +29,20 @@ _long_desc = open(_readme_path, encoding='utf-8').read() if os.path.exists(_read
 
 
 setup(
-    name='mbink',
+    name='mblink',
     version=VERSION,
-    description='MBink Python desktop UI framework (ctypes + C ABI)',
+    description='MBlink Python desktop UI framework (ctypes + C ABI)',
     long_description=_long_desc,
     long_description_content_type='text/markdown',
-    author='MBink Team',
-    author_email='team@mbink.dev',
-    url='https://github.com/mbink/mbink',
+    author='MBlink Team',
+    author_email='team@mblink.dev',
+    url='https://github.com/mblink/mblink',
     license='MIT',
 
-    packages=['mbink'],
-    package_dir={'mbink': 'mbink'},
+    packages=['mblink'],
+    package_dir={'mblink': 'mblink'},
     # 包含运行时动态库（Windows: .dll，Linux: .so，macOS: .dylib）
-    package_data={'mbink': ['bin/*.dll', 'bin/*.so', 'bin/*.dylib']},
+    package_data={'mblink': ['bin/*.dll', 'bin/*.so', 'bin/*.dylib']},
     
     install_requires=[
         # 运行时依赖

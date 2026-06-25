@@ -2,7 +2,7 @@
 
 #include "transition.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 缓动函数类
@@ -64,5 +64,5 @@ public:
     static float Apply(float t, TimingFunction timing, const CubicBezier& bezier = CubicBezier());
 };
 
-} // namespace mbink
+} // namespace mblink
 

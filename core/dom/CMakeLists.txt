@@ -105,9 +105,9 @@ set(DOM_SOURCES
     ${DOM_ELEMENTS_SOURCES}
 )
 
-add_library(mbink_dom STATIC ${DOM_SOURCES})
+add_library(mblink_dom STATIC ${DOM_SOURCES})
 
-target_include_directories(mbink_dom PUBLIC
+target_include_directories(mblink_dom PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party/lexbor/source
@@ -115,11 +115,11 @@ target_include_directories(mbink_dom PUBLIC
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
-target_link_libraries(mbink_dom PUBLIC
-    mbink_utils
-    mbink_event
-    mbink_lexbor
-    mbink_render
+target_link_libraries(mblink_dom PUBLIC
+    mblink_utils
+    mblink_event
+    mblink_lexbor
+    mblink_render
     lexbor_static
     virtual_text
     terminal_element
@@ -127,23 +127,23 @@ target_link_libraries(mbink_dom PUBLIC
 )
 
 if(TARGET SDL3::SDL3)
-    target_link_libraries(mbink_dom PUBLIC SDL3::SDL3)
+    target_link_libraries(mblink_dom PUBLIC SDL3::SDL3)
 elseif(TARGET SDL3-static)
-    target_link_libraries(mbink_dom PUBLIC SDL3-static)
+    target_link_libraries(mblink_dom PUBLIC SDL3-static)
 endif()
 
 # 链接Skia（如果启用）- 需要SkRect.h
 if(TARGET skia)
-    target_link_libraries(mbink_dom PUBLIC skia)
+    target_link_libraries(mblink_dom PUBLIC skia)
 endif()
 
 # 匹配 Skia 的运行时库设置
 if(MSVC)
-    target_compile_options(mbink_dom PUBLIC
+    target_compile_options(mblink_dom PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(mbink_dom PUBLIC
+    target_compile_definitions(mblink_dom PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()

@@ -49,7 +49,7 @@
 
 namespace fs = std::filesystem;
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -523,7 +523,7 @@ bool Document::LoadHTML(const std::string& html) {
         return false;
     }
 
-    // 从 Lexbor DOM 同步到 MBink DOM
+    // 从 Lexbor DOM 同步到 MBlink DOM
     SyncFromLexbor();
     AutoMountNativeDeclarativeBindings();
 
@@ -549,7 +549,7 @@ bool Document::LoadHTMLFile(const std::string& file_path) {
         return false;
     }
 
-    // 从 Lexbor DOM 同步到 MBink DOM
+    // 从 Lexbor DOM 同步到 MBlink DOM
     SyncFromLexbor();
     AutoMountNativeDeclarativeBindings();
 
@@ -570,7 +570,7 @@ std::string Document::SaveHTML() {
         return "";
     }
 
-    // 如果 MBink DOM 已修改，先同步到 Lexbor
+    // 如果 MBlink DOM 已修改，先同步到 Lexbor
     if (lexbor_dirty_) {
         SyncToLexbor();
         lexbor_dirty_ = false;
@@ -601,7 +601,7 @@ void Document::SyncFromLexbor() {
         return;
     }
 
-    // 转换 Lexbor DOM 到 MBink DOM
+    // 转换 Lexbor DOM 到 MBlink DOM
     lxb_dom_node_t* lexbor_node = lxb_dom_interface_node(lexbor_html->GetNativeElement());
     auto doc_ptr = std::dynamic_pointer_cast<Document>(shared_from_this());
     std::shared_ptr<Node> html_node = Element::ConvertLexborNodeToNode(lexbor_node, doc_ptr);
@@ -666,7 +666,7 @@ void Document::SyncToLexbor() {
         return;
     }
 
-    // 序列化 MBink DOM 为 HTML
+    // 序列化 MBlink DOM 为 HTML
     std::string html = document_element_->GetOuterHTML();
 
     // 重新解析到 Lexbor
@@ -962,7 +962,7 @@ void Document::AppendLoadError(const std::string& error) {
         return;
     }
     load_errors_.push_back(error);
-    std::cerr << "[MBink Document Error] " << error << std::endl;
+    std::cerr << "[MBlink Document Error] " << error << std::endl;
 }
 
 // ========== 资源加载 ==========
@@ -1044,4 +1044,4 @@ void Document::LoadExternalStylesheets() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

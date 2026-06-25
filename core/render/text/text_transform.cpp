@@ -7,7 +7,7 @@
 #include <cctype>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // UTF-8 decoding helper function
 // Returns codepoint and number of bytes consumed
@@ -206,4 +206,4 @@ std::string TransformText(const std::string& text, const std::string& transform)
     return text;
 }
 
-} // namespace mbink
+} // namespace mblink

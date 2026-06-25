@@ -16,7 +16,7 @@
 #pragma comment(lib, "winhttp.lib")
 #endif
 
-namespace mbink {
+namespace mblink {
 
 HttpClient::HttpClient(std::shared_ptr<BackgroundTaskRunner> background_runner)
     : background_runner_(background_runner ? std::move(background_runner)
@@ -158,7 +158,7 @@ HttpResponse HttpClient::DoRequest(const std::string& url, const HttpRequestOpti
     std::wstring wmethod(options.method.begin(), options.method.end());
     
     // 初始化 WinHTTP
-    HINTERNET hSession = WinHttpOpen(L"MBink/1.0",
+    HINTERNET hSession = WinHttpOpen(L"MBlink/1.0",
                                      WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                      WINHTTP_NO_PROXY_NAME,
                                      WINHTTP_NO_PROXY_BYPASS, 0);
@@ -300,5 +300,5 @@ HttpResponse HttpClient::DoRequest(const std::string& url, const HttpRequestOpti
 }
 #endif
 
-} // namespace mbink
+} // namespace mblink
 

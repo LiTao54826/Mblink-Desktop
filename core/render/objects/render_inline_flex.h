@@ -13,7 +13,7 @@
 
 #include "render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 // Forward declaration
 class RenderInlineFlex;
@@ -56,5 +56,5 @@ private:
     void LayoutAsFlex(float parent_width, float parent_height);
 };
 
-} // namespace mbink
+} // namespace mblink
 

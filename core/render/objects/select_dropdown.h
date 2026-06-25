@@ -11,7 +11,7 @@
 #include "include/core/SkRect.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Select 下拉菜单信息
@@ -132,5 +132,5 @@ private:
     static constexpr float VIEWPORT_MARGIN = 4.0f;
 };
 
-} // namespace mbink
+} // namespace mblink
 

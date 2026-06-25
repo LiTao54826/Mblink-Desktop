@@ -30,7 +30,7 @@
 #pragma comment(lib, "Psapi.lib")
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 EventLoop* g_active_event_loop = nullptr;
@@ -305,7 +305,7 @@ void WindowBindings::Cleanup() {
     JS_SetPropertyStr(ctx, global, "cancelAnimationFrame", JS_UNDEFINED);
 
     JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
-    JS_SetPropertyStr(ctx, global, "__mbink_window_ptr", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "__mblink_window_ptr", JS_UNDEFINED);
 
     JSValue window_obj = JS_GetPropertyStr(ctx, global, "window");
     if (!JS_IsUndefined(window_obj) && !JS_IsNull(window_obj)) {
@@ -385,7 +385,7 @@ void WindowBindings::BindWindowObject() {
         return true;
     });
 
-    runtime_->RegisterFunction("__mbinkDumpNativeLeakStats", [this](const json& args) -> json {
+    runtime_->RegisterFunction("__mblinkDumpNativeLeakStats", [this](const json& args) -> json {
         std::string tag = "native";
         bool run_gc_first = true;
         bool should_purge_skia = false;
@@ -516,11 +516,11 @@ void WindowBindings::BindWindowObject() {
         if (typeof globalThis.globalThis === 'undefined') {
             globalThis.globalThis = globalThis;
         }
-        const __mbinkExistingWindow = globalThis.window;
-        if (!__mbinkExistingWindow || __mbinkExistingWindow !== globalThis) {
-            if (__mbinkExistingWindow && typeof __mbinkExistingWindow === 'object') {
+        const __mblinkExistingWindow = globalThis.window;
+        if (!__mblinkExistingWindow || __mblinkExistingWindow !== globalThis) {
+            if (__mblinkExistingWindow && typeof __mblinkExistingWindow === 'object') {
                 try {
-                    Object.assign(globalThis, __mbinkExistingWindow);
+                    Object.assign(globalThis, __mblinkExistingWindow);
                 } catch (_) {}
             }
             globalThis.window = globalThis;
@@ -554,13 +554,13 @@ void WindowBindings::BindWindowObject() {
         globalThis.close = function() { return __windowClose(); };
 
         (function(global) {
-            const DEFAULT_ORIGIN = 'http://mbink.local';
+            const DEFAULT_ORIGIN = 'http://mblink.local';
 
-            const navigationState = global.__mbinkNavigationState || {
+            const navigationState = global.__mblinkNavigationState || {
                 stack: [],
                 index: 0
             };
-            global.__mbinkNavigationState = navigationState;
+            global.__mblinkNavigationState = navigationState;
 
             function stringify(value) {
                 return value == null ? '' : String(value);
@@ -605,7 +605,7 @@ void WindowBindings::BindWindowObject() {
                 const normalized = normalizeHref(input);
                 const match = /^(?:([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/.exec(normalized) || [];
                 const protocol = match[1] ? match[1] + ':' : 'http:';
-                const host = match[2] || 'mbink.local';
+                const host = match[2] || 'mblink.local';
                 let pathname = match[3] || '/';
                 if (!pathname.startsWith('/')) {
                     pathname = '/' + pathname;
@@ -1058,5 +1058,5 @@ void DocumentBindings::BindProperties() {
     // 已在 WindowBindings::BindDocumentObject 中实现
 }
 
-} // namespace mbink
+} // namespace mblink
 

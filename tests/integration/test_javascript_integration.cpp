@@ -11,7 +11,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class JavaScriptIntegrationTest : public DOMTestBase {
@@ -253,4 +253,4 @@ TEST_F(JavaScriptIntegrationTest, TodoAppSimulation) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

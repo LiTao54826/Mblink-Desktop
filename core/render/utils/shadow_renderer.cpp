@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cstdio>
 
-namespace mbink {
+namespace mblink {
 
 void ShadowRenderer::RenderBoxShadow(SkCanvas* canvas,
                                     const SkRect& rect,
@@ -189,5 +189,5 @@ sk_sp<SkMaskFilter> ShadowRenderer::CreateBlurFilter(float blur_radius) {
     return SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, blur_radius);
 }
 
-} // namespace mbink
+} // namespace mblink
 

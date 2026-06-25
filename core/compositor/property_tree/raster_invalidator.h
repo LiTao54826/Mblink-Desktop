@@ -17,7 +17,7 @@
 #include "include/core/SkRect.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 失效结果
@@ -187,4 +187,4 @@ private:
     const GeometryMapper& mapper_;
 };
 
-} // namespace mbink
+} // namespace mblink

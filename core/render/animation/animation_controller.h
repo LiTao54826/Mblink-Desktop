@@ -1,12 +1,12 @@
 /**
  * @file animation_controller.h
  * @brief CSS 动画控制器
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
-#ifndef MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
-#define MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#ifndef MBLINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#define MBLINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
 
 #include "animation.h"
 #include "keyframes.h"
@@ -17,7 +17,7 @@
 #include <optional>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -447,7 +447,7 @@ private:
     void UpdateSingleAnimation(std::shared_ptr<Element> element, const std::string& name, double current_time);
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#endif // MBLINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
 

@@ -5,11 +5,11 @@ package main
 import (
 	"log"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Native Controls", 1180, 760)
+	app, err := autorun.NewApp("MBlink Go Native Controls", 1180, 760)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 	term.Resize(28, 100)
-	must(term.Write("MBink terminal ready.\r\n"))
+	must(term.Write("MBlink terminal ready.\r\n"))
 	must(term.Write("This output is written by Go before app.Run().\r\n"))
 	_ = term.Execute("echo hello from terminal.execute")
 

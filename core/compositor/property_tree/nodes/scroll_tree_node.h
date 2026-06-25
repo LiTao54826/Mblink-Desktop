@@ -17,7 +17,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkPoint.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -262,4 +262,4 @@ private:
     RenderObject* render_object_ = nullptr;
 };
 
-} // namespace mbink
+} // namespace mblink

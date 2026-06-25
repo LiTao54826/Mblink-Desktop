@@ -1,6 +1,6 @@
 # UI Combinations Showcase Notes
 
-This example is a compact MBink desktop UI regression target. It intentionally combines common controls in one screen so development agents can verify layout, input, state changes, scroll containers, overlays, and toast feedback through `mbink-ui-dev` or the `esm_loader` UI-dev hooks.
+This example is a compact MBlink desktop UI regression target. It intentionally combines common controls in one screen so development agents can verify layout, input, state changes, scroll containers, overlays, and toast feedback through `mblink-ui-dev` or the `esm_loader` UI-dev hooks.
 
 ## What It Covers
 
@@ -30,24 +30,24 @@ build-tests\bin\Debug\esm_loader.exe examples\ui_combinations_showcase\app.js `
   --quit 2
 ```
 
-When `mbink-ui-dev build` is available, the project can also be opened through:
+When `mblink-ui-dev build` is available, the project can also be opened through:
 
 ```powershell
-build-tests\bin\Debug\mbink-ui-dev.exe open examples\ui_combinations_showcase
-build-tests\bin\Debug\mbink-ui-dev.exe snapshot --include-screenshot --project examples\ui_combinations_showcase
+build-tests\bin\Debug\mblink-ui-dev.exe open examples\ui_combinations_showcase
+build-tests\bin\Debug\mblink-ui-dev.exe snapshot --include-screenshot --project examples\ui_combinations_showcase
 ```
 
 ## Problems Found While Developing
 
-- Running `mbink-ui-dev` from the repository root can be ambiguous when multiple managed projects exist. Pass `--project <absolute-path>` for project-scoped commands.
-- `mbink-ui-dev build` requires `esbuild` to be available on `PATH` or inside the project `node_modules`. The direct `esm_loader` UI-dev hook is useful for validating single-file examples when the build tool is not installed.
+- Running `mblink-ui-dev` from the repository root can be ambiguous when multiple managed projects exist. Pass `--project <absolute-path>` for project-scoped commands.
+- `mblink-ui-dev build` requires `esbuild` to be available on `PATH` or inside the project `node_modules`. The direct `esm_loader` UI-dev hook is useful for validating single-file examples when the build tool is not installed.
 - Keep page-level scrolling disabled for desktop layouts. Scrollbars should live in the workspace, table, or feed regions that actually overflow.
 - Selector and interaction checks are not enough for layout-sensitive UI. The first screenshot showed a table squeezed beside another panel even though `#queue-table` queried successfully, so the table was moved into a full-width panel.
 - Scope global form styles carefully. A blanket `input { width: 100% }` made table checkboxes expand across their cells and visually hid the row text; `input[type="checkbox"]` now has explicit stable dimensions.
 
 ## Framework Bug Policy
 
-Do not hide valid CSS, DOM, input, paint, or snapshot defects with app-specific styling. If a valid minimal slice fails in MBink:
+Do not hide valid CSS, DOM, input, paint, or snapshot defects with app-specific styling. If a valid minimal slice fails in MBlink:
 
 1. Reduce the issue to the smallest selector or component in this example or a focused fixture.
 2. Verify the mismatch with snapshot, screenshot, query, inspect, logs, and errors.

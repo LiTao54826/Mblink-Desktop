@@ -7,7 +7,7 @@
 
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTMLScriptElement 类
@@ -130,4 +130,4 @@ private:
     bool executed_ = false;  // 是否已执行
 };
 
-} // namespace mbink
+} // namespace mblink

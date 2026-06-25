@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class PtyBackend;
@@ -256,4 +256,4 @@ private:
     void RequestCoalescedRepaint(RepaintReason reason);
 };
 
-}  // namespace mbink
+}  // namespace mblink

@@ -16,7 +16,7 @@
 #include "util/resolve.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Block Item
@@ -120,5 +120,5 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     Point<float> area_offset
 );
 
-} // namespace mbink
+} // namespace mblink
 

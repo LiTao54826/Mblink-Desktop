@@ -20,7 +20,7 @@ namespace {
 
 fs::path Utf8PathToFsPath(const std::string& path) {
 #ifdef _WIN32
-    return fs::path(mbink::utils::UTF8ToWide(path));
+    return fs::path(mblink::utils::UTF8ToWide(path));
 #else
     return fs::path(path);
 #endif
@@ -28,7 +28,7 @@ fs::path Utf8PathToFsPath(const std::string& path) {
 
 std::string FsPathToUtf8String(const fs::path& path) {
 #ifdef _WIN32
-    return mbink::utils::WideToUTF8(path.wstring());
+    return mblink::utils::WideToUTF8(path.wstring());
 #else
     return path.string();
 #endif
@@ -47,7 +47,7 @@ bool IsAbsoluteImportPath(const std::string& import_path) {
 
 }  // namespace
 
-namespace mbink {
+namespace mblink {
 
 ModuleResolver::ModuleResolver() = default;
 
@@ -385,4 +385,4 @@ std::vector<ResolvedModule> ModuleResolver::Resolve(const std::string& entry_fil
     return sorted;
 }
 
-}  // namespace mbink
+}  // namespace mblink

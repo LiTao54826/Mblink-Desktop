@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CSS布局引擎对比测试 - 对比MBink vs Chrome 布局差异
+"""CSS布局引擎对比测试 - 对比MBlink vs Chrome 布局差异
 
 用法:
-  cd d:\\code\\C\\MBink
+  cd d:\\code\\C\\MBlink
   python tests/css_compare/run_compare.py
   python tests/css_compare/run_compare.py --tolerance 2 --timeout 8
   python tests/css_compare/run_compare.py --no-chrome
@@ -20,8 +20,8 @@ R="\033[0m"; RED="\033[91m"; YEL="\033[93m"; GRN="\033[92m"
 CYN="\033[96m"; BLD="\033[1m"; GRY="\033[90m"
 def cp(c, *a): print(c + " ".join(str(x) for x in a) + R)
 
-# ─── 1. MBink 采集 ───────────────────────────────────────────────────────────
-def collect_mbink(timeout: int) -> dict:
+# ─── 1. MBlink 采集 ───────────────────────────────────────────────────────────
+def collect_mblink(timeout: int) -> dict:
     if not ESM_EXE.exists():
         cp(RED, f"[错误] esm_loader 不存在: {ESM_EXE}"); sys.exit(1)
     # --borderless 去掉标题栏，使窗口尺寸 == 内容区尺寸，与 Chrome viewport 一致
@@ -30,13 +30,13 @@ def collect_mbink(timeout: int) -> dict:
            "--width", str(VW), "--height", str(VH),
            "--borderless", "--no-gpu",
            "-q", str(timeout)]
-    cp(CYN, f"\n[MBink] 运行: {' '.join(cmd)}")
+    cp(CYN, f"\n[MBlink] 运行: {' '.join(cmd)}")
     try:
         r = subprocess.run(cmd, capture_output=True, text=True,
                            timeout=timeout + 5, cwd=str(ROOT_DIR))
     except subprocess.TimeoutExpired:
-        cp(RED, "[MBink] 进程超时！"); return {}, {}
-    return _parse(r.stdout + r.stderr, "MBink")
+        cp(RED, "[MBlink] 进程超时！"); return {}, {}
+    return _parse(r.stdout + r.stderr, "MBlink")
 
 def _parse(text: str, src: str) -> tuple:
     for line in text.splitlines():
@@ -174,9 +174,9 @@ def collect_chrome() -> tuple:
 #  ⑤ 兄弟间距：同父容器下相邻子项之间的相对距离差
 
 SCOLOR = {"PASS": GRN, "WARN": YEL, "FAIL": RED,
-          "MISSING_MBINK": RED, "MISSING_CHROME": YEL, "MBINK_ERROR": RED}
+          "MISSING_MBLINK": RED, "MISSING_CHROME": YEL, "MBLINK_ERROR": RED}
 SICON  = {"PASS": "✅", "WARN": "⚠️ ", "FAIL": "❌",
-          "MISSING_MBINK": "❓", "MISSING_CHROME": "❓", "MBINK_ERROR": "💥"}
+          "MISSING_MBLINK": "❓", "MISSING_CHROME": "❓", "MBLINK_ERROR": "💥"}
 
 def _chk(checks, field, mv, cv, tol, desc):
     """像素差异检查（跳过 None）"""
@@ -185,7 +185,7 @@ def _chk(checks, field, mv, cv, tol, desc):
     d = abs(mv - cv)
     st = "PASS" if d <= 1.0 else ("WARN" if d <= tol else "FAIL")
     checks.append({"field": field, "desc": desc,
-                   "mbink": round(mv, 2), "chrome": round(cv, 2),
+                   "mblink": round(mv, 2), "chrome": round(cv, 2),
                    "diff": round(d, 2), "status": st})
 
 def _chk_bool(checks, field, mv, cv, desc):
@@ -194,18 +194,18 @@ def _chk_bool(checks, field, mv, cv, desc):
         return
     st = "PASS" if bool(mv) == bool(cv) else "FAIL"
     checks.append({"field": field, "desc": desc,
-                   "mbink": mv, "chrome": cv, "diff": 0, "status": st})
+                   "mblink": mv, "chrome": cv, "diff": 0, "status": st})
 
 def compare(mb_data: dict, ch_data: dict, tol: float) -> list:
     results = []
     for tid in sorted(set(mb_data) | set(ch_data)):
         mb, ch = mb_data.get(tid), ch_data.get(tid)
         if mb is None:
-            results.append({"testid": tid, "status": "MISSING_MBINK",  "detail": "仅Chrome有"}); continue
+            results.append({"testid": tid, "status": "MISSING_MBLINK",  "detail": "仅Chrome有"}); continue
         if ch is None:
-            results.append({"testid": tid, "status": "MISSING_CHROME", "detail": "仅MBink有"}); continue
+            results.append({"testid": tid, "status": "MISSING_CHROME", "detail": "仅MBlink有"}); continue
         if "error" in mb:
-            results.append({"testid": tid, "status": "MBINK_ERROR",    "detail": mb["error"]}); continue
+            results.append({"testid": tid, "status": "MBLINK_ERROR",    "detail": mb["error"]}); continue
 
         checks = []
 
@@ -291,7 +291,7 @@ def compare_sibling_gaps(mb_data: dict, ch_data: dict, tol: float) -> list:
                 d = abs(mb_gap - ch_gap)
                 st = "PASS" if d <= 1.0 else ("WARN" if d <= tol else "FAIL")
                 checks.append({"field": "hgap", "desc": f"水平间距 子{i}↔子{i+1}",
-                                "mbink": mb_gap, "chrome": ch_gap,
+                                "mblink": mb_gap, "chrome": ch_gap,
                                 "diff": round(d, 2), "status": st})
             else:
                 # 垂直排列（col 方向） → 检测垂直 gap
@@ -300,7 +300,7 @@ def compare_sibling_gaps(mb_data: dict, ch_data: dict, tol: float) -> list:
                 d = abs(mb_gap - ch_gap)
                 st = "PASS" if d <= 1.0 else ("WARN" if d <= tol else "FAIL")
                 checks.append({"field": "vgap", "desc": f"垂直间距 子{i}↔子{i+1}",
-                                "mbink": mb_gap, "chrome": ch_gap,
+                                "mblink": mb_gap, "chrome": ch_gap,
                                 "diff": round(d, 2), "status": st})
 
             # 只报告非 PASS 的
@@ -321,7 +321,7 @@ def compare_sibling_gaps(mb_data: dict, ch_data: dict, tol: float) -> list:
 def print_report(results: list, tol: float):
     passes = sum(1 for r in results if r["status"] == "PASS")
     warns  = sum(1 for r in results if r["status"] == "WARN")
-    fails  = sum(1 for r in results if r["status"] in ("FAIL","MISSING_MBINK","MBINK_ERROR"))
+    fails  = sum(1 for r in results if r["status"] in ("FAIL","MISSING_MBLINK","MBLINK_ERROR"))
 
     # 生成纯文本内容（无 ANSI 颜色）
     ts  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -350,7 +350,7 @@ def print_report(results: list, tol: float):
         icon = SICON.get(st, "?")
         label = f"{icon} [{st:<14}]  {r['testid']}"
 
-        if st in ("MISSING_MBINK", "MISSING_CHROME", "MBINK_ERROR"):
+        if st in ("MISSING_MBLINK", "MISSING_CHROME", "MBLINK_ERROR"):
             emit(col + label + f"  ({r.get('detail','')})" + R)
             continue
 
@@ -360,11 +360,11 @@ def print_report(results: list, tol: float):
             for ck in r.get("checks", r.get("fields", [])):
                 if ck["status"] == "PASS": continue
                 fc  = SCOLOR.get(ck["status"], R)
-                mv  = ck["mbink"]; cv = ck["chrome"]
+                mv  = ck["mblink"]; cv = ck["chrome"]
                 mvs = f"{mv:.1f}" if isinstance(mv, float) else str(mv)
                 cvs = f"{cv:.1f}" if isinstance(cv, float) else str(cv)
                 emit(fc + f"    {ck.get('desc', ck['field']):26s}"
-                     f"  MBink={mvs:>8}  Chrome={cvs:>8}"
+                     f"  MBlink={mvs:>8}  Chrome={cvs:>8}"
                      f"  Δ={ck['diff']}" + R)
 
     emit(SEP)
@@ -395,7 +395,7 @@ def save_html_report(results: list, tol: float) -> Path:
         icon = SICON.get(st, "?")
         tid  = r["testid"]
 
-        if st in ("MISSING_MBINK", "MISSING_CHROME", "MBINK_ERROR"):
+        if st in ("MISSING_MBLINK", "MISSING_CHROME", "MBLINK_ERROR"):
             rows.append(f"<tr style='background:{bg}'>"
                         f"<td>{icon} {st}</td><td>{tid}</td>"
                         f"<td colspan='4'>{r.get('detail','')}</td></tr>")
@@ -408,7 +408,7 @@ def save_html_report(results: list, tol: float) -> Path:
         ck_parts = []
         for ck in ck_list:
             color = _CL.get(ck["status"], "black")
-            mv = ck["mbink"]; cv = ck["chrome"]
+            mv = ck["mblink"]; cv = ck["chrome"]
             mvs = f"{mv:.1f}" if isinstance(mv, float) else str(mv)
             cvs = f"{cv:.1f}" if isinstance(cv, float) else str(cv)
             ck_parts.append(
@@ -438,7 +438,7 @@ def save_html_report(results: list, tol: float) -> Path:
 
     passes = sum(1 for r in results if r["status"] == "PASS")
     warns  = sum(1 for r in results if r["status"] == "WARN")
-    fails  = sum(1 for r in results if r["status"] in ("FAIL", "MISSING_MBINK", "MBINK_ERROR"))
+    fails  = sum(1 for r in results if r["status"] in ("FAIL", "MISSING_MBLINK", "MBLINK_ERROR"))
 
     html = (
         f"<!DOCTYPE html><html><head><meta charset='UTF-8'>"
@@ -461,7 +461,7 @@ def save_html_report(results: list, tol: float) -> Path:
         f"</div>"
         f"<p style='font-size:11px;color:#666'>策略：相对坐标对比（relX/relY）+ 对齐偏差 + 溢出检测，不对比绝对 width/height</p>"
         f"<table>"
-        f"<tr><th>状态</th><th>TestID</th><th>MBink 坐标</th><th>Chrome 坐标</th><th>检查项详情</th></tr>"
+        f"<tr><th>状态</th><th>TestID</th><th>MBlink 坐标</th><th>Chrome 坐标</th><th>检查项详情</th></tr>"
         + "".join(rows)
         + "</table></body></html>"
     )
@@ -473,7 +473,7 @@ def main():
     pa = argparse.ArgumentParser(description="CSS布局引擎对比测试")
     pa.add_argument("--tolerance", type=float, default=2.0, help="像素容差，默认2px")
     pa.add_argument("--timeout",   type=int,   default=8,   help="esm_loader等待秒数，默认8s")
-    pa.add_argument("--no-chrome", action="store_true",     help="跳过Chrome，仅展示MBink数据")
+    pa.add_argument("--no-chrome", action="store_true",     help="跳过Chrome，仅展示MBlink数据")
     args = pa.parse_args()
 
     cp(BLD+CYN, "\n🔬 CSS 布局引擎对比测试")
@@ -481,7 +481,7 @@ def main():
     cp(GRY, f"   EXE  : {ESM_EXE}")
     cp(GRY, f"   容差 : ±{args.tolerance}px")
 
-    mb_data, mb_vp = collect_mbink(args.timeout)
+    mb_data, mb_vp = collect_mblink(args.timeout)
     if args.no_chrome:
         ch_data, ch_vp = {}, {}
     else:
@@ -495,13 +495,13 @@ def main():
         mw, mh = mb_vp.get("width", 0), mb_vp.get("height", 0)
         cw, ch_ = ch_vp.get("width", 0), ch_vp.get("height", 0)
         if abs(mw - cw) > 2 or abs(mh - ch_) > 2:
-            cp(YEL, f"\n⚠️  viewport 不一致！MBink={mw}x{mh}  Chrome={cw}x{ch_}")
+            cp(YEL, f"\n⚠️  viewport 不一致！MBlink={mw}x{mh}  Chrome={cw}x{ch_}")
             cp(YEL,  "   位置坐标差异可能因此偏大，建议使用 --borderless 模式")
         else:
             cp(GRN, f"   ✅ viewport 一致: {mw}x{mh}")
 
     if not ch_data:
-        cp(YEL, "\n⚠️  Chrome数据为空，仅展示MBink采集结果：")
+        cp(YEL, "\n⚠️  Chrome数据为空，仅展示MBlink采集结果：")
         for tid, el in sorted(mb_data.items()):
             print(f"  {tid:48s}  x={el.get('x',0):7.1f}  y={el.get('y',0):7.1f}"
                   f"  w={el.get('width',0):7.1f}  h={el.get('height',0):7.1f}")

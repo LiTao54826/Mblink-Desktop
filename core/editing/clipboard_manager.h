@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -154,4 +154,4 @@ private:
     std::string clipboard_text_;
 };
 
-} // namespace mbink
+} // namespace mblink

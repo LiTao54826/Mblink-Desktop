@@ -16,7 +16,7 @@
 #include <string>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 class RandomGenerator {
@@ -350,4 +350,4 @@ TEST_F(CursorOperationsPropertyTest, MoveCursorRelative) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink

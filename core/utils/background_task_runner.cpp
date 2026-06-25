@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 struct QueuedTask {
@@ -127,4 +127,4 @@ void BackgroundTaskRunner::WorkerLoop() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

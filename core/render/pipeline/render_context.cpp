@@ -6,7 +6,7 @@
 #include "render_context.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -147,5 +147,5 @@ void RenderContext::ApplyToCanvas() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

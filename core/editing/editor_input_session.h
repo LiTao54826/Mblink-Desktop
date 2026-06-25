@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_set>
 
-namespace mbink {
+namespace mblink {
 
 class Document;
 class Element;
@@ -53,4 +53,4 @@ private:
     std::unordered_set<SDL_Window*> prepared_text_input_windows_;
 };
 
-}  // namespace mbink
+}  // namespace mblink

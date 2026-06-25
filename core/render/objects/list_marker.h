@@ -15,7 +15,7 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 
-namespace mbink {
+namespace mblink {
 
 // Forward declarations
 struct ComputedStyle;
@@ -106,4 +106,4 @@ void PaintListMarker(
     const std::string& parent_tag
 );
 
-} // namespace mbink
+} // namespace mblink

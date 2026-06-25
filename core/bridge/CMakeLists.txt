@@ -15,16 +15,16 @@ set(BRIDGE_HEADERS
     host_bridge.h
 )
 
-add_library(mbink_bridge STATIC ${BRIDGE_SOURCES})
+add_library(mblink_bridge STATIC ${BRIDGE_SOURCES})
 
-target_include_directories(mbink_bridge PUBLIC
+target_include_directories(mblink_bridge PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-target_link_libraries(mbink_bridge PUBLIC
-    mbink_utils
-    mbink_quickjs
+target_link_libraries(mblink_bridge PUBLIC
+    mblink_utils
+    mblink_quickjs
     nlohmann_json
 )

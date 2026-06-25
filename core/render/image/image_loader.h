@@ -22,7 +22,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkData.h"
 
-namespace mbink {
+namespace mblink {
 
 class AsyncResourceContext;
 class BackgroundTaskRunner;
@@ -249,5 +249,5 @@ private:
     static std::vector<uint8_t> DecodeBase64(const std::string& encoded);
 };
 
-} // namespace mbink
+} // namespace mblink
 

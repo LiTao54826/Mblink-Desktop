@@ -6,7 +6,7 @@
 #include "text_run.h"
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 size_t TextRun::CharacterCount() const {
     size_t count = 0;
@@ -94,5 +94,5 @@ bool TextRun::CanBreakAt(size_t byte_offset) const {
     return false;
 }
 
-} // namespace mbink
+} // namespace mblink
 

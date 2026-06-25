@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from mbink import App
+from mblink import App
 
 host_exe = sys.executable.replace('\\', '/')
 
@@ -55,7 +55,7 @@ html = f"""
 </head>
 <body>
   <h2>宿主 EXE 图标验证</h2>
-  <p class="ok">这里显示的应该是宿主进程 EXE 的图标，不是 MBink DLL 的图标。</p>
+  <p class="ok">这里显示的应该是宿主进程 EXE 的图标，不是 MBlink DLL 的图标。</p>
   <p>当前宿主 EXE：<code>{host_exe}</code></p>
 
   <div class="row">

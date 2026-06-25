@@ -28,7 +28,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class HTMLInputElement;
@@ -211,4 +211,4 @@ private:
     SkCanvas* canvas_;
 };
 
-} // namespace mbink
+} // namespace mblink

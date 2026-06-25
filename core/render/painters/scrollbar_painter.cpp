@@ -11,7 +11,7 @@
 #include "include/core/SkRRect.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 ScrollbarPainter::ScrollbarPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -213,4 +213,4 @@ ScrollbarPaintParams ScrollbarPainter::CreateParams(
     return params;
 }
 
-} // namespace mbink
+} // namespace mblink

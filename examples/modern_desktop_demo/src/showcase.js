@@ -2,7 +2,7 @@
  * @file showcase.js
  * @brief 能力展示页面 - CSS 伪类、动画、过渡、表单输入、视觉效果
  *
- * 展示 MBink 引擎的全部 CSS 能力：
+ * 展示 MBlink 引擎的全部 CSS 能力：
  * 1. CSS @keyframes 动画（bounce, spin, pulse, fadeIn, colorChange）
  * 2. 伪类交互（:hover, :active, :focus, :disabled, :checked）
  * 3. 表单输入（input text, checkbox, textarea, button）
@@ -167,7 +167,7 @@ export function ShowcasePage({ addToast, enabledSections }) {
             h('div', { style: { fontSize: fonts.sizes.xl, fontWeight: '700', color: colors.text } },
                 'CSS Showcase'),
             h('div', { style: { fontSize: fonts.sizes.sm, color: colors.textSec, marginTop: '4px' } },
-                'Explore all CSS capabilities of the MBink engine')
+                'Explore all CSS capabilities of the MBlink engine')
         ),
 
         // ===== Section 1: CSS @keyframes 动画 =====

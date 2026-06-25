@@ -23,11 +23,11 @@ Modules currently included from `core/CMakeLists.txt` | 当前 `core/CMakeLists.
 
 | Area | Current structure | 说明 |
 |---|---|---|
-| Public C API | `core/api/mbink.h` | 对外 C API 入口 |
-| C API implementation | `core/api/mbink.cpp` | C API 实现 |
-| Shared library | `mbink_api` | 共享库 |
-| Static libraries | `mbink_window`, `mbink_render`, `mbink_devtools`, `mbink_network`, etc. | 静态库聚合 |
-| Python integration | `mbink_api` copied into Python package output | 会复制到 Python 输出目录 |
+| Public C API | `core/api/mblink.h` | 对外 C API 入口 |
+| C API implementation | `core/api/mblink.cpp` | C API 实现 |
+| Shared library | `mblink_api` | 共享库 |
+| Static libraries | `mblink_window`, `mblink_render`, `mblink_devtools`, `mblink_network`, etc. | 静态库聚合 |
+| Python integration | `mblink_api` copied into Python package output | 会复制到 Python 输出目录 |
 
 ## Layering | 分层
 
@@ -36,8 +36,8 @@ Modules currently included from `core/CMakeLists.txt` | 当前 `core/CMakeLists.
 - `core/api/`
 - unified C ABI for external consumers
   对外提供统一 C ABI
-- entry header: `core/api/mbink.h`
-  入口头文件：`core/api/mbink.h`
+- entry header: `core/api/mblink.h`
+  入口头文件：`core/api/mblink.h`
 
 ### Bridge and Binding Layer | 桥接与绑定层
 

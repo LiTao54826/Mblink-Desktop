@@ -2,7 +2,7 @@
 
 English | [中文](README.zh-CN.md)
 
-This folder is the public documentation index for MBink.
+This folder is the public documentation index for MBlink.
 
 ## Start here
 
@@ -17,10 +17,10 @@ This folder is the public documentation index for MBink.
 
 Real runtime screenshots from multiple examples:
 
-![MBink todo_app_js example](assets/todo_app_js.png)
-![MBink modern_desktop_demo example](assets/modern_desktop_demo.png)
-![MBink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
-![MBink html_demo example](assets/html_demo.png)
+![MBlink todo_app_js example](assets/todo_app_js.png)
+![MBlink modern_desktop_demo example](assets/modern_desktop_demo.png)
+![MBlink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
+![MBlink html_demo example](assets/html_demo.png)
 
 ## Core guides
 
@@ -52,5 +52,5 @@ Real runtime screenshots from multiple examples:
 - Code and real command output win over docs when they conflict.
 - Keep Windows-first wording unless a claim has been verified on other platforms.
 - Do not describe placeholders as supported features.
-- Do not describe MBink as a complete browser.
+- Do not describe MBlink as a complete browser.
 - Prefer concrete command examples over abstract status language.

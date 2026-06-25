@@ -11,7 +11,7 @@
 #include <iostream>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -589,4 +589,4 @@ std::shared_ptr<Node> UnwrapNode(JSContext* ctx, JSValue value) {
 }
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 std::string Trim(const std::string& value) {
@@ -206,4 +206,4 @@ std::vector<FileDialogAcceptFilter> BuildFileDialogAcceptFilters(const std::stri
     return filters;
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -12,12 +12,12 @@
 #include <cstddef>
 
 // Forward declarations
-namespace mbink {
+namespace mblink {
 class RenderText;
 struct ComputedStyle;
 }
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 文本片段结构
@@ -132,5 +132,5 @@ struct TextRun {
     bool CanBreakAt(size_t byte_offset) const;
 };
 
-} // namespace mbink
+} // namespace mblink
 

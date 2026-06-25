@@ -20,7 +20,7 @@
 #include <algorithm>
 #include <set>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 class RandomGenerator {
@@ -480,4 +480,4 @@ TEST_F(SearchNavigationPropertyTest, PrevMatchCyclesBackward) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink

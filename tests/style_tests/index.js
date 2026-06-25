@@ -93,7 +93,7 @@ function TestIndex() {
         h('div', { style: 'max-width: 1200px; margin: 0 auto 40px;' },
             h('h1', { 
                 style: 'color: white; font-size: 48px; margin: 0 0 10px 0; text-align: center; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);' 
-            }, '🎨 MBink Style Tests'),
+            }, '🎨 MBlink Style Tests'),
             h('p', { 
                 style: 'color: rgba(255,255,255,0.9); font-size: 20px; margin: 0; text-align: center;' 
             }, '样式和布局系统测试套件'),

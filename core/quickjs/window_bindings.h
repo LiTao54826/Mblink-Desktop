@@ -7,7 +7,7 @@
 #include <memory>
 #include <unordered_map>
 
-namespace mbink {
+namespace mblink {
 
 class EventLoop;
 
@@ -141,4 +141,4 @@ private:
  */
 void BindDocumentAPIs(JSContext* ctx, Window* window);
 
-} // namespace mbink
+} // namespace mblink

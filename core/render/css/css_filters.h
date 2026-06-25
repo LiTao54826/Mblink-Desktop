@@ -12,7 +12,7 @@
 #include <optional>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief CSS 滤镜类型
@@ -267,5 +267,5 @@ private:
                                                         sk_sp<SkImageFilter> input);
 };
 
-} // namespace mbink
+} // namespace mblink
 

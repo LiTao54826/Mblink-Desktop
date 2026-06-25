@@ -6,7 +6,7 @@
 #include "renderer.h"
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -112,4 +112,4 @@ void Renderer::ClipPath(const SkPath& path, bool doAntiAlias) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

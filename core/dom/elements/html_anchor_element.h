@@ -12,7 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML Anchor元素类
@@ -152,7 +152,7 @@ private:
      * @brief 执行导航
      * 
      * 根据href和target执行实际的导航操作
-     * 在MBink中，这会触发自定义事件，由应用层处理
+     * 在MBlink中，这会触发自定义事件，由应用层处理
      */
     void Navigate();
     
@@ -172,5 +172,5 @@ private:
     bool visited_;           ///< 是否已访问
 };
 
-} // namespace mbink
+} // namespace mblink
 

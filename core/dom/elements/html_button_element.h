@@ -15,7 +15,7 @@
  * - [x] 伪类状态 (:hover, :active, :disabled, :enabled)
  * - [x] 事件处理
  * 
- * @author MBink Team
+ * @author MBlink Team
  * @date 2025-11-12
  */
 
@@ -25,7 +25,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class HTMLFormElement;
@@ -190,5 +190,5 @@ private:
     std::shared_ptr<HTMLFormElement> FindForm() const;
 };
 
-} // namespace mbink
+} // namespace mblink
 

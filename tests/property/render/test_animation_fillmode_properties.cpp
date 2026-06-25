@@ -20,8 +20,8 @@
 #include <random>
 #include <cmath>
 
-using namespace mbink;
-using namespace mbink::test;
+using namespace mblink;
+using namespace mblink::test;
 
 class AnimationFillModePropertyTest : public DOMTestBase {
 protected:

@@ -2,7 +2,7 @@
 
 #include "core/render/objects/scrollbar_controller.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 TEST(ScrollbarControllerTest, VerticalOverflowDoesNotCreateHorizontalScrollbar) {
@@ -53,4 +53,4 @@ TEST(ScrollbarControllerTest, HorizontalScrollbarCanTriggerVerticalScrollbar) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -10,7 +10,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class DOMPerformanceTest : public DOMTestBase {
@@ -333,4 +333,4 @@ TEST_F(DOMPerformanceTest, MemoryStress) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

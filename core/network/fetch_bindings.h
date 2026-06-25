@@ -18,7 +18,7 @@
 #include <functional>
 #include <atomic>
 
-namespace mbink {
+namespace mblink {
 
 class AsyncResourceContext;
 class BackgroundTaskRunner;
@@ -155,5 +155,5 @@ private:
     static std::string base_path_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

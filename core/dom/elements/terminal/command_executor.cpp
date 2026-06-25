@@ -17,7 +17,7 @@
 #include <unistd.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 
 CommandExecutor::CommandExecutor() = default;
 
@@ -316,4 +316,4 @@ void CommandExecutor::Cleanup() {
 #endif
 }
 
-}  // namespace mbink
+}  // namespace mblink

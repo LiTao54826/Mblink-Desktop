@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ============================================
-echo   MBink Modern Desktop Demo - Build ^& Run
+echo   MBlink Modern Desktop Demo - Build ^& Run
 echo ============================================
 echo.
 

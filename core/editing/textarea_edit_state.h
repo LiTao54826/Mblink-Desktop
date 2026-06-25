@@ -6,7 +6,7 @@
 
 #include "input_edit_state.h"
 
-namespace mbink {
+namespace mblink {
 
 struct TextAreaEditState {
     std::string text;
@@ -33,5 +33,5 @@ struct TextAreaEditState {
 
 std::shared_ptr<TextAreaEditState> CreateTextAreaEditState();
 
-}  // namespace mbink
+}  // namespace mblink
 

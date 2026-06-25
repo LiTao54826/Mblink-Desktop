@@ -15,7 +15,7 @@
 #include <gtest/gtest.h>
 #include "core/compositor/compositor_layer.h"
 
-using namespace mbink;
+using namespace mblink;
 
 class CompositorLayerTest : public ::testing::Test {
 protected:

@@ -17,7 +17,7 @@
 #include <random>
 #include <cmath>
 
-using namespace mbink;
+using namespace mblink;
 
 /**
  * @brief Random number generator for property tests

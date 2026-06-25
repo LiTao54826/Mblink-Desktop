@@ -6,7 +6,7 @@
 #include "html_heading_element.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 HTMLHeadingElement::HTMLHeadingElement(int level)
     : Element("h" + std::to_string(std::clamp(level, 1, 6)))
@@ -19,5 +19,5 @@ HTMLHeadingElement::HTMLHeadingElement(int level)
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace mbink
+} // namespace mblink
 

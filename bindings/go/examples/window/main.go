@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Window", 900, 640)
+	app, err := autorun.NewApp("MBlink Go Window", 900, 640)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func main() {
 <!doctype html>
 <html>
 <body style="font-family: sans-serif; padding: 24px;">
-    <h1>MBink Go window controls</h1>
+    <h1>MBlink Go window controls</h1>
     <p>Window position: (%d, %d)</p>
     <p>Window size: %d x %d</p>
 </body>

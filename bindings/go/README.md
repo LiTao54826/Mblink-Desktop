@@ -1,16 +1,16 @@
-# MBink Go Binding
+# MBlink Go Binding
 
-Windows-oriented Go binding for MBink, implemented with `cgo + core/api/mbink.h + mbink.lib`.
+Windows-oriented Go binding for MBlink, implemented with `cgo + core/api/mblink.h + mblink.lib`.
 Runtime behavior follows the shared C API contract documented in `docs/C_API_RUNTIME_PARITY.md`.
 
 ## Requirements
 
 - Windows
 - Go 1.23+
-- built native library available at `bindings/go/mbink.lib`
-  - CMake now copies it there automatically after building `mbink_api`
+- built native library available at `bindings/go/mblink.lib`
+  - CMake now copies it there automatically after building `mblink_api`
 - matching runtime DLL available for the process loader
-  - CMake now also copies `mbink.dll` to `bindings/go/`
+  - CMake now also copies `mblink.dll` to `bindings/go/`
 
 ## Quick check
 
@@ -58,11 +58,11 @@ package main
 import (
     "log"
 
-    "mbink-go/mbink"
+    "mblink-go/mblink"
 )
 
 func main() {
-    app, err := mbink.New("MBink Go Hello", 800, 600)
+    app, err := mblink.New("MBlink Go Hello", 800, 600)
     if err != nil {
         log.Fatal(err)
     }
@@ -96,9 +96,9 @@ Current package includes:
 - examples are also marked with `//go:build windows`
 - build-time linking now prefers `bindings/go`, with `build/lib/Release` kept as fallback
 - runtime DLL loading is handled by the Windows loader, not by a custom Go `_find_dll()` helper
-- CMake copies `mbink.dll` and `mbink.lib` directly to `bindings/go/`
+- CMake copies `mblink.dll` and `mblink.lib` directly to `bindings/go/`
 - this lets `go run ./examples/...` started from `bindings/go/` find the DLL from the working directory more directly
-- for other executables, `mbink.dll` still needs to be reachable at run time, typically via the executable directory or `PATH`
+- for other executables, `mblink.dll` still needs to be reachable at run time, typically via the executable directory or `PATH`
 - development-only runtime UI analysis can be enabled with `App.EnableDevtoolsHttp`; the returned session exposes `URL`, `Port`, `AuthToken`, and `Request`
-- Go binding packages do not vendor `mbink_devtools.dll`; development tooling should provide it next to `mbink.dll` or set `MBINK_DEVTOOLS_PATH`, and the Go devtools wrapper loads it on demand
+- Go binding packages do not vendor `mblink_devtools.dll`; development tooling should provide it next to `mblink.dll` or set `MBLINK_DEVTOOLS_PATH`, and the Go devtools wrapper loads it on demand
 - wrapper runtime, lifecycle, observation, snapshot, and UI-dev command methods should stay aligned with `docs/C_API_RUNTIME_PARITY.md`

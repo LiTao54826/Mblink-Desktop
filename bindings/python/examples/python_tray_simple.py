@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from mbink import App
+from mblink import App
 
 
 HTML = """
@@ -16,7 +16,7 @@ HTML = """
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>MBink Tray Demo</title>
+  <title>MBlink Tray Demo</title>
   <style>
     body {
       font-family: "Segoe UI", sans-serif;
@@ -43,7 +43,7 @@ HTML = """
   </style>
 </head>
 <body>
-  <h2>MBink Windows Tray 示例</h2>
+  <h2>MBlink Windows Tray 示例</h2>
   <p>当前 tray 和菜单由 Python 用户态创建，不是框架默认内置。</p>
   <p class="muted">左键托盘图标会恢复主窗口，右键菜单通过 <code>@app.tray_action(...)</code> 按 id 分发。</p>
 
@@ -57,7 +57,7 @@ HTML = """
 
 
 def main():
-    app = App("MBink Tray Simple Demo", 520, 260)
+    app = App("MBlink Tray Simple Demo", 520, 260)
 
     tray_menu = [
         {"id": "show", "label": "显示"},
@@ -72,7 +72,7 @@ def main():
         {"id": "quit", "label": "退出"},
     ]
 
-    app.create_tray(tooltip="MBink Tray Simple Demo", menu=tray_menu)
+    app.create_tray(tooltip="MBlink Tray Simple Demo", menu=tray_menu)
     app.load_html(HTML)
 
     @app.on_tray_click

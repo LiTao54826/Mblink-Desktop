@@ -26,7 +26,7 @@
 #include <numeric>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 /**
@@ -494,4 +494,4 @@ TEST_F(IncrementalLayoutPerformanceTest, WideTreeStructure) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -19,7 +19,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -1003,4 +1003,4 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
     }
 }
 
-} // namespace mbink
+} // namespace mblink

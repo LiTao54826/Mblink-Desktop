@@ -19,7 +19,7 @@
 #include <vector>
 #include <cmath>
 
-using namespace mbink;
+using namespace mblink;
 
 // Random number generator for property tests
 class LayoutEquivalencePropertyTestRng {

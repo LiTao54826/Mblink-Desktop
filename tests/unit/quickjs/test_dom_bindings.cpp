@@ -23,14 +23,14 @@
 #include "window/window.h"
 #include "core/event/loop/task_scheduler.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
 
 std::filesystem::path Utf8PathToFsPath(const std::string& path) {
 #ifdef _WIN32
-    return std::filesystem::path(mbink::utils::UTF8ToWide(path));
+    return std::filesystem::path(mblink::utils::UTF8ToWide(path));
 #else
     return std::filesystem::path(path);
 #endif
@@ -38,7 +38,7 @@ std::filesystem::path Utf8PathToFsPath(const std::string& path) {
 
 std::string FsPathToUtf8String(const std::filesystem::path& path) {
 #ifdef _WIN32
-    return mbink::utils::WideToUTF8(path.wstring());
+    return mblink::utils::WideToUTF8(path.wstring());
 #else
     return path.string();
 #endif
@@ -298,7 +298,7 @@ TEST_F(DOMBindingsTest, CreateTextNode) {
 }
 
 TEST_F(DOMBindingsTest, DocumentNativeBindingTextApi) {
-    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         globalThis.__bindHost = document.createElement('span');
@@ -320,7 +320,7 @@ TEST_F(DOMBindingsTest, DocumentNativeBindingTextApi) {
 }
 
 TEST_F(DOMBindingsTest, DocumentNativeBindingModelValueApi) {
-    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "Alice"}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         globalThis.__host = document.createElement('div');
@@ -342,8 +342,8 @@ TEST_F(DOMBindingsTest, DocumentNativeBindingModelValueApi) {
 }
 
 TEST_F(DOMBindingsTest, DocumentNativeBindingMountDeclarativeApi) {
-    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
-    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "tom"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "tom"}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         globalThis.__declRoot = document.createElement('div');
@@ -370,7 +370,7 @@ TEST_F(DOMBindingsTest, DocumentNativeBindingMountDeclarativeApi) {
 }
 
 TEST_F(DOMBindingsTest, DocumentLoadHTMLAutoMountsDeclarativeBindings) {
-    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBlinkError::Ok);
 
     ASSERT_TRUE(doc_->LoadHTML("<html><body><div mb-scope:user='page.form.user'><span id='name' mb-text='user.name'></span></div></body></html>"));
 
@@ -389,7 +389,7 @@ TEST_F(DOMBindingsTest, DocumentLoadHTMLAutoMountsDeclarativeBindings) {
 }
 
 TEST_F(DOMBindingsTest, DocumentExecuteScriptsTriggersSecondDeclarativeScan) {
-    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
 
     ASSERT_TRUE(doc_->LoadHTML(R"(
         <html><body>
@@ -418,7 +418,7 @@ TEST_F(DOMBindingsTest, DocumentExecuteScriptsTriggersSecondDeclarativeScan) {
 }
 
 TEST_F(DOMBindingsTest, DynamicSetAttributeAndAppendChildAutoMountDeclarativeBindings) {
-    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}, {"title", "Admin"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}, {"title", "Admin"}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         var afterAppend = document.createElement('span');
@@ -452,7 +452,7 @@ TEST_F(DOMBindingsTest, DynamicSetAttributeAndAppendChildAutoMountDeclarativeBin
 }
 
 TEST_F(DOMBindingsTest, RemoveAttributeUnmountsDeclarativeBindingsPrecisely) {
-    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         var host = document.createElement('div');
@@ -484,7 +484,7 @@ TEST_F(DOMBindingsTest, RemoveAttributeUnmountsDeclarativeBindingsPrecisely) {
 }
 
 TEST_F(DOMBindingsTest, RemoveChildUnmountsDeclarativeSubtree) {
-    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBlinkError::Ok);
 
     auto result = runtime_->Eval(R"(
         globalThis.__host = document.createElement('div');
@@ -2067,7 +2067,7 @@ TEST_F(DOMBindingsTest, ElementClickDoesNotDispatchForDisabledButton) {
 }
 
 TEST_F(DOMBindingsTest, FileInputClickPopulatesFileListThroughPickerHook) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-input-test";
     std::filesystem::create_directories(temp_dir);
     const auto first_path = temp_dir / "picked.txt";
     const auto second_path = temp_dir / "picked.json";
@@ -2126,7 +2126,7 @@ TEST_F(DOMBindingsTest, FileInputClickDefaultCanBePrevented) {
 }
 
 TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-tags-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-input-tags-test";
     std::filesystem::create_directories(temp_dir);
     const auto first_path = temp_dir / "snapshot.txt";
     {
@@ -2201,7 +2201,7 @@ TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
 }
 
 TEST_F(DOMBindingsTest, FileInputDefaultValueDoesNotAliasLiveSelection) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-default-value-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-default-value-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "picked.txt";
     {
@@ -2260,7 +2260,7 @@ TEST_F(DOMBindingsTest, FileInputDefaultValueDoesNotAliasLiveSelection) {
 }
 
 TEST_F(DOMBindingsTest, FileInputDirectorySelectionExposesRelativeFilePaths) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-directory-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-directory-test";
     const auto directory = temp_dir / "folder";
     const auto nested = directory / "nested";
     std::filesystem::create_directories(nested);
@@ -2302,7 +2302,7 @@ TEST_F(DOMBindingsTest, FileInputDirectorySelectionExposesRelativeFilePaths) {
 }
 
 TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-data-transfer-files-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-data-transfer-files-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "dragged.txt";
     {
@@ -2371,7 +2371,7 @@ TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
 }
 
 TEST_F(DOMBindingsTest, FileInputFilesSetterAcceptsDataTransferFileList) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-setter-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-input-setter-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "dragged.txt";
     {
@@ -2416,7 +2416,7 @@ TEST_F(DOMBindingsTest, FileInputFilesSetterAcceptsDataTransferFileList) {
 }
 
 TEST_F(DOMBindingsTest, FileInputFilesSetterKeepsDirectoryFilesWithoutMultiple) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-directory-setter-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-js-file-input-directory-setter-test";
     const auto directory = temp_dir / "folder";
     const auto nested = directory / "nested";
     const auto first_path = directory / "a.txt";
@@ -2778,4 +2778,4 @@ TEST_F(DOMBindingsTest, PreviousSibling) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

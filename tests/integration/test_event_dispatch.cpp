@@ -9,7 +9,7 @@
 #include "dom/element.h"
 #include "dom/event.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class EventDispatchTest : public DOMTestBase {};
@@ -211,4 +211,4 @@ TEST_F(EventDispatchTest, CustomEvent) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -5,7 +5,7 @@
 
 #include "html_li_element.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLLIElement::HTMLLIElement()
     : Element("li") {
@@ -30,5 +30,5 @@ void HTMLLIElement::SetValue(int value) {
     SetAttribute("value", std::to_string(value));
 }
 
-} // namespace mbink
+} // namespace mblink
 

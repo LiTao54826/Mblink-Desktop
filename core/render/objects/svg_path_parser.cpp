@@ -12,7 +12,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace mbink {
+namespace mblink {
 
 // ========== SVGPathParser 实现 ==========
 
@@ -476,5 +476,5 @@ SkPath SVGPointsParser::ToPolygonPath(const std::string& points) {
     return path;
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -13,7 +13,7 @@
 #include <vector>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Window;
@@ -117,4 +117,4 @@ private:
     std::unordered_set<RenderObject*> dirty_render_boundaries_;
 };
 
-}  // namespace mbink
+}  // namespace mblink

@@ -21,7 +21,7 @@
 #include <vector>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -170,5 +170,5 @@ private:
     std::vector<std::string> property_order_;  // 属性顺序（用于保持插入顺序）
 };
 
-} // namespace mbink
+} // namespace mblink
 

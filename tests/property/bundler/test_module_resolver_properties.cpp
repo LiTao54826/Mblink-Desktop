@@ -15,7 +15,7 @@
 #include <set>
 
 namespace fs = std::filesystem;
-using namespace mbink;
+using namespace mblink;
 
 namespace {
 

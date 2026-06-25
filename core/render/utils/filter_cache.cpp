@@ -8,7 +8,7 @@
 #include <sstream>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // FilterCache 实现
@@ -238,5 +238,5 @@ void RenderOptimizer::Clear() {
     transform_cache_.Clear();
 }
 
-} // namespace mbink
+} // namespace mblink
 

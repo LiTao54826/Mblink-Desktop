@@ -6,7 +6,7 @@
 #include "dom_binding_map.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 bool g_dom_binding_map_clearing = false;
@@ -115,4 +115,4 @@ DOMBindingMap::~DOMBindingMap() {
     Clear();
 }
 
-} // namespace mbink
+} // namespace mblink

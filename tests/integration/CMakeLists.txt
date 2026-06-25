@@ -12,17 +12,17 @@ set(INTEGRATION_TEST_SOURCES
     test_terminal_logview_integration.cpp
 )
 
-add_executable(mbink_integration_tests
+add_executable(mblink_integration_tests
     ${INTEGRATION_TEST_SOURCES}
 )
 
-target_link_libraries(mbink_integration_tests
+target_link_libraries(mblink_integration_tests
     PRIVATE
-    mbink
+    mblink
     test_utils
     GTest::gtest
     GTest::gtest_main
 )
 
 include(GoogleTest)
-gtest_discover_tests(mbink_integration_tests)
+gtest_discover_tests(mblink_integration_tests)

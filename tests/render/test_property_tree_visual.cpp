@@ -23,7 +23,7 @@
 #include "include/core/SkPixmap.h"
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class PropertyTreeVisualTest : public DOMTestBase {
@@ -478,4 +478,4 @@ TEST_F(PropertyTreeVisualTest, RenderPathComparison) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 LogSearch::LogSearch()
     : use_regex_(false),
@@ -175,4 +175,4 @@ void LogSearch::SearchRegex(const LogBuffer& buffer,
     }
 }
 
-}  // namespace mbink
+}  // namespace mblink

@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/css/css_variables.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class CSSVariablesTest : public ::testing::Test {
@@ -228,4 +228,4 @@ TEST_F(CSSVariablesTest, GetAll) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -17,7 +17,7 @@
 #include <windows.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 constexpr int64_t kStreamingRepaintIntervalMs = 120;
@@ -716,4 +716,4 @@ void HTMLTerminalElement::RequestCoalescedRepaint(RepaintReason reason) {
         weak_from_this(), reason, kStreamingRepaintIntervalMs);
 }
 
-}  // namespace mbink
+}  // namespace mblink

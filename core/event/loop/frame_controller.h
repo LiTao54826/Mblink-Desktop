@@ -10,7 +10,7 @@
 #include <SDL3/SDL.h>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 帧率控制器类
@@ -143,5 +143,5 @@ private:
     Uint64 start_time_;                 // 开始时间
 };
 
-} // namespace mbink
+} // namespace mblink
 

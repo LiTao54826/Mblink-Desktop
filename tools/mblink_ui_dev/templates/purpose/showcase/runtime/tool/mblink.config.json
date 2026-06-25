@@ -1,0 +1,22 @@
+﻿{
+  "template": "showcase/tool",
+  "purpose": "showcase",
+  "runtime": "tool",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "window": {
+    "title": "MBlink showcase (tool)",
+    "width": 1060,
+    "height": 760
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false,
+    "hide_console": true
+  }
+}

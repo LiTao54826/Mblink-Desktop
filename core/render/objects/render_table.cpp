@@ -20,7 +20,7 @@
 #include <functional>
 #include <limits>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -1327,4 +1327,4 @@ void RenderTableCaption::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace mbink
+} // namespace mblink

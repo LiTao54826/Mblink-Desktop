@@ -20,7 +20,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 struct KeyframesRule;
@@ -190,4 +190,4 @@ private:
     static std::optional<std::pair<float, float>> ExtractScale(const std::string& transform_str);
 };
 
-} // namespace mbink
+} // namespace mblink

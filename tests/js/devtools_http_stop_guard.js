@@ -150,7 +150,7 @@ async function main() {
     'devtools HTTP stop must be able to cancel in-flight main-thread marshaling');
 
   const exe = path.resolve('build', 'bin', 'Release', 'esm_loader.exe');
-  const entry = path.resolve('tmp', 'mbink_idle_cpu_probe', 'open_idempotent_app', '.dist', 'App.js');
+  const entry = path.resolve('tmp', 'mblink_idle_cpu_probe', 'open_idempotent_app', '.dist', 'App.js');
   const child = spawn(exe, [entry, '--devtools-http-mcp', '--quit', '3'], {
     cwd: process.cwd(),
     windowsHide: true,

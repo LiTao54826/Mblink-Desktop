@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 内联样式视图
@@ -55,4 +55,4 @@ private:
                          const std::vector<StyleProperty>& properties);
 };
 
-} // namespace mbink
+} // namespace mblink

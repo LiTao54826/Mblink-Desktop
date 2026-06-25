@@ -21,12 +21,12 @@
 
 namespace {
 inline bool IsAnimForceStyleEnabled() {
-    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FORCE_STYLE") != nullptr);
+    static const bool enabled = (std::getenv("MBLINK_DEBUG_ANIM_FORCE_STYLE") != nullptr);
     return enabled;
 }
 }
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // 构造/析构
@@ -912,4 +912,4 @@ SkColor AnimationApplicator::ParseColor(const std::string& str) const {
     return Color::Parse(str);
 }
 
-} // namespace mbink
+} // namespace mblink

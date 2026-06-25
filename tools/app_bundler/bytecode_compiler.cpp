@@ -15,7 +15,7 @@ extern "C" {
 
 namespace fs = std::filesystem;
 
-namespace mbink {
+namespace mblink {
 
 BytecodeCompiler::BytecodeCompiler() : runtime_(nullptr), ctx_(nullptr) {
     Initialize();
@@ -380,4 +380,4 @@ std::vector<CompiledModule> BytecodeCompiler::ParseMergedBytecode(
     return result;
 }
 
-}  // namespace mbink
+}  // namespace mblink

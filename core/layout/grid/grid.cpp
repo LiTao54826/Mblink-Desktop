@@ -17,7 +17,7 @@
 #include <cmath>
 #include <cstdio>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Helper Functions
@@ -1339,5 +1339,5 @@ LayoutOutput ComputeGridLayout(
     return output;
 }
 
-} // namespace mbink
+} // namespace mblink
 

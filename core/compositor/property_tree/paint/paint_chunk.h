@@ -19,7 +19,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -234,4 +234,4 @@ private:
     static uint64_t next_id_;
 };
 
-} // namespace mbink
+} // namespace mblink

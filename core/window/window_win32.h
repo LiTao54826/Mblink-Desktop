@@ -6,8 +6,8 @@
  * 用于拦截可能导致闪烁的消息。
  */
 
-#ifndef MBINK_WINDOW_WIN32_H
-#define MBINK_WINDOW_WIN32_H
+#ifndef MBLINK_WINDOW_WIN32_H
+#define MBLINK_WINDOW_WIN32_H
 
 #ifdef _WIN32
 
@@ -21,7 +21,7 @@
 #endif
 #include <windows.h>
 
-namespace mbink {
+namespace mblink {
 
 class Window;
 
@@ -66,8 +66,8 @@ void IncrementPresentCount();
 void PrintStats();
 
 }  // namespace win32
-}  // namespace mbink
+}  // namespace mblink
 
 #endif  // _WIN32
 
-#endif  // MBINK_WINDOW_WIN32_H
+#endif  // MBLINK_WINDOW_WIN32_H

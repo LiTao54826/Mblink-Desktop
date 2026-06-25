@@ -7,8 +7,8 @@
  * layout engine with native code.
  */
 
-#ifndef MBINK_NATIVE_LAYOUT_ENGINE_H
-#define MBINK_NATIVE_LAYOUT_ENGINE_H
+#ifndef MBLINK_NATIVE_LAYOUT_ENGINE_H
+#define MBLINK_NATIVE_LAYOUT_ENGINE_H
 
 #include <unordered_map>
 #include <unordered_set>
@@ -28,14 +28,14 @@
 #include "ifc/ifc_layout.h"
 
 // Forward declarations
-namespace mbink {
+namespace mblink {
 class Element;
 class RenderObject;
 struct ComputedStyle;
 struct LayoutInfo;
 }
 
-namespace mbink {
+namespace mblink {
 
 // Forward declarations for interfaces
 class LayoutFlexboxContainer;
@@ -597,7 +597,7 @@ private:
     void MarkSubtreeNeedsLayout(NodeId node_id);
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_NATIVE_LAYOUT_ENGINE_H
+#endif // MBLINK_NATIVE_LAYOUT_ENGINE_H
 

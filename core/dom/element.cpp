@@ -49,7 +49,7 @@
 #undef GetClassName
 #endif
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -1282,14 +1282,14 @@ void Element::SyncToLexbor() {
     }
 
     // 添加新的子节点
-    for (const auto& mbink_child : child_nodes_) {
-        if (auto elem_child = std::dynamic_pointer_cast<Element>(mbink_child)) {
+    for (const auto& mblink_child : child_nodes_) {
+        if (auto elem_child = std::dynamic_pointer_cast<Element>(mblink_child)) {
             // 递归同步子元素
             elem_child->SyncToLexbor();
             if (elem_child->GetLexborElement()) {
                 lxb_dom_node_insert_child(lexbor_element_, elem_child->GetLexborElement());
             }
-        } else if (auto text_child = std::dynamic_pointer_cast<Text>(mbink_child)) {
+        } else if (auto text_child = std::dynamic_pointer_cast<Text>(mblink_child)) {
             // 创建文本节点
             auto text_content = text_child->GetTextContent();
             lxb_dom_text_t* lexbor_text = lxb_dom_document_create_text_node(
@@ -1677,4 +1677,4 @@ void Element::Blur() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

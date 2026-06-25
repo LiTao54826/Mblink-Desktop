@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-生成MBink项目结构脚本
+生成MBlink项目结构脚本
 
 功能：
 - 批量创建项目文件和目录
@@ -30,11 +30,11 @@ CPP_HEADER_TEMPLATE = """/**
 
 #pragma once
 
-namespace mbink {{
+namespace mblink {{
 
 // TODO: 添加类定义和函数声明
 
-}} // namespace mbink
+}} // namespace mblink
 """
 
 CPP_SOURCE_TEMPLATE = """/**
@@ -44,11 +44,11 @@ CPP_SOURCE_TEMPLATE = """/**
 
 #include "{header_file}"
 
-namespace mbink {{
+namespace mblink {{
 
 // TODO: 实现函数
 
-}} // namespace mbink
+}} // namespace mblink
 """
 
 CMAKE_TEMPLATE = """# {module_name} CMakeLists.txt
@@ -103,8 +103,8 @@ FILES_TO_CREATE = [
     ("core/bridge/bridge.cpp", "语言桥接实现"),
     
     # C API
-    ("core/api/mbink.h", "C API头文件"),
-    ("core/api/mbink.cpp", "C API实现"),
+    ("core/api/mblink.h", "C API头文件"),
+    ("core/api/mblink.cpp", "C API实现"),
     
     # Utils
     ("core/utils/logger.h", "日志工具"),
@@ -181,7 +181,7 @@ def create_cmake_file(filepath):
 
 def main():
     """主函数"""
-    print("开始生成MBink项目结构...\n")
+    print("开始生成MBlink项目结构...\n")
     
     # 创建源文件
     print("创建源文件:")

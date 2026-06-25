@@ -15,7 +15,7 @@
 #include <atomic>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class WindowManager;
@@ -450,5 +450,5 @@ private:
     void UpdateMouseCursor(const HitTestResult& hit_result, Uint32 window_id);
 };
 
-} // namespace mbink
+} // namespace mblink
 

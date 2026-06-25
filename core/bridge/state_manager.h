@@ -16,11 +16,11 @@
 #include "nlohmann/json.hpp"
 #include "native_state_graph.h"
 
-namespace mbink {
+namespace mblink {
 
 using json = nlohmann::json;
 
-enum class MBinkType {
+enum class MBlinkType {
     Null = 0,
     Bool,
     Int,
@@ -30,7 +30,7 @@ enum class MBinkType {
     Object
 };
 
-enum class MBinkError {
+enum class MBlinkError {
     Ok = 0,
     InvalidHandle = -1,
     NotFound = -2,
@@ -56,17 +56,17 @@ public:
     StateManager();
     ~StateManager();
 
-    MBinkError createNull(const std::string& name);
-    MBinkError createBool(const std::string& name, bool value);
-    MBinkError createInt(const std::string& name, int64_t value);
-    MBinkError createDouble(const std::string& name, double value);
-    MBinkError createString(const std::string& name, const std::string& value);
-    MBinkError createArray(const std::string& name);
-    MBinkError createObject(const std::string& name);
-    MBinkError createJson(const std::string& name, const json& value);
+    MBlinkError createNull(const std::string& name);
+    MBlinkError createBool(const std::string& name, bool value);
+    MBlinkError createInt(const std::string& name, int64_t value);
+    MBlinkError createDouble(const std::string& name, double value);
+    MBlinkError createString(const std::string& name, const std::string& value);
+    MBlinkError createArray(const std::string& name);
+    MBlinkError createObject(const std::string& name);
+    MBlinkError createJson(const std::string& name, const json& value);
 
     bool exists(const std::string& name) const;
-    MBinkType type(const std::string& name) const;
+    MBlinkType type(const std::string& name) const;
     bool getBool(const std::string& name) const;
     int64_t getInt(const std::string& name) const;
     double getDouble(const std::string& name) const;
@@ -76,30 +76,30 @@ public:
     json getKey(const std::string& name, const std::string& key) const;
     size_t getLength(const std::string& name) const;
 
-    MBinkError setNull(const std::string& name);
-    MBinkError setBool(const std::string& name, bool value);
-    MBinkError setInt(const std::string& name, int64_t value);
-    MBinkError setDouble(const std::string& name, double value);
-    MBinkError setString(const std::string& name, const std::string& value);
-    MBinkError setJson(const std::string& name, const json& value);
-    MBinkError remove(const std::string& name);
+    MBlinkError setNull(const std::string& name);
+    MBlinkError setBool(const std::string& name, bool value);
+    MBlinkError setInt(const std::string& name, int64_t value);
+    MBlinkError setDouble(const std::string& name, double value);
+    MBlinkError setString(const std::string& name, const std::string& value);
+    MBlinkError setJson(const std::string& name, const json& value);
+    MBlinkError remove(const std::string& name);
 
-    MBinkError arrayPush(const std::string& name, const json& item);
-    MBinkError arrayPop(const std::string& name);
-    MBinkError arrayShift(const std::string& name);
-    MBinkError arrayUnshift(const std::string& name, const json& item);
-    MBinkError arrayRemove(const std::string& name, int index);
-    MBinkError arrayClear(const std::string& name);
-    MBinkError arraySet(const std::string& name, int index, const json& item);
+    MBlinkError arrayPush(const std::string& name, const json& item);
+    MBlinkError arrayPop(const std::string& name);
+    MBlinkError arrayShift(const std::string& name);
+    MBlinkError arrayUnshift(const std::string& name, const json& item);
+    MBlinkError arrayRemove(const std::string& name, int index);
+    MBlinkError arrayClear(const std::string& name);
+    MBlinkError arraySet(const std::string& name, int index, const json& item);
 
-    MBinkError objectSet(const std::string& name, const std::string& key, const json& value);
-    MBinkError objectRemove(const std::string& name, const std::string& key);
-    MBinkError objectClear(const std::string& name);
+    MBlinkError objectSet(const std::string& name, const std::string& key, const json& value);
+    MBlinkError objectRemove(const std::string& name, const std::string& key);
+    MBlinkError objectClear(const std::string& name);
 
-    MBinkError increment(const std::string& name, double delta);
-    MBinkError multiply(const std::string& name, double factor);
-    MBinkError stringAppend(const std::string& name, const std::string& suffix);
-    MBinkError stringPrepend(const std::string& name, const std::string& prefix);
+    MBlinkError increment(const std::string& name, double delta);
+    MBlinkError multiply(const std::string& name, double factor);
+    MBlinkError stringAppend(const std::string& name, const std::string& suffix);
+    MBlinkError stringPrepend(const std::string& name, const std::string& prefix);
 
     int watch(const std::string& name, StateCallback callback);
     void unwatch(int watchId);
@@ -126,9 +126,9 @@ public:
 
 private:
     bool isValidName(const std::string& name) const;
-    MBinkType jsonTypeToMBinkType(const json& j) const;
-    MBinkError createValue(const std::string& name, const json& value);
-    MBinkError mutateTopLevel(const std::string& name, const std::function<bool(json&)>& mutator);
+    MBlinkType jsonTypeToMBlinkType(const json& j) const;
+    MBlinkError createValue(const std::string& name, const json& value);
+    MBlinkError mutateTopLevel(const std::string& name, const std::function<bool(json&)>& mutator);
     void notifyWatcher(const std::string& name);
 
     std::unique_ptr<NativeStateGraph> graph_;
@@ -141,4 +141,4 @@ private:
     static const std::string emptyString_;
 };
 
-} // namespace mbink
+} // namespace mblink

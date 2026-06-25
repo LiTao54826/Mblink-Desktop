@@ -33,7 +33,7 @@
 #undef GetClassName
 #endif
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class ElementTest : public DOMTestBase {};
@@ -482,7 +482,7 @@ TEST_F(ElementTest, TextInputDefaultColorUsesFieldText) {
 }
 
 TEST_F(ElementTest, FileInputMaintainsBrowserStyleFileList) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-test";
     std::filesystem::create_directories(temp_dir);
     const auto first_path = temp_dir / "first.txt";
     const auto second_path = temp_dir / "second.json";
@@ -534,7 +534,7 @@ TEST_F(ElementTest, FileInputMaintainsBrowserStyleFileList) {
 }
 
 TEST_F(ElementTest, FileInputValueAttributeCannotForgeSelection) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-value-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-value-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "picked.txt";
     {
@@ -561,7 +561,7 @@ TEST_F(ElementTest, FileInputValueAttributeCannotForgeSelection) {
 }
 
 TEST_F(ElementTest, FileInputClearsSelectionAcrossTypeChanges) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-type-change-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-type-change-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "picked.txt";
     {
@@ -600,7 +600,7 @@ TEST_F(ElementTest, FileInputClearsSelectionAcrossTypeChanges) {
 }
 
 TEST_F(ElementTest, FileInputAppliesAcceptAndDirectorySelectionPolicy) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-policy-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-policy-test";
     std::filesystem::create_directories(temp_dir);
     const auto text_path = temp_dir / "note.TXT";
     const auto json_path = temp_dir / "data.json";
@@ -642,7 +642,7 @@ TEST_F(ElementTest, FileInputAppliesAcceptAndDirectorySelectionPolicy) {
 }
 
 TEST_F(ElementTest, FileInputDirectorySelectionKeepsAllFilesWithoutMultiple) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-directory-single-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-directory-single-test";
     const auto directory_path = temp_dir / "folder";
     const auto nested_path = directory_path / "nested";
     const auto first_path = directory_path / "a.txt";
@@ -671,7 +671,7 @@ TEST_F(ElementTest, FileInputDirectorySelectionKeepsAllFilesWithoutMultiple) {
 }
 
 TEST_F(ElementTest, FileInputAcceptSupportsExactMimeAndEmptyFilteredSelection) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-accept-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-file-input-accept-test";
     std::filesystem::create_directories(temp_dir);
     const auto text_path = temp_dir / "note.txt";
     const auto json_path = temp_dir / "data.json";
@@ -714,7 +714,7 @@ TEST_F(ElementTest, FileInputBuildsNativeDialogFiltersFromAccept) {
 }
 
 TEST_F(ElementTest, DataTransferExposesFilesTypeWhenFilesArePresent) {
-    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-data-transfer-file-test";
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mblink-data-transfer-file-test";
     std::filesystem::create_directories(temp_dir);
     const auto file_path = temp_dir / "dragged.txt";
     const auto directory_path = temp_dir / "folder";
@@ -1305,4 +1305,4 @@ TEST_F(ElementTest, CloneNodeDeep) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

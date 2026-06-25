@@ -2,15 +2,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use mbink::App;
+use mblink::App;
 use serde_json::{json, Value};
 
 include!(concat!(env!("OUT_DIR"), "/embedded_resources.rs"));
 
-fn main() -> mbink::Result<()> {
+fn main() -> mblink::Result<()> {
     let root = project_root();
     let mut app = App::builder()
-        .title("MBink Layout Host Matrix (Rust)")
+        .title("MBlink Layout Host Matrix (Rust)")
         .size(1180, 820)
         .resizable(true)
         .build()?;
@@ -114,7 +114,7 @@ fn project_root() -> PathBuf {
 
 fn find_project_root(mut current: PathBuf) -> Option<PathBuf> {
     loop {
-        if current.join("mbink.config.json").exists() || current.join(".dist").join("app.mbrp").exists() {
+        if current.join("mblink.config.json").exists() || current.join(".dist").join("app.mbrp").exists() {
             return Some(current);
         }
         if !current.pop() {
@@ -153,7 +153,7 @@ fn resolve_resource_package(root: &Path) -> Option<PathBuf> {
     }
     if let Some(bytes) = EMBEDDED_RESOURCE_PACKAGE {
         let path = std::env::temp_dir()
-            .join("mbink-layout-host-matrix-rust")
+            .join("mblink-layout-host-matrix-rust")
             .join(executable_stem())
             .join("app.mbrp");
         write_embedded_file(&path, bytes);

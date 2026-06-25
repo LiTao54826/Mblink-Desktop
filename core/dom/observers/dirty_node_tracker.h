@@ -20,7 +20,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -224,4 +224,4 @@ private:
     std::unordered_set<Node*> removed_nodes_;
 };
 
-} // namespace mbink
+} // namespace mblink

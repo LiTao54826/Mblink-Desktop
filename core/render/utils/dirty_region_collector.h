@@ -16,7 +16,7 @@
 #include "include/core/SkRect.h"
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 脏区域收集器
@@ -85,5 +85,5 @@ private:
     float viewport_height_ = 0.0f;  ///< 视口高度
 };
 
-} // namespace mbink
+} // namespace mblink
 

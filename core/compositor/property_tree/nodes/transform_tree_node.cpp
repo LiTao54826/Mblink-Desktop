@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 TransformTreeNode::TransformTreeNode() {
     // Default to identity transform
@@ -227,4 +227,4 @@ void TransformTreeNode::UpdateTransformType() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

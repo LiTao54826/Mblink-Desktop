@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -279,4 +279,4 @@ private:
     int end_offset_ = 0;
 };
 
-} // namespace mbink
+} // namespace mblink

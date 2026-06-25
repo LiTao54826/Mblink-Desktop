@@ -22,7 +22,7 @@
 #include <sstream>
 
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class NativeLayoutEngineTest : public DOMTestBase {
@@ -1438,4 +1438,4 @@ TEST_F(NativeLayoutEngineTest, InlineBlockTextChangeInvalidatesNearestLayoutNode
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace mbink {
+namespace mblink {
 
 uint32_t ScrollLayerManager::next_layer_id_ = 1000;  // 从 1000 开始，避免与其他层冲突
 
@@ -709,4 +709,4 @@ void ScrollLayerManager::ClampScrollPosition(ScrollContainerInfo& info) {
     info.scroll_y = std::max(0.0f, std::min(info.scroll_y, info.max_scroll_y));
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -8,8 +8,8 @@
 
 #include "mouse_event.h"
 
-namespace mbink {
+namespace mblink {
 
 // MouseEvent 实现在 core/dom/event.cpp 中
 
-} // namespace mbink
+} // namespace mblink

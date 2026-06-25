@@ -10,13 +10,13 @@ This repository supports AI-assisted development, but the public guidance is int
 
 ## Canonical AI workflow surface
 
-For MBink-specific project work, the canonical tool/skill surface is:
+For MBlink-specific project work, the canonical tool/skill surface is:
 
-- [tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md](tools/mbink_ui_dev/skills/mbink-ui-dev/SKILL.md)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md](tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md)
 
 That document is the best source for:
 
-- `mbink-ui-dev` CLI/MCP usage
+- `mblink-ui-dev` CLI/MCP usage
 - snapshot-first verification
 - UI-first then host-integration workflow
 - runtime parity expectations across `esm_loader`, Python, Rust, and Go

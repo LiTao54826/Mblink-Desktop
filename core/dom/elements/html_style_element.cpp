@@ -7,7 +7,7 @@
 #include "../document.h"
 #include "core/lexbor/style_manager.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLStyleElement::HTMLStyleElement()
     : Element("style") {
@@ -89,4 +89,4 @@ void HTMLStyleElement::NotifyStyleUpdate() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

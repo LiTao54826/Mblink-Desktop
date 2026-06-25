@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 namespace virtual_text {
 
 // === SelectionRange 实现 ===
@@ -155,4 +155,4 @@ bool SelectionManager::IsWordChar(char c) {
 }
 
 }  // namespace virtual_text
-}  // namespace mbink
+}  // namespace mblink

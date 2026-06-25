@@ -19,7 +19,7 @@
 class SkCanvas;
 class SkFont;
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -200,4 +200,4 @@ private:
     static constexpr float CARET_BLINK_INTERVAL = 500.0f; // 毫秒
 };
 
-} // namespace mbink
+} // namespace mblink

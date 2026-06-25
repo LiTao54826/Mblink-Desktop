@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 FetchBindings* FetchBindingFromFuncData(JSContext* ctx, JSValue* func_data) {
@@ -756,5 +756,5 @@ void FetchBindings::EvalJS(const std::string& code, const std::string& filename)
     JS_FreeValue(ctx_, result);
 }
 
-} // namespace mbink
+} // namespace mblink
 

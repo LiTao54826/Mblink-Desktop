@@ -11,7 +11,7 @@
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 IncrementalStyleRecalc::IncrementalStyleRecalc() = default;
 
@@ -192,4 +192,4 @@ void IncrementalStyleRecalc::RecalcStyleForChildren(std::shared_ptr<Node> node,
     node->ClearChildNeedsStyleRecalc();
 }
 
-} // namespace mbink
+} // namespace mblink

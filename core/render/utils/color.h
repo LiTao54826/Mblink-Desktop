@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include "include/core/SkColor.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 颜色工具类
@@ -126,4 +126,4 @@ private:
     static bool named_colors_initialized_;
 };
 
-} // namespace mbink
+} // namespace mblink

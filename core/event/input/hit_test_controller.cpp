@@ -19,7 +19,7 @@
 
 namespace {
 
-bool IsOutOfFlowForHitTest(const mbink::RenderObject* render_object) {
+bool IsOutOfFlowForHitTest(const mblink::RenderObject* render_object) {
     if (!render_object) {
         return false;
     }
@@ -29,8 +29,8 @@ bool IsOutOfFlowForHitTest(const mbink::RenderObject* render_object) {
 }
 
 void CollectOutOfFlowDescendantsInDomOrder(
-    mbink::RenderObject* root,
-    std::vector<mbink::RenderObject*>& out_of_flow_descendants) {
+    mblink::RenderObject* root,
+    std::vector<mblink::RenderObject*>& out_of_flow_descendants) {
     if (!root) {
         return;
     }
@@ -48,22 +48,22 @@ void CollectOutOfFlowDescendantsInDomOrder(
     }
 }
 
-void SortByZIndexAndDomOrder(std::vector<mbink::RenderObject*>& render_objects) {
+void SortByZIndexAndDomOrder(std::vector<mblink::RenderObject*>& render_objects) {
     std::stable_sort(render_objects.begin(), render_objects.end(),
-                     [](mbink::RenderObject* a, mbink::RenderObject* b) {
+                     [](mblink::RenderObject* a, mblink::RenderObject* b) {
                          return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
                      });
 }
 
-bool IsStickyTableCellForHitTest(mbink::RenderObject* render_object) {
+bool IsStickyTableCellForHitTest(mblink::RenderObject* render_object) {
     return render_object &&
-           render_object->GetType() == mbink::RenderObjectType::TABLE_CELL &&
+           render_object->GetType() == mblink::RenderObjectType::TABLE_CELL &&
            render_object->GetComputedStyle().position == "sticky";
 }
 
 bool IsRenderObjectDescendantOf(
-    const std::shared_ptr<mbink::RenderObject>& object,
-    const mbink::RenderObject* ancestor) {
+    const std::shared_ptr<mblink::RenderObject>& object,
+    const mblink::RenderObject* ancestor) {
     auto current = object;
     while (current) {
         if (current.get() == ancestor) {
@@ -74,16 +74,16 @@ bool IsRenderObjectDescendantOf(
     return false;
 }
 
-int StickyTableCellAxisPriority(mbink::RenderObject* render_object) {
+int StickyTableCellAxisPriority(mblink::RenderObject* render_object) {
     if (!IsStickyTableCellForHitTest(render_object)) {
         return 0;
     }
 
     const auto& style = render_object->GetComputedStyle();
-    bool sticks_vertically = style.top.unit != mbink::CSSUnit::AUTO ||
-                             style.bottom.unit != mbink::CSSUnit::AUTO;
-    bool sticks_horizontally = style.left.unit != mbink::CSSUnit::AUTO ||
-                               style.right.unit != mbink::CSSUnit::AUTO;
+    bool sticks_vertically = style.top.unit != mblink::CSSUnit::AUTO ||
+                             style.bottom.unit != mblink::CSSUnit::AUTO;
+    bool sticks_horizontally = style.left.unit != mblink::CSSUnit::AUTO ||
+                               style.right.unit != mblink::CSSUnit::AUTO;
 
     if (sticks_vertically && sticks_horizontally) {
         return 3;
@@ -98,14 +98,14 @@ int StickyTableCellAxisPriority(mbink::RenderObject* render_object) {
 }
 
 struct StickyTableHitTestEntry {
-    mbink::RenderObject* cell = nullptr;
+    mblink::RenderObject* cell = nullptr;
     int z_index = 0;
     int axis_priority = 0;
     size_t dom_order = 0;
 };
 
 void CollectStickyTableCellsInDomOrder(
-    mbink::RenderObject* root,
+    mblink::RenderObject* root,
     std::vector<StickyTableHitTestEntry>& sticky_cells,
     size_t& next_dom_order) {
     if (!root) {
@@ -146,7 +146,7 @@ void SortStickyTableCellsByPaintOrder(std::vector<StickyTableHitTestEntry>& stic
 
 }  // namespace
 
-namespace mbink {
+namespace mblink {
 
 HitTestResultEx HitTestController::HitTest(
     std::shared_ptr<RenderObject> root_render,
@@ -697,5 +697,5 @@ bool HitTestController::HitTestCompositorLayers(
     return false;
 }
 
-}  // namespace mbink
+}  // namespace mblink
 

@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -180,5 +180,5 @@ private:
         PaintLayer* layer);
 };
 
-}  // namespace mbink
+}  // namespace mblink
 

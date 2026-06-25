@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace mbink {
+namespace mblink {
 
 AnsiParser::AnsiParser() {
     current_style_.Reset();
@@ -511,4 +511,4 @@ char32_t AnsiParser::DecodeUtf8() {
     return cp;
 }
 
-}  // namespace mbink
+}  // namespace mblink

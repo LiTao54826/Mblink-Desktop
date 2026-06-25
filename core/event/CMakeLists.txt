@@ -48,42 +48,42 @@ set(EVENT_HEADERS
     dispatch/wheel_event_dispatcher.h
 )
 
-add_library(mbink_event STATIC ${EVENT_SOURCES})
+add_library(mblink_event STATIC ${EVENT_SOURCES})
 
-target_include_directories(mbink_event PUBLIC
+target_include_directories(mblink_event PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
 
 # 链接 SDL3
 if(TARGET SDL3::SDL3)
-    target_link_libraries(mbink_event PUBLIC SDL3::SDL3)
+    target_link_libraries(mblink_event PUBLIC SDL3::SDL3)
 elseif(TARGET SDL3-static)
-    target_link_libraries(mbink_event PUBLIC SDL3-static)
+    target_link_libraries(mblink_event PUBLIC SDL3-static)
 endif()
 
 # 链接窗口模块
-target_link_libraries(mbink_event PUBLIC mbink_window)
-target_link_libraries(mbink_event PUBLIC mbink_devtools_bridge)
+target_link_libraries(mblink_event PUBLIC mblink_window)
+target_link_libraries(mblink_event PUBLIC mblink_devtools_bridge)
 
 # 链接编辑模块（用于 DragManager, SelectionManager 等）
-target_link_libraries(mbink_event PUBLIC mbink_editing)
+target_link_libraries(mblink_event PUBLIC mblink_editing)
 
 # MSVC 特定设置
 if(MSVC)
     # 匹配 Skia 的运行时库设置
-    target_compile_options(mbink_event PUBLIC
+    target_compile_options(mblink_event PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(mbink_event PUBLIC
+    target_compile_definitions(mblink_event PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()
 
 # 设置编译选项
 if(MSVC)
-    target_compile_options(mbink_event PRIVATE /W4)
+    target_compile_options(mblink_event PRIVATE /W4)
 else()
-    target_compile_options(mbink_event PRIVATE -Wall -Wextra)
+    target_compile_options(mblink_event PRIVATE -Wall -Wextra)
 endif()

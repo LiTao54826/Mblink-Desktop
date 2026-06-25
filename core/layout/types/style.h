@@ -15,7 +15,7 @@
 #include <memory>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Dimension Types
@@ -405,5 +405,5 @@ inline Rect<LengthPercentage> RectLPZero() {
     };
 }
 
-} // namespace mbink
+} // namespace mblink
 

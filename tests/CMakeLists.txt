@@ -1,4 +1,4 @@
-# MBink Test Suite CMake Configuration
+# MBlink Test Suite CMake Configuration
 #
 # Test Categories:
 # - unit/       Unit tests (core functionality)
@@ -32,8 +32,8 @@ endif()
 
 # RapidCheck for Property-Based Testing (optional)
 # If RapidCheck is not available, property tests will use manual iteration
-option(MBINK_USE_RAPIDCHECK "Use RapidCheck for property-based testing" OFF)
-if(MBINK_USE_RAPIDCHECK)
+option(MBLINK_USE_RAPIDCHECK "Use RapidCheck for property-based testing" OFF)
+if(MBLINK_USE_RAPIDCHECK)
     FetchContent_Declare(
         rapidcheck
         GIT_REPOSITORY https://github.com/emil-e/rapidcheck.git
@@ -57,7 +57,7 @@ add_library(test_utils STATIC
     test_utils/test_helpers.cpp
     test_utils/mock_objects.cpp
 )
-target_link_libraries(test_utils PUBLIC mbink GTest::gtest)
+target_link_libraries(test_utils PUBLIC mblink GTest::gtest)
 
 # Unit tests
 add_subdirectory(unit)
@@ -69,8 +69,8 @@ add_subdirectory(render)
 add_subdirectory(integration)
 
 # Performance tests (optional)
-option(MBINK_BUILD_PERF_TESTS "Build performance tests" OFF)
-if(MBINK_BUILD_PERF_TESTS)
+option(MBLINK_BUILD_PERF_TESTS "Build performance tests" OFF)
+if(MBLINK_BUILD_PERF_TESTS)
     add_subdirectory(performance)
 endif()
 
@@ -80,6 +80,6 @@ add_subdirectory(property)
 # Add target to run all tests with results output to test_results directory
 add_custom_target(run_all_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --output-junit ${TEST_RESULTS_DIR}/all_tests.xml
-    DEPENDS mbink_unit_tests mbink_render_tests mbink_integration_tests mbink_property_tests
+    DEPENDS mblink_unit_tests mblink_render_tests mblink_integration_tests mblink_property_tests
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

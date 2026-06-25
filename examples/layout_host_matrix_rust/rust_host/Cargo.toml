@@ -1,9 +1,9 @@
 [package]
-name = "mbink-template-rust"
+name = "mblink-template-rust"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
 [dependencies]
-mbink = { path = "../../../bindings/rust/mbink" }
+mblink = { path = "../../../bindings/rust/mblink" }
 serde_json = "1"

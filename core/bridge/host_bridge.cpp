@@ -15,7 +15,7 @@ extern "C" {
 #include <algorithm>
 #include <cstdio>
 
-namespace mbink {
+namespace mblink {
 
 HostBridge::HostBridge(JSContext* ctx,
                        StateManager* stateManager,
@@ -510,17 +510,17 @@ JSValue HostBridge::jsStateType(JSContext* ctx, JSValueConst thisVal,
     const char* name = JS_ToCString(ctx, argv[0]);
     if (!name) return JS_NewString(ctx, "null");
     
-    MBinkType type = bridge->stateManager_->type(name);
+    MBlinkType type = bridge->stateManager_->type(name);
     JS_FreeCString(ctx, name);
     
     const char* typeStr = "null";
     switch (type) {
-        case MBinkType::Bool: typeStr = "boolean"; break;
-        case MBinkType::Int:
-        case MBinkType::Double: typeStr = "number"; break;
-        case MBinkType::String: typeStr = "string"; break;
-        case MBinkType::Array: typeStr = "array"; break;
-        case MBinkType::Object: typeStr = "object"; break;
+        case MBlinkType::Bool: typeStr = "boolean"; break;
+        case MBlinkType::Int:
+        case MBlinkType::Double: typeStr = "number"; break;
+        case MBlinkType::String: typeStr = "string"; break;
+        case MBlinkType::Array: typeStr = "array"; break;
+        case MBlinkType::Object: typeStr = "object"; break;
         default: break;
     }
     
@@ -810,4 +810,4 @@ JSValue HostBridge::jsonToJsValue(JSContext* ctx, const std::string& jsonStr) {
     return value;
 }
 
-} // namespace mbink
+} // namespace mblink

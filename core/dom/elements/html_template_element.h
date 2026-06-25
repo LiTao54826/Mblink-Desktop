@@ -3,7 +3,7 @@
 #include "../document_fragment.h"
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 class HTMLTemplateElement : public Element {
 public:
@@ -22,4 +22,4 @@ private:
     std::shared_ptr<DocumentFragment> content_;
 };
 
-} // namespace mbink
+} // namespace mblink

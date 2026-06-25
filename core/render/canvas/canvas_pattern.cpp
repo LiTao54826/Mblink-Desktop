@@ -9,7 +9,7 @@
 #include "include/core/SkSamplingOptions.h"
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 CanvasPattern::CanvasPattern(sk_sp<SkImage> image, PatternRepetition repetition)
     : image_(image)
@@ -72,4 +72,4 @@ PatternRepetition CanvasPattern::ParseRepetition(const std::string& repetition) 
     }
 }
 
-} // namespace mbink
+} // namespace mblink

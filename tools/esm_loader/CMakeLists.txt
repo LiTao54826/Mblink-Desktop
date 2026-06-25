@@ -1,10 +1,10 @@
-# ESM Loader - thin CLI wrapper over mbink.dll / C API
+# ESM Loader - thin CLI wrapper over mblink.dll / C API
 
 add_executable(esm_loader
     main_c_api.cpp
 )
 
-add_dependencies(esm_loader mbink_api)
+add_dependencies(esm_loader mblink_api)
 
 target_include_directories(esm_loader PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -12,7 +12,7 @@ target_include_directories(esm_loader PRIVATE
 )
 
 target_link_libraries(esm_loader PRIVATE
-    mbink_api
+    mblink_api
 )
 
 set_target_properties(esm_loader PROPERTIES

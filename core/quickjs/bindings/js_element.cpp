@@ -39,7 +39,7 @@
 #include <vector>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -3680,4 +3680,4 @@ JSClassID GetElementClassID() {
 }
 
 } // namespace bindings
-} // namespace mbink
+} // namespace mblink

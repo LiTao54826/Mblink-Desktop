@@ -16,7 +16,7 @@ struct JSRuntime;
 struct JSContext;
 typedef struct JSModuleDef JSModuleDef;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 编译后的模块字节码
@@ -157,4 +157,4 @@ private:
                                       void* opaque);
 };
 
-}  // namespace mbink
+}  // namespace mblink

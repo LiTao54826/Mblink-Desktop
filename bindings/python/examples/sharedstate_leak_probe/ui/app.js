@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-globalThis.__MBINK_LEAK_PROBE = true;
+globalThis.__MBLINK_LEAK_PROBE = true;
 
 const probeState = globalThis.__probeAppState || (globalThis.__probeAppState = {
   appRenderCount: 0,
@@ -81,8 +81,8 @@ function App() {
     };
     if (!probeState.summaryTimer) {
       probeState.summaryTimer = setInterval(function() {
-        const runtime = globalThis.__mbinkSharedRuntime || {};
-        const hookDebug = globalThis.__mbinkHookDebug || {};
+        const runtime = globalThis.__mblinkSharedRuntime || {};
+        const hookDebug = globalThis.__mblinkHookDebug || {};
         probeLog('Summary', {
           appRenderCount: probeState.appRenderCount,
           panelRenderCount: probeState.panelRenderCount,

@@ -3,8 +3,8 @@
  * @brief CSS Transform 数据结构和解析
  */
 
-#ifndef MBINK_RENDER_UTILS_TRANSFORM_H
-#define MBINK_RENDER_UTILS_TRANSFORM_H
+#ifndef MBLINK_RENDER_UTILS_TRANSFORM_H
+#define MBLINK_RENDER_UTILS_TRANSFORM_H
 
 #include "css/css_value.h"
 #include "include/core/SkMatrix.h"
@@ -14,7 +14,7 @@
 #include <string>
 #include <optional>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Transform 类型枚举
@@ -86,6 +86,6 @@ private:
 
 std::optional<TransformOrigin> ParseTransformOrigin(const std::string& str);
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_RENDER_UTILS_TRANSFORM_H
+#endif // MBLINK_RENDER_UTILS_TRANSFORM_H

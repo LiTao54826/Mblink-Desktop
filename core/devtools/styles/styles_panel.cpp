@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
     const float TAB_HEIGHT = 28.0f;
@@ -244,4 +244,4 @@ void StylesPanel::RenderTabs(SkCanvas* canvas, float x, float y, float width, fl
     canvas->drawRect(SkRect::MakeXYWH(x, y + height - 1, width, 1), border_paint);
 }
 
-} // namespace mbink
+} // namespace mblink

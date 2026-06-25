@@ -22,7 +22,7 @@
 #include <chrono>
 #include <filesystem>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -148,13 +148,13 @@ JSModuleDef* LoadMergedBytecodeModule(JSContext* ctx,
     }
 
     std::vector<uint8_t> merged(module_data.begin() + 4, module_data.end());
-    auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(merged);
+    auto modules = mblink::BytecodeCompiler::ParseMergedBytecode(merged);
     if (modules.empty()) {
         JS_ThrowInternalError(ctx, "Empty merged bytecode: %s", resolved_path.c_str());
         return nullptr;
     }
 
-    const mbink::CompiledModule* selected = nullptr;
+    const mblink::CompiledModule* selected = nullptr;
     for (const auto& module : modules) {
         if (module.is_entry) {
             selected = &module;
@@ -193,7 +193,7 @@ bool EvalMergedOrSingleBytecode(JSContext* ctx,
                                 std::string& error) {
     if (ReadLe32(module_data) == kMergedBytecodeMagic) {
         std::vector<uint8_t> merged(module_data.begin() + 4, module_data.end());
-        auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(merged);
+        auto modules = mblink::BytecodeCompiler::ParseMergedBytecode(merged);
         if (modules.empty()) {
             error = "Empty merged bytecode: " + resolved_path;
             return false;
@@ -1568,5 +1568,5 @@ JSValue QuickJSRuntime::NativeFunctionWrapper(JSContext* ctx, JSValueConst this_
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

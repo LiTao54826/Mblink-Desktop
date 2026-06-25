@@ -20,7 +20,7 @@
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
-namespace mbink {
+namespace mblink {
 
 FormElementPainter::FormElementPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -76,7 +76,7 @@ void FormElementPainter::PaintTextAreaElement(HTMLTextAreaElement* textarea,
         TextRenderer text_renderer(canvas_);
 
         // 设置文本颜色
-        mbink::Paint text_paint;
+        mblink::Paint text_paint;
         text_paint.SetColor(GetTextColor(params, is_placeholder));
 
         // 绘制多行文本
@@ -128,7 +128,7 @@ void FormElementPainter::PaintSelectElement(HTMLSelectElement* select,
                                            text_available_width, box.content_height));
 
         TextRenderer text_renderer(canvas_);
-        mbink::Paint text_paint;
+        mblink::Paint text_paint;
         text_paint.SetColor(GetTextColor(params, false));
         text_renderer.DrawTextWithEmoji(selected_text, text_x, text_y, font, text_paint);
 
@@ -323,7 +323,7 @@ void FormElementPainter::PaintInputTextLayer(const InputPaintModel& model,
                                              const FormElementPaintParams& params) {
     TextRenderer text_renderer(canvas_);
 
-    mbink::Paint text_paint;
+    mblink::Paint text_paint;
     text_paint.SetColor(GetTextColor(params, model.is_placeholder));
 
     text_renderer.DrawTextWithEmoji(model.display_text, text_x, text_y, font, text_paint);
@@ -461,10 +461,10 @@ SkColor FormElementPainter::GetTextColor(const FormElementPaintParams& params, b
     }
     
     if (!params.text_color.empty()) {
-        return mbink::Color::Parse(params.text_color);
+        return mblink::Color::Parse(params.text_color);
     }
     
     return SK_ColorBLACK;
 }
 
-} // namespace mbink
+} // namespace mblink

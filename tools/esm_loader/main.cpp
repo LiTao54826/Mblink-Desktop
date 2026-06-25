@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief MBink ESM Loader - 支持 ES 模块和 HTML 的应用加载器
+ * @brief MBlink ESM Loader - 支持 ES 模块和 HTML 的应用加载器
  *
  * 用法: esm_loader.exe <entry.js|index.html> [选项]
  *
@@ -11,7 +11,7 @@
  * 选项:
  *   --width <宽度>      窗口宽度 (默认: 800)
  *   --height <高度>     窗口高度 (默认: 600)
- *   --title <标题>      窗口标题 (默认: MBink App)
+ *   --title <标题>      窗口标题 (默认: MBlink App)
  *   --devtools          启动时打开开发者工具
  */
 
@@ -174,7 +174,7 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
 }
 #endif
 
-using namespace mbink;
+using namespace mblink;
 namespace fs = std::filesystem;
 
 fs::path Utf8PathToFsPath(const std::string& path) {
@@ -225,7 +225,7 @@ std::string GetDocumentTitle(std::shared_ptr<Document> doc) {
 }
 
 void PrintUsage(const char* program_name) {
-    std::cout << "MBink Loader - ES 模块 / HTML 应用加载器" << std::endl;
+    std::cout << "MBlink Loader - ES 模块 / HTML 应用加载器" << std::endl;
     std::cout << std::endl;
     std::cout << "用法: " << program_name << " <entry.js|index.html> [选项]" << std::endl;
     std::cout << std::endl;
@@ -236,7 +236,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "选项:" << std::endl;
     std::cout << "  --width <宽度>      窗口宽度 (默认: 1200)" << std::endl;
     std::cout << "  --height <高度>     窗口高度 (默认: 800)" << std::endl;
-    std::cout << "  --title <标题>      窗口标题 (默认: MBink App / HTML title)" << std::endl;
+    std::cout << "  --title <标题>      窗口标题 (默认: MBlink App / HTML title)" << std::endl;
     std::cout << "  --borderless        无边框窗口模式（支持不规则窗体）" << std::endl;
     std::cout << "  --transparent       透明窗口（需配合 --borderless 使用）" << std::endl;
     std::cout << "  --no-gpu            关闭GPU加速（使用CPU渲染，减少内存占用）" << std::endl;
@@ -266,7 +266,7 @@ void PrintUsage(const char* program_name) {
 
 // 加载嵌入的 JS 库
 bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
-    using namespace mbink::embedded;
+    using namespace mblink::embedded;
 
     if (!HasEmbeddedJS()) {
         return false;
@@ -339,7 +339,7 @@ std::string BuildOfficialPreactModule(const std::filesystem::path& entry_path) {
 }
 
 std::string EmbeddedOfficialPreactModule(const char* path) {
-    auto source = mbink::embedded::GetEmbeddedJS(path);
+    auto source = mblink::embedded::GetEmbeddedJS(path);
     if (source.empty()) {
         throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
     }
@@ -357,7 +357,7 @@ std::string OfficialPreactModuleId(const char* path) {
     std::string id(path ? path : "");
     static const std::string prefix = "third_party/preact/";
     if (id.rfind(prefix, 0) == 0) {
-        id.replace(0, prefix.size(), "__mbink_official_preact/");
+        id.replace(0, prefix.size(), "__mblink_official_preact/");
     }
     return id;
 }
@@ -414,7 +414,7 @@ static JSValue js_loadAsset(JSContext* ctx, JSValueConst this_val, int argc, JSV
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_ThrowTypeError(ctx, "loadAsset path must be a string");
     std::vector<uint8_t> data;
-    bool found = mbink::AssetManager::Instance().GetAsset(path, data);
+    bool found = mblink::AssetManager::Instance().GetAsset(path, data);
     JS_FreeCString(ctx, path);
     if (!found) return JS_NULL;
     return JS_NewArrayBufferCopy(ctx, data.data(), data.size());
@@ -425,7 +425,7 @@ static JSValue js_getAssetUrl(JSContext* ctx, JSValueConst this_val, int argc, J
     if (argc < 1) return JS_ThrowTypeError(ctx, "getAssetUrl requires a path argument");
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_ThrowTypeError(ctx, "getAssetUrl path must be a string");
-    std::string url = mbink::AssetManager::Instance().GetAssetDataUrl(path);
+    std::string url = mblink::AssetManager::Instance().GetAssetDataUrl(path);
     JS_FreeCString(ctx, path);
     if (url.empty()) return JS_NULL;
     return JS_NewString(ctx, url.c_str());
@@ -436,14 +436,14 @@ static JSValue js_hasAsset(JSContext* ctx, JSValueConst this_val, int argc, JSVa
     if (argc < 1) return JS_FALSE;
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_FALSE;
-    bool exists = mbink::AssetManager::Instance().HasAsset(path);
+    bool exists = mblink::AssetManager::Instance().HasAsset(path);
     JS_FreeCString(ctx, path);
     return exists ? JS_TRUE : JS_FALSE;
 }
 
 // JS API: listAssets() - 列出所有资源
 static JSValue js_listAssets(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto paths = mbink::AssetManager::Instance().GetAssetPaths();
+    auto paths = mblink::AssetManager::Instance().GetAssetPaths();
     JSValue array = JS_NewArray(ctx);
     for (size_t i = 0; i < paths.size(); i++) {
         JS_SetPropertyUint32(ctx, array, i, JS_NewString(ctx, paths[i].c_str()));
@@ -467,7 +467,7 @@ void RegisterAssetAPI(QuickJSRuntime* runtime) {
 }
 
 // 检测并加载嵌入的 payload
-bool TryLoadEmbeddedPayload(const std::string& exe_path, mbink::PayloadData& payload_data) {
+bool TryLoadEmbeddedPayload(const std::string& exe_path, mblink::PayloadData& payload_data) {
 #ifdef _WIN32
     std::ifstream file(Utf8PathToFsPath(exe_path), std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
@@ -485,15 +485,15 @@ bool TryLoadEmbeddedPayload(const std::string& exe_path, mbink::PayloadData& pay
         return false;
     }
 
-    return mbink::PayloadBuilder::Parse(data, payload_data);
+    return mblink::PayloadBuilder::Parse(data, payload_data);
 #else
-    return mbink::PayloadBuilder::ParseFromFile(exe_path, payload_data);
+    return mblink::PayloadBuilder::ParseFromFile(exe_path, payload_data);
 #endif
 }
 
 // 执行嵌入的字节码模块
-bool ExecuteEmbeddedBytecode(QuickJSRuntime* runtime, const mbink::PayloadData& payload_data, bool verbose = true) {
-    auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(payload_data.bytecode);
+bool ExecuteEmbeddedBytecode(QuickJSRuntime* runtime, const mblink::PayloadData& payload_data, bool verbose = true) {
+    auto modules = mblink::BytecodeCompiler::ParseMergedBytecode(payload_data.bytecode);
     if (modules.empty()) {
         std::cerr << "  ✗ No modules found in payload" << std::endl;
         return false;
@@ -559,7 +559,7 @@ int main(int argc, char** argv) {
     // ============================================================
     // 检查是否有嵌入的 payload（app_bundler 打包模式）
     // ============================================================
-    mbink::PayloadData embedded_payload;
+    mblink::PayloadData embedded_payload;
     bool has_embedded = TryLoadEmbeddedPayload(program_name, embedded_payload);
 
 #ifdef _WIN32
@@ -585,7 +585,7 @@ int main(int argc, char** argv) {
     std::string entry_path;
     int width = has_embedded ? embedded_payload.config.width : 1200;
     int height = has_embedded ? embedded_payload.config.height : 800;
-    std::string title = has_embedded ? embedded_payload.config.title : "MBink App";
+    std::string title = has_embedded ? embedded_payload.config.title : "MBlink App";
     bool title_from_user = false;
     bool open_devtools = false;
     std::string ui_dev_snapshot_file;
@@ -705,14 +705,14 @@ int main(int argc, char** argv) {
     try {
         if (is_embedded) {
             LOG("========================================");
-            LOG("  MBink Loader (Embedded Bytecode mode)");
+            LOG("  MBlink Loader (Embedded Bytecode mode)");
             LOG("========================================");
             LOG("  Size: " << width << "x" << height);
             LOG("  Title: " << title);
             LOG("========================================");
         } else {
             LOG("========================================");
-            LOG("  MBink Loader (" << (is_html ? "HTML" : "ESM") << " mode)");
+            LOG("  MBlink Loader (" << (is_html ? "HTML" : "ESM") << " mode)");
             LOG("========================================");
             LOG("  Entry: " << entry_path);
             LOG("  Size: " << width << "x" << height);
@@ -804,7 +804,7 @@ int main(int argc, char** argv) {
         // 3. 创建 QuickJS 运行时
         LOG("[3/5] Creating QuickJS runtime...");
         auto runtime = std::make_unique<QuickJSRuntime>();
-        mbink::ui_dev::RuntimeSupportOptions ui_dev_options{
+        mblink::ui_dev::RuntimeSupportOptions ui_dev_options{
             ui_dev_snapshot_file,
             ui_dev_command_file,
             ui_dev_response_file,
@@ -820,7 +820,7 @@ int main(int argc, char** argv) {
             ui_dev_snapshot_screenshot_file,
             quit_after_seconds,
         };
-        mbink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);
+        mblink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);
         auto task_scheduler = std::make_shared<TaskScheduler>();
         LOG("  ✓ QuickJS runtime created");
 
@@ -872,8 +872,8 @@ int main(int argc, char** argv) {
                 try {
                     runtime->Eval(R"(
                         (function() {
-                            if (globalThis.__mbinkShutdown) {
-                                try { globalThis.__mbinkShutdown(); } catch (_) {}
+                            if (globalThis.__mblinkShutdown) {
+                                try { globalThis.__mblinkShutdown(); } catch (_) {}
                             } else {
                                 if (globalThis.__preactCleanup) {
                                     try { globalThis.__preactCleanup(); } catch (_) {}
@@ -881,8 +881,8 @@ int main(int argc, char** argv) {
                                 if (globalThis.__preactHooksCleanup) {
                                     try { globalThis.__preactHooksCleanup(); } catch (_) {}
                                 }
-                                if (globalThis.__mbinkRuntimeCleanup) {
-                                    try { globalThis.__mbinkRuntimeCleanup(); } catch (_) {}
+                                if (globalThis.__mblinkRuntimeCleanup) {
+                                    try { globalThis.__mblinkRuntimeCleanup(); } catch (_) {}
                                 }
                             }
                         })();
@@ -921,7 +921,7 @@ int main(int argc, char** argv) {
         };
 
         // 加载嵌入的库（Preact 等）
-        if (mbink::embedded::HasEmbeddedJS()) {
+        if (mblink::embedded::HasEmbeddedJS()) {
             LoadEmbeddedLibraries(runtime.get());
             if (!disable_official_preact) {
                 RegisterPreactModules(runtime.get());
@@ -938,24 +938,24 @@ int main(int argc, char** argv) {
         if (is_embedded) {
             // ===== 嵌入模式：初始化资源管理器 + 执行字节码 =====
             if (!embedded_payload.assets_index.empty()) {
-                mbink::AssetManager::Instance().Initialize(
+                mblink::AssetManager::Instance().Initialize(
                     embedded_payload.assets_data,
                     embedded_payload.assets_index
                 );
 
                 // 注册 ImageLoader 的资源提供者
                 ImageLoader::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return mbink::AssetManager::Instance().GetAsset(path, data);
+                    return mblink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 // 注册 CSS 的资源提供者
                 LexborStyleSheet::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return mbink::AssetManager::Instance().GetAsset(path, data);
+                    return mblink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 // 注册 Document 的资源提供者（用于 link 元素加载 CSS）
                 Document::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return mbink::AssetManager::Instance().GetAsset(path, data);
+                    return mblink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 LOG("  ✓ Loaded " << embedded_payload.assets_index.size() << " embedded assets");
@@ -1033,7 +1033,7 @@ int main(int argc, char** argv) {
         LOG("  Press F12 to toggle DevTools");
         LOG("");
 
-        mbink::ui_dev::ConfigureRuntimeControl(&event_loop, runtime.get(), window, document, ui_dev_options);
+        mblink::ui_dev::ConfigureRuntimeControl(&event_loop, runtime.get(), window, document, ui_dev_options);
 
         event_loop.Run();
         LOG("  Event loop exited: shouldQuit=" << (event_loop.ShouldQuit() ? 1 : 0)

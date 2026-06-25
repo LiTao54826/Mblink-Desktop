@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 WindowManager& WindowManager::Instance() {
     static WindowManager instance;
@@ -135,5 +135,5 @@ void WindowManager::CleanupDestroyedWindows() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

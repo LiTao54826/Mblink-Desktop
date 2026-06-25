@@ -11,7 +11,7 @@
 #include <random>
 #include <string>
 
-using namespace mbink;
+using namespace mblink;
 
 class PayloadPropertyTest : public ::testing::Test {
 protected:

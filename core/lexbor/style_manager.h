@@ -13,7 +13,7 @@
 #include "lexbor_stylesheet.h"
 #include "core/render/animation/animation_controller.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -233,5 +233,5 @@ private:
     size_t next_stylesheet_order_ = 0;
 };
 
-} // namespace mbink
+} // namespace mblink
 

@@ -30,7 +30,7 @@
 
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 KeyboardEventDispatcher::KeyboardEventDispatcher() = default;
 
@@ -284,4 +284,4 @@ std::shared_ptr<Element> KeyboardEventDispatcher::GetFocusElement() const {
     return nullptr;
 }
 
-} // namespace mbink
+} // namespace mblink

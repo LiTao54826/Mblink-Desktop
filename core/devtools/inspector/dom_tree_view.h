@@ -15,7 +15,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 class Event;
 
@@ -136,4 +136,4 @@ private:
     std::string GetCSSSelector(std::shared_ptr<Node> node);
 };
 
-} // namespace mbink
+} // namespace mblink

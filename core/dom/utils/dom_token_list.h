@@ -20,7 +20,7 @@
 #include <vector>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -179,5 +179,5 @@ private:
     std::string attr_name_;            // 属性名（通常是"class"）
 };
 
-} // namespace mbink
+} // namespace mblink
 

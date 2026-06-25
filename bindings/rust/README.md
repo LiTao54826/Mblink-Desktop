@@ -1,9 +1,9 @@
-# MBink Rust Bindings
+# MBlink Rust Bindings
 
-Rust bindings for MBink live under this workspace:
+Rust bindings for MBlink live under this workspace:
 
-- `mbink-sys`: raw FFI bindings to `mbink.h`
-- `mbink`: safe Rust wrapper with RAII, `Result`, JSON helpers, callbacks, and resource package helpers
+- `mblink-sys`: raw FFI bindings to `mblink.h`
+- `mblink`: safe Rust wrapper with RAII, `Result`, JSON helpers, callbacks, and resource package helpers
 
 Runtime behavior follows the shared C API contract documented in `docs/C_API_RUNTIME_PARITY.md`.
 
@@ -12,33 +12,33 @@ Runtime behavior follows the shared C API contract documented in `docs/C_API_RUN
 ```text
 bindings/rust/
 ├─ Cargo.toml
-├─ mbink-sys/
-└─ mbink/
+├─ mblink-sys/
+└─ mblink/
 ```
 
 ## Dynamic library lookup
 
-`mbink-sys` links against the MBink dynamic library.
+`mblink-sys` links against the MBlink dynamic library.
 
 Supported environment variables:
 
-- `MBINK_LIB_DIR`: directory containing the native MBink library
-- `MBINK_LIB_NAME`: library name, defaults to `mbink`
-- `MBINK_DLL_PATH`: explicit DLL path used by runtime dynamic loading on Windows
+- `MBLINK_LIB_DIR`: directory containing the native MBlink library
+- `MBLINK_LIB_NAME`: library name, defaults to `mblink`
+- `MBLINK_DLL_PATH`: explicit DLL path used by runtime dynamic loading on Windows
 
-If `MBINK_LIB_DIR` is not set, the build script falls back to:
+If `MBLINK_LIB_DIR` is not set, the build script falls back to:
 
 ```text
-bindings/rust/mbink-sys/runtime
+bindings/rust/mblink-sys/runtime
 ```
 
 On Windows runtime dynamic loading looks for the DLL in this order:
 
-1. `MBINK_DLL_PATH`
-2. `bindings/rust/mbink-sys/runtime/mbink.dll`
-3. `mbink.dll` from the process working directory / system search path
+1. `MBLINK_DLL_PATH`
+2. `bindings/rust/mblink-sys/runtime/mblink.dll`
+3. `mblink.dll` from the process working directory / system search path
 
-`mbink_devtools.dll` is development-only and is not vendored by the Rust binding package. When `App::enable_devtools_http`, `App::devtools_http_session`, or UI-dev snapshot/control helpers are used, the Rust devtools runtime loader resolves it from `MBINK_DEVTOOLS_PATH`, then from the loaded `mbink.dll` directory, then from the process/runtime search path.
+`mblink_devtools.dll` is development-only and is not vendored by the Rust binding package. When `App::enable_devtools_http`, `App::devtools_http_session`, or UI-dev snapshot/control helpers are used, the Rust devtools runtime loader resolves it from `MBLINK_DEVTOOLS_PATH`, then from the loaded `mblink.dll` directory, then from the process/runtime search path.
 
 ## Build
 
@@ -46,13 +46,13 @@ From `bindings/rust/`:
 
 ```bash
 cargo check
-cargo check -p mbink --examples
+cargo check -p mblink --examples
 ```
 
 ## Hello example
 
 ```bash
-cargo run -p mbink --example hello
+cargo run -p mblink --example hello
 ```
 
 This creates a window and loads inline HTML.
@@ -60,7 +60,7 @@ This creates a window and loads inline HTML.
 ## Bind example
 
 ```bash
-cargo run -p mbink --example bind
+cargo run -p mblink --example bind
 ```
 
 This registers a Rust callback:
@@ -72,7 +72,7 @@ This registers a Rust callback:
 ## Events example
 
 ```bash
-cargo run -p mbink --example events
+cargo run -p mblink --example events
 ```
 
 This demonstrates `on_resize`, `on_focus`, `on_blur`, `on_close`, and `on_close_request`.
@@ -80,7 +80,7 @@ This demonstrates `on_resize`, `on_focus`, `on_blur`, `on_close`, and `on_close_
 ## Tray example
 
 ```bash
-cargo run -p mbink --example tray
+cargo run -p mblink --example tray
 ```
 
 This demonstrates a borderless window, tray creation, click-to-restore, hide-to-tray on close, and quit from the tray menu.
@@ -88,7 +88,7 @@ This demonstrates a borderless window, tray creation, click-to-restore, hide-to-
 ## Window controls example
 
 ```bash
-cargo run -p mbink --example window
+cargo run -p mblink --example window
 ```
 
 This demonstrates window positioning, min/max size, and DevTools helpers.
@@ -96,7 +96,7 @@ This demonstrates window positioning, min/max size, and DevTools helpers.
 ## Shared example
 
 ```bash
-cargo run -p mbink --example shared
+cargo run -p mblink --example shared
 ```
 
 This populates a shared object from Rust and reads it in the page.
@@ -104,7 +104,7 @@ This populates a shared object from Rust and reads it in the page.
 ## State example
 
 ```bash
-cargo run -p mbink --example state
+cargo run -p mblink --example state
 ```
 
 This initializes window state from Rust and renders it in the page.
@@ -112,7 +112,7 @@ This initializes window state from Rust and renders it in the page.
 ## Resource mount example
 
 ```bash
-cargo run -p mbink --example resources_mount
+cargo run -p mblink --example resources_mount
 ```
 
 This compiles a temporary directory into a resource package, mounts it on the app, and loads `/input/index.html` from the package.
@@ -120,7 +120,7 @@ This compiles a temporary directory into a resource package, mounts it on the ap
 ## Resource read example
 
 ```bash
-cargo run -p mbink --example resources_read
+cargo run -p mblink --example resources_read
 ```
 
 This compiles a small package and reads a file back through `load_resource_file`.
@@ -128,11 +128,11 @@ This compiles a small package and reads a file back through `load_resource_file`
 ## Minimal usage
 
 ```rust
-use mbink::App;
+use mblink::App;
 
-fn main() -> mbink::Result<()> {
+fn main() -> mblink::Result<()> {
     let mut app = App::builder()
-        .title("MBink Rust Hello")
+        .title("MBlink Rust Hello")
         .size(800, 600)
         .build()?;
 
@@ -145,22 +145,22 @@ fn main() -> mbink::Result<()> {
 ## Resource helpers
 
 ```rust
-use mbink::{App, compile_resources, load_resource_file};
+use mblink::{App, compile_resources, load_resource_file};
 
-fn demo() -> mbink::Result<()> {
+fn demo() -> mblink::Result<()> {
     compile_resources("assets", "assets.mbk", "")?;
 
     let file = load_resource_file("assets.mbk", "assets/index.html", "")?;
     let html = file.into_utf8_string()?;
 
-    let app = App::new("MBink", 800, 600)?;
+    let app = App::new("MBlink", 800, 600)?;
     app.mount_resource_package("assets.mbk", "", "/")?;
     app.load_html_file("/assets/index.html")?;
     Ok(())
 }
 ```
 
-`load_resource_file` returns `ResourceFile`, which owns the returned bytes and automatically frees MBink-allocated memory in the wrapper layer.
+`load_resource_file` returns `ResourceFile`, which owns the returned bytes and automatically frees MBlink-allocated memory in the wrapper layer.
 
 `ResourceFile` currently exposes:
 

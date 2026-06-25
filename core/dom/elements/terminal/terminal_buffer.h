@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 终端缓冲区
@@ -206,4 +206,4 @@ private:
     void RecomputeContentMetrics() const;
 };
 
-}  // namespace mbink
+}  // namespace mblink

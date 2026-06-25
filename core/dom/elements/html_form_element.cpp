@@ -14,7 +14,7 @@
 #include <iomanip>
 #include <map>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -134,7 +134,7 @@ void HTMLFormElement::Submit() {
 
     // 4. 根据method和action提交
     // 注意：在实际浏览器环境中，这里会发起HTTP请求
-    // 在MBink中，我们只触发事件，让应用层处理提交逻辑
+    // 在MBlink中，我们只触发事件，让应用层处理提交逻辑
 
     // TODO: 如果需要，可以在这里添加HTTP请求逻辑
     // 或者通过自定义事件将数据传递给应用层
@@ -400,5 +400,5 @@ std::string HTMLFormElement::GetFormDataJSON() const {
     return result.str();
 }
 
-} // namespace mbink
+} // namespace mblink
 

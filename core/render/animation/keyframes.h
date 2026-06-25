@@ -1,19 +1,19 @@
 /**
  * @file keyframes.h
  * @brief CSS @keyframes 规则定义和解析
- * @author MBink Development Team
+ * @author MBlink Development Team
  * @date 2025-11-14
  */
 
-#ifndef MBINK_CORE_RENDER_KEYFRAMES_H_
-#define MBINK_CORE_RENDER_KEYFRAMES_H_
+#ifndef MBLINK_CORE_RENDER_KEYFRAMES_H_
+#define MBLINK_CORE_RENDER_KEYFRAMES_H_
 
 #include <map>
 #include <string>
 #include <tuple>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 关键帧
@@ -232,7 +232,7 @@ private:
     std::map<std::string, KeyframesRule> rules_;
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_CORE_RENDER_KEYFRAMES_H_
+#endif // MBLINK_CORE_RENDER_KEYFRAMES_H_
 

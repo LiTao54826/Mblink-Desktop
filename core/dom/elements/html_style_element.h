@@ -7,7 +7,7 @@
 
 #include "../element.h"
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class StyleManager;
@@ -106,4 +106,4 @@ private:
     bool disabled_ = false;  // 是否禁用
 };
 
-} // namespace mbink
+} // namespace mblink

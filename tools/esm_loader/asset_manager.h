@@ -11,7 +11,7 @@
 #include <cstdint>
 #include "payload.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 资源管理器（单例）
@@ -24,7 +24,7 @@ public:
      * @brief 初始化资源（从 payload 数据）
      */
     void Initialize(const std::vector<uint8_t>& assets_data,
-                    const std::vector<mbink::AssetInfo>& assets_index);
+                    const std::vector<mblink::AssetInfo>& assets_index);
 
     /**
      * @brief 检查资源是否存在
@@ -83,5 +83,5 @@ private:
     std::unordered_map<std::string, AssetEntry> index_;
 };
 
-}  // namespace mbink
+}  // namespace mblink
 

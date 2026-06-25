@@ -60,7 +60,7 @@ export function Sidebar({ activePage, onPageChange }) {
                 }
             }, 'M'),
             h('div', null,
-                h('div', { style: { color: colors.text, fontSize: fonts.sizes.md, fontWeight: '700' } }, 'MBink'),
+                h('div', { style: { color: colors.text, fontSize: fonts.sizes.md, fontWeight: '700' } }, 'MBlink'),
                 h('div', { style: { color: colors.textMuted, fontSize: fonts.sizes.xs } }, 'Desktop UI')
             )
         ),

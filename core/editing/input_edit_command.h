@@ -3,7 +3,7 @@
 #include <string>
 #include <variant>
 
-namespace mbink {
+namespace mblink {
 
 enum class InputEditCommandType {
     InsertText,
@@ -80,4 +80,4 @@ struct InputEditCommand {
 
 InputEditCommand MakeCommand(InputEditCommandType type);
 
-}  // namespace mbink
+}  // namespace mblink

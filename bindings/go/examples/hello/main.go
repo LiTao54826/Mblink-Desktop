@@ -5,11 +5,11 @@ package main
 import (
 	"log"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
-	app, err := autorun.NewApp("MBink Go Hello", 800, 600)
+	app, err := autorun.NewApp("MBlink Go Hello", 800, 600)
 	if err != nil {
 		log.Fatal(err)
 	}

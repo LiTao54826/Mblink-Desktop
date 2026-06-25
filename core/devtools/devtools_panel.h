@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace mbink {
+namespace mblink {
 
 class DOMTreeView;
 class StylesPanel;
@@ -175,4 +175,4 @@ private:
     bool IsOnSplitter(int x) const;
 };
 
-} // namespace mbink
+} // namespace mblink

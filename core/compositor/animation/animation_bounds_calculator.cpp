@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <regex>
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // CalculateRotationBounds 实现
@@ -498,4 +498,4 @@ AnimationBounds AnimationBoundsCalculator::Calculate(
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink

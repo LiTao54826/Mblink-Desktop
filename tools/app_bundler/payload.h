@@ -18,7 +18,7 @@
 #include <vector>
 #include <map>
 
-namespace mbink {
+namespace mblink {
 
 // Magic number: "MBPK" in little-endian
 constexpr uint32_t PAYLOAD_MAGIC = 0x4B50424D;
@@ -32,7 +32,7 @@ struct PayloadConfig {
     uint32_t version = PAYLOAD_VERSION;
     int32_t width = 800;
     int32_t height = 600;
-    std::string title = "MBink App";
+    std::string title = "MBlink App";
     uint32_t module_count = 0;
     bool borderless = false;
     bool transparent = false;
@@ -145,4 +145,4 @@ private:
 uint32_t CalculateCRC32(const uint8_t* data, size_t length);
 uint32_t CalculateCRC32(const std::vector<uint8_t>& data);
 
-}  // namespace mbink
+}  // namespace mblink

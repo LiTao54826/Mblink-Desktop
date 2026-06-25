@@ -12,7 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 窗口事件类型枚举
@@ -111,13 +111,13 @@ private:
     int data2_;
 };
 
-} // namespace mbink
+} // namespace mblink
 
 // Hash function for WindowEventType to use in unordered_map
 namespace std {
     template<>
-    struct hash<mbink::WindowEventType> {
-        size_t operator()(const mbink::WindowEventType& type) const {
+    struct hash<mblink::WindowEventType> {
+        size_t operator()(const mblink::WindowEventType& type) const {
             return static_cast<size_t>(type);
         }
     };

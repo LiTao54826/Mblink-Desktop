@@ -1,4 +1,4 @@
-# MBink App Bundler - 将 JS 应用打包成独立 exe
+# MBlink App Bundler - 将 JS 应用打包成独立 exe
 
 # 创建生成目录
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -74,7 +74,7 @@ add_executable(app_bundler
 add_dependencies(app_bundler generate_embedded_upx)
 
 target_link_libraries(app_bundler
-    mbink_quickjs
+    mblink_quickjs
 )
 
 # 添加包含目录

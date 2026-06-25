@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"mbink-go/examples/internal/autorun"
+	"mblink-go/examples/internal/autorun"
 )
 
 func main() {
@@ -17,8 +17,8 @@ func main() {
 		log.Fatal(err)
 	}
 	exeDir := filepath.Dir(exePath)
-	audioPath := filepath.Join(exeDir, "audio", "mbink-audio-smoke-1khz.wav")
-	if override := os.Getenv("MBINK_AUDIO_SMOKE_WAV"); override != "" {
+	audioPath := filepath.Join(exeDir, "audio", "mblink-audio-smoke-1khz.wav")
+	if override := os.Getenv("MBLINK_AUDIO_SMOKE_WAV"); override != "" {
 		audioPath = override
 	}
 	if _, err := os.Stat(audioPath); err != nil {
@@ -26,7 +26,7 @@ func main() {
 	}
 	audioURL := filepath.ToSlash(audioPath)
 
-	app, err := autorun.NewApp("MBink Go audio smoke", 760, 280)
+	app, err := autorun.NewApp("MBlink Go audio smoke", 760, 280)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func main() {
 </head>
 <body>
   <main>
-    <h1>MBink Go audio smoke</h1>
+    <h1>MBlink Go audio smoke</h1>
     <p>Driver: ` + html.EscapeString(driver) + `</p>
     <p>Audio: ` + html.EscapeString(audioURL) + `</p>
     <audio id="audio" controls loop src="` + html.EscapeString(audioURL) + `"></audio>

@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -172,5 +172,5 @@ private:
     std::vector<DOMObserver*> observers_;
 };
 
-} // namespace mbink
+} // namespace mblink
 

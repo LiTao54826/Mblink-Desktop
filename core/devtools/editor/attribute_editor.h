@@ -10,7 +10,7 @@
 #include <functional>
 #include "core/dom/element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 属性编辑器
@@ -61,4 +61,4 @@ private:
     AttributeChangeCallback on_attribute_changed_;
 };
 
-} // namespace mbink
+} // namespace mblink

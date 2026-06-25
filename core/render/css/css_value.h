@@ -17,7 +17,7 @@
 #include <vector>
 #include "include/core/SkColor.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief CSS 单位类型
@@ -471,5 +471,5 @@ public:
 private:
 };
 
-} // namespace mbink
+} // namespace mblink
 

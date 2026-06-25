@@ -17,7 +17,7 @@
 #include <string>
 #include <functional>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -116,4 +116,4 @@ private:
     EditorInputSession* editor_input_session_ = nullptr;
 };
 
-} // namespace mbink
+} // namespace mblink

@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 DOMTokenList::DOMTokenList(std::weak_ptr<Element> element, const std::string& attr_name)
     : element_(element)
@@ -261,5 +261,5 @@ void DOMTokenList::UpdateAttribute() {
     // 保留这个方法以备将来需要
 }
 
-} // namespace mbink
+} // namespace mblink
 

@@ -15,7 +15,7 @@
 #include <optional>
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 //------------------------------------------------------------------------------
 // Grid Coordinates
@@ -385,5 +385,5 @@ inline std::optional<size_t> OriginZeroLine::TryIntoTrackVecIndex(TrackCounts tr
     return static_cast<size_t>(2 * (value + static_cast<int16_t>(track_counts.negative_implicit)));
 }
 
-} // namespace mbink
+} // namespace mblink
 

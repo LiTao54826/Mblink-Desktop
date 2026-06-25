@@ -12,7 +12,7 @@
 #include "../document.h"
 #include "../event.h"
 
-namespace mbink {
+namespace mblink {
 
 HTMLLabelElement::HTMLLabelElement()
     : Element("label")
@@ -225,5 +225,5 @@ void HTMLLabelElement::ActivateControl() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink
 

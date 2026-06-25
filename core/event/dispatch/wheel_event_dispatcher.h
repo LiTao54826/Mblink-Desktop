@@ -11,7 +11,7 @@
 #include <SDL3/SDL.h>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Document;
@@ -91,4 +91,4 @@ private:
                                       bool shift_pressed);
 };
 
-} // namespace mbink
+} // namespace mblink

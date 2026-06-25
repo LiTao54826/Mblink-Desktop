@@ -19,7 +19,7 @@
 #include "include/core/SkRect.h"
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 合成类型
@@ -210,4 +210,4 @@ private:
     CompositingReasons compositing_reasons_ = CompositingReasons::kNone;
 };
 
-} // namespace mbink
+} // namespace mblink

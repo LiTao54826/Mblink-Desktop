@@ -25,7 +25,7 @@
 #undef SubclassWindow  // windowsx.h 定义了 SubclassWindow 宏，与我们的函数名冲突
 #pragma comment(lib, "dwmapi.lib")
 
-namespace mbink {
+namespace mblink {
 namespace win32 {
 
 extern "C" const char* SDL_CreateTemporaryString(const char* string);
@@ -513,6 +513,6 @@ void EnableBorderlessShadow(HWND hwnd) {
 }
 
 }  // namespace win32
-}  // namespace mbink
+}  // namespace mblink
 
 #endif  // _WIN32

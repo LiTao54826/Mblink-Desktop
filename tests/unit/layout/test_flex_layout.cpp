@@ -9,7 +9,7 @@
 #include "layout/types/geometry.h"
 #include <unordered_map>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class FlexLayoutTest : public ::testing::Test {
@@ -316,4 +316,4 @@ TEST_F(FlexLayoutTest, ContentSizeProbeDoesNotOverwriteFinalChildPosition) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

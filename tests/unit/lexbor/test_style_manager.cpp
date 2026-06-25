@@ -9,7 +9,7 @@
 #include "dom/element.h"
 #include "render/css/style_resolver.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class StyleManagerTest : public ::testing::Test {
@@ -346,4 +346,4 @@ TEST_F(StyleManagerTest, ClearStyleSheets) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

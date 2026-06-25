@@ -11,7 +11,7 @@
 #include <vector>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Canvas渐变类型
@@ -87,4 +87,4 @@ private:
     std::vector<ColorStop> color_stops_;
 };
 
-} // namespace mbink
+} // namespace mblink

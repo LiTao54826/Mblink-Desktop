@@ -20,7 +20,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkColor.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Skia 渲染器基类
@@ -152,4 +152,4 @@ private:
     bool owns_surface_;         ///< 是否拥有 surface
 };
 
-} // namespace mbink
+} // namespace mblink

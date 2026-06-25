@@ -10,7 +10,7 @@
 #include "core/window/repaint_reason.h"
 #include <algorithm>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -476,5 +476,5 @@ void HTMLSelectElement::SelectPreviousOption() {
     SetSelectedIndex(prev, true);
 }
 
-} // namespace mbink
+} // namespace mblink
 

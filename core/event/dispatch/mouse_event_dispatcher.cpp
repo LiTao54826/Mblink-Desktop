@@ -55,7 +55,7 @@
 #include <sstream>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -3044,4 +3044,4 @@ void MouseEventDispatcher::ExtendSelectionFromDrag(
     selection->Extend(caret_pos.node, caret_pos.offset);
 }
 
-} // namespace mbink
+} // namespace mblink

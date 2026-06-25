@@ -11,7 +11,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkFont.h"
 
-namespace mbink {
+namespace mblink {
 
 namespace {
     const float ROW_HEIGHT = 20.0f;
@@ -186,4 +186,4 @@ void AttributesView::RenderAttributeList(SkCanvas* canvas, float x, float y, flo
     }
 }
 
-} // namespace mbink
+} // namespace mblink

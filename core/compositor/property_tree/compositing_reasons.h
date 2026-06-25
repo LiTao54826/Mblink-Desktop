@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 合成原因位标志
@@ -265,4 +265,4 @@ inline std::string GetCompositingReasonsSummary(CompositingReasons reasons) {
     return result;
 }
 
-} // namespace mbink
+} // namespace mblink

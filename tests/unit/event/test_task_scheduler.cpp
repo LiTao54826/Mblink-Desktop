@@ -8,7 +8,7 @@
 #include <thread>
 #include <chrono>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class TaskSchedulerTest : public ::testing::Test {
@@ -195,4 +195,4 @@ TEST_F(TaskSchedulerTest, ScheduleRepeatingTask) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

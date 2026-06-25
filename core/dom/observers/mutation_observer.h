@@ -19,7 +19,7 @@
 #include <functional>
 #include <set>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Node;
@@ -323,4 +323,4 @@ private:
     std::set<std::shared_ptr<MutationObserver>> observers_;
 };
 
-} // namespace mbink
+} // namespace mblink

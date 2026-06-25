@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief MBink App Bundler - 将 Preact/JS 应用打包成独立 exe
+ * @brief MBlink App Bundler - 将 Preact/JS 应用打包成独立 exe
  *
  * 用法: app_bundler <app.js> -o <output.exe> [选项]
  *
@@ -8,7 +8,7 @@
  *   -o, --output <file>     输出文件路径
  *   --width <value>         窗口宽度 (默认: 800)
  *   --height <value>        窗口高度 (默认: 600)
- *   --title <value>         窗口标题 (默认: MBink App)
+ *   --title <value>         窗口标题 (默认: MBlink App)
  *   --include <file>        包含额外的 JS 文件 (可多次使用)
  *   --template <file>       指定模板 exe 路径
  *   --verbose               显示详细信息
@@ -34,7 +34,7 @@
 #include "upx_compressor.h"
 
 namespace fs = std::filesystem;
-using namespace mbink;
+using namespace mblink;
 
 namespace {
 
@@ -143,7 +143,7 @@ fs::path PrebundleInputWithEsbuild(const fs::path& input_file, bool verbose, std
         return {};
     }
     const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    const auto temp_dir = fs::temp_directory_path() / ("mbink-app-bundler-" + std::to_string(stamp));
+    const auto temp_dir = fs::temp_directory_path() / ("mblink-app-bundler-" + std::to_string(stamp));
     std::error_code ec;
     fs::create_directories(temp_dir, ec);
     if (ec) {
@@ -182,7 +182,7 @@ struct BundlerOptions {
     // 窗口配置
     int width = 800;
     int height = 600;
-    std::string title = "MBink App";
+    std::string title = "MBlink App";
     bool borderless = false;                   // 无边框窗口模式
     bool transparent = false;                  // 透明窗口
     bool gpu = true;                           // GPU加速（默认启用）
@@ -199,7 +199,7 @@ struct BundlerOptions {
 
 // 打印帮助信息
 void PrintUsage(const char* program_name) {
-    std::cout << "MBink App Bundler - 将 Preact/JS 应用打包成独立 exe\n";
+    std::cout << "MBlink App Bundler - 将 Preact/JS 应用打包成独立 exe\n";
     std::cout << "\n";
     std::cout << "用法: " << program_name << " <app.js> -o <output.exe> [选项]\n";
     std::cout << "\n";
@@ -207,7 +207,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  -o, --output <file>     输出文件路径 (必需)\n";
     std::cout << "  --width <value>         窗口宽度 (默认: 800)\n";
     std::cout << "  --height <value>        窗口高度 (默认: 600)\n";
-    std::cout << "  --title <value>         窗口标题 (默认: MBink App)\n";
+    std::cout << "  --title <value>         窗口标题 (默认: MBlink App)\n";
     std::cout << "  --borderless            无边框窗口模式（支持不规则窗体）\n";
     std::cout << "  --transparent           透明窗口（需配合 --borderless 使用）\n";
     std::cout << "  --no-gpu               关闭GPU加速（使用CPU渲染，减少内存占用）\n";
@@ -435,7 +435,7 @@ int main(int argc, char** argv) {
 
     // 显示配置信息
     std::cout << "========================================\n";
-    std::cout << "  MBink App Bundler\n";
+    std::cout << "  MBlink App Bundler\n";
     std::cout << "========================================\n";
     std::cout << "  输入: " << options.input_file << "\n";
     if (resolved_input_file.string() != fs::weakly_canonical(options.input_file).string()) {

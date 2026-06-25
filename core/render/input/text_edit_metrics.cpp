@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace mbink::text_edit_metrics {
+namespace mblink::text_edit_metrics {
 
 float MeasureTextWidth(const std::string& text,
                        const SkFont& font,
@@ -91,4 +91,4 @@ std::vector<int> ComputeRenderedLineStartOffsets(const std::string& text,
     return starts;
 }
 
-}  // namespace mbink::text_edit_metrics
+}  // namespace mblink::text_edit_metrics

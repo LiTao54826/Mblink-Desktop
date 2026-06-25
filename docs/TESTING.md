@@ -14,16 +14,16 @@
 
 ## CMake Test Targets | CMake 测试目标
 
-- `mbink_unit_tests`
-- `mbink_render_tests`
-- `mbink_integration_tests`
-- `mbink_property_tests`
-- `mbink_performance_tests` (optional / 可选)
+- `mblink_unit_tests`
+- `mblink_render_tests`
+- `mblink_integration_tests`
+- `mblink_property_tests`
+- `mblink_performance_tests` (optional / 可选)
 
 ## Build and Run Tests | 构建并运行测试
 
 ```bash
-cmake -B build -DMBINK_BUILD_TESTS=ON
+cmake -B build -DMBLINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
@@ -31,21 +31,21 @@ ctest --test-dir build --output-on-failure
 Runtime parity regression:
 
 ```powershell
-cmake --build build --config Release --target mbink_api esm_loader mbink_ui_dev
+cmake --build build --config Release --target mblink_api esm_loader mblink_ui_dev
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_esm_loader_c_api_parity.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mbink_ui_dev_p0_regression.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mbink_ui_dev_responsiveness.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mblink_ui_dev_p0_regression.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\regression\test_mblink_ui_dev_responsiveness.ps1
 ```
 
 The `test_esm_loader_c_api_parity.ps1` script verifies that `esm_loader.exe`
-stays a thin `mbink.dll` consumer and that snapshot, console, errors,
+stays a thin `mblink.dll` consumer and that snapshot, console, errors,
 lifecycle, UI-dev command handling, and `--no-scripts` behavior flow through
 the C API.
 
 Performance tests | 性能测试：
 
 ```bash
-cmake -B build -DMBINK_BUILD_TESTS=ON -DMBINK_BUILD_PERF_TESTS=ON
+cmake -B build -DMBLINK_BUILD_TESTS=ON -DMBLINK_BUILD_PERF_TESTS=ON
 cmake --build build --config Release
 ```
 

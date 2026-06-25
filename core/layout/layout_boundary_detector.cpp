@@ -8,7 +8,7 @@
 #include "core/dom/node.h"
 #include "core/render/objects/render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 // ============================================================================
 // 边界类型检测
@@ -212,4 +212,4 @@ const char* LayoutBoundaryDetector::BoundaryTypeToString(BoundaryType type) {
     }
 }
 
-}  // namespace mbink
+}  // namespace mblink

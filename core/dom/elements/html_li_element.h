@@ -13,7 +13,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief HTML LI元素类
@@ -55,5 +55,5 @@ public:
     void SetValue(int value);
 };
 
-} // namespace mbink
+} // namespace mblink
 

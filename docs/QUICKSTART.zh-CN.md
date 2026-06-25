@@ -2,23 +2,23 @@
 
 [English](QUICKSTART.md) | 中文
 
-这份文档是目前在 Windows 上理解并跑起 MBink 的最快路径。
+这份文档是目前在 Windows 上理解并跑起 MBlink 的最快路径。
 
 ## 你要启动的是什么
 
-MBink 目前有两条最实用的首次上手路径：
+MBlink 目前有两条最实用的首次上手路径：
 
-1. `mbink-ui-dev.exe`：面向 AI 优先的开发工作流
+1. `mblink-ui-dev.exe`：面向 AI 优先的开发工作流
 2. `esm_loader.exe`：最薄的一层手动运行时入口
 
-如果你是第一次看这个仓库，建议先从 `mbink-ui-dev` 开始。
+如果你是第一次看这个仓库，建议先从 `mblink-ui-dev` 开始。
 
 ## 框架说明
 
 当前最清晰的 UI 路径是：
 
 - 直接的 JS / ESM 入口
-- `mbink-ui-dev` 生成出来的项目，或仓库内现有项目
+- `mblink-ui-dev` 生成出来的项目，或仓库内现有项目
 - 轻量化的官方 Preact 模块链路
 
 所以现在更准确的理解方式是：这个仓库是偏 Preact 路线的，而不是一个可以直接承接完整 React 应用或大型浏览器脚手架的通用运行时。
@@ -46,36 +46,36 @@ import { useState } from 'preact/hooks';
 
 ```powershell
 cmake -B build
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 预期输出：
 
-- `build\bin\Release\mbink-ui-dev.exe`
+- `build\bin\Release\mblink-ui-dev.exe`
 - `build\bin\Release\esm_loader.exe`
-- `build\bin\Release\mbink.dll`
+- `build\bin\Release\mblink.dll`
 
 ## 路径 A：AI 优先开发循环
 
 打开已经验证过的示例项目：
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe open --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+build\bin\Release\mblink-ui-dev.exe open --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
 ```
 
 一些常用后续命令：
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe info --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
-build\bin\Release\mbink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe info --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
 ```
 
 你应该看到：
 
-- 一个真实运行中的 MBink 窗口
+- 一个真实运行中的 MBlink 窗口
 - 一份结构化 DOM / UI 快照
 - 在加上 `--include-screenshot` 时生成的 PNG 截图
 
@@ -93,11 +93,11 @@ build\bin\Release\mbink-ui-dev.exe click 'button[type="submit"]' --project "exam
 build\bin\Release\esm_loader.exe examples\todo_app_js\app.js
 ```
 
-这条路径有助于你从下面几个角度理解 MBink：
+这条路径有助于你从下面几个角度理解 MBlink：
 
 - 一个 JS 入口文件
 - 一个宿主可执行文件
-- 一个旁边放着的 `mbink.dll`
+- 一个旁边放着的 `mblink.dll`
 
 当你希望在不经过更高层工具的情况下使用 UI-dev 快照/控制能力时，`esm_loader` 也暴露了对应文件接口：
 
@@ -113,9 +113,9 @@ build\bin\Release\esm_loader.exe examples\todo_app_js\app.js `
 你也可以直接生成一个新的最小项目：
 
 ```powershell
-build\bin\Release\mbink-ui-dev.exe init "tmp\my-mbink-app" --purpose minimal --runtime tool
-build\bin\Release\mbink-ui-dev.exe open --project "tmp\my-mbink-app"
-build\bin\Release\mbink-ui-dev.exe snapshot --project "tmp\my-mbink-app"
+build\bin\Release\mblink-ui-dev.exe init "tmp\my-mblink-app" --purpose minimal --runtime tool
+build\bin\Release\mblink-ui-dev.exe open --project "tmp\my-mblink-app"
+build\bin\Release\mblink-ui-dev.exe snapshot --project "tmp\my-mblink-app"
 ```
 
 说明：
@@ -127,11 +127,11 @@ build\bin\Release\mbink-ui-dev.exe snapshot --project "tmp\my-mbink-app"
 - `minimal`、`showcase`、`desktop-app`
 - `tool`、`python`、`rust`、`go`
 
-如果只看当前最稳妥的 JS UI 路径，仍然应该优先理解为“小型 MBink 项目 + 官方 Preact 链路”，而不是完整 React 生态栈。
+如果只看当前最稳妥的 JS UI 路径，仍然应该优先理解为“小型 MBlink 项目 + 官方 Preact 链路”，而不是完整 React 生态栈。
 
 ## Python 作为次级手动宿主
 
-在 `esm_loader` 之后，Python 是最容易继续读下去的一条绑定路径，但它仍然不是主入口，主入口还是 `mbink-ui-dev`。
+在 `esm_loader` 之后，Python 是最容易继续读下去的一条绑定路径，但它仍然不是主入口，主入口还是 `mblink-ui-dev`。
 
 参见：
 

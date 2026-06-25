@@ -5,7 +5,7 @@
 
 #include "comment.h"
 
-namespace mbink {
+namespace mblink {
 
 Comment::Comment(const std::string& data)
     : Text(data) {
@@ -16,4 +16,4 @@ std::shared_ptr<Node> Comment::CloneNode(bool deep) {
     return std::make_shared<Comment>(GetData());
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -1,5 +1,5 @@
 /**
- * MBink Button 组件
+ * MBlink Button 组件
  *
  * Props:
  * - variant: 'primary' | 'secondary' | 'outline' | 'ghost' | 'link' | 'danger'
@@ -22,7 +22,7 @@ function injectSpinnerStyle() {
   if (spinnerStyleInjected || typeof document === 'undefined') return;
   const style = document.createElement('style');
   style.textContent = `
-@keyframes mbink-spin {
+@keyframes mblink-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }`;
@@ -131,7 +131,7 @@ function Spinner({ size = 14 }) {
     borderRadius: '50%',
     display: 'inline-block',
     verticalAlign: 'middle',
-    animation: 'mbink-spin 1s linear infinite',
+    animation: 'mblink-spin 1s linear infinite',
   };
 
   return h('span', { style: spinnerStyle });

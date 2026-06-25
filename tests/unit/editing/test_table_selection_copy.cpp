@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 namespace {
@@ -598,4 +598,4 @@ TEST_F(TableSelectionCopyTest, DoubleClickSelectsAdjacentStringInTableCell) {
 }
 
 }  // namespace test
-}  // namespace mbink
+}  // namespace mblink

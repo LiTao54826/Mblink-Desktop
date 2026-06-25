@@ -6,13 +6,13 @@ import (
 	"log"
 	"sync/atomic"
 
-	"mbink-go/examples/internal/autorun"
-	"mbink-go/mbink"
+	"mblink-go/examples/internal/autorun"
+	"mblink-go/mblink"
 )
 
 func main() {
-	cfg := mbink.DefaultConfig().
-		WithTitle("MBink Go Tray Demo").
+	cfg := mblink.DefaultConfig().
+		WithTitle("MBlink Go Tray Demo").
 		WithSize(1000, 700).
 		WithBorderless(true).
 		WithMinSize(900, 620).
@@ -20,7 +20,7 @@ func main() {
 	if autorun.Enabled() {
 		cfg = cfg.WithGPU(false)
 	}
-	app, err := mbink.NewWithConfig(cfg)
+	app, err := mblink.NewWithConfig(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func main() {
 	handle := app.Handle()
 
 	must(app.LoadHTML(`<!doctype html><html><body style="font-family:sans-serif;padding:24px;background:#0f172a;color:#e5e7eb;"><h1>Go Tray Demo</h1><p>关闭窗口会隐藏到托盘，点击托盘可恢复。</p></body></html>`))
-	must(app.CreateTray("MBink Go Tray Demo"))
+	must(app.CreateTray("MBlink Go Tray Demo"))
 	must(app.SetTrayMenu([]map[string]any{{"id": "show", "label": "显示窗口"}, {"id": "toggle_top", "label": "置顶窗口", "checked": false}, {"type": "separator"}, {"id": "quit", "label": "退出"}}))
 	must(app.OnCloseRequest(func() bool {
 		if quitting.Load() {
@@ -52,7 +52,7 @@ func main() {
 		case "show":
 			_ = handle.Show()
 			_ = handle.Restore()
-			_ = handle.SetTitle("MBink Go Tray Demo")
+			_ = handle.SetTitle("MBlink Go Tray Demo")
 		case "toggle_top":
 			next := !topmost.Load()
 			_ = handle.SetAlwaysOnTop(next)

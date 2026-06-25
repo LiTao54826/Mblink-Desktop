@@ -5,7 +5,7 @@
 
 #include "canvas_image_data.h"
 
-namespace mbink {
+namespace mblink {
 
 ImageData::ImageData(unsigned int width, unsigned int height)
     : width_(width)
@@ -37,4 +37,4 @@ void ImageData::SetPixelValue(size_t index, uint8_t value) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

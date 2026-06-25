@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace mbink::input_text_viewport {
+namespace mblink::input_text_viewport {
 
 namespace {
 
@@ -83,4 +83,4 @@ float ClampVisibleX(float local_x, const ViewportState& viewport) {
     return std::clamp(local_x, 0.0f, viewport.visible_width);
 }
 
-}  // namespace mbink::input_text_viewport
+}  // namespace mblink::input_text_viewport

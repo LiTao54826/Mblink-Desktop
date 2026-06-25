@@ -22,7 +22,7 @@
 #include <sstream>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace {
 bool CssTextContainsProperty(const std::string& css_text, const std::string& property) {
     size_t start = 0;
@@ -236,7 +236,7 @@ std::shared_ptr<HTMLSelectElement> FindSelectForOptionContent(const std::shared_
 }
 
 bool SyncPhaseStatsEnabled() {
-    const char* value = std::getenv("MBINK_SYNC_PHASE_STATS");
+    const char* value = std::getenv("MBLINK_SYNC_PHASE_STATS");
     return value && value[0] != '\0' && std::string(value) != "0";
 }
 
@@ -448,7 +448,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 
     if (phase_stats_enabled) {
         const double total_ms = SyncPhaseNowMs() - sync_start_ms;
-        std::cout << "[MBINK_SYNC_PHASE]"
+        std::cout << "[MBLINK_SYNC_PHASE]"
                   << " total_ms=" << total_ms
                   << " optimize_ms=" << optimize_ms
                   << " cleanup_ms=" << cleanup_ms
@@ -1602,4 +1602,4 @@ void RenderTreeSynchronizer::InvalidateAncestorLayout(RenderObject* obj) {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

@@ -1,5 +1,5 @@
-#ifndef MBINK_UNIFIED_RENDERER_H
-#define MBINK_UNIFIED_RENDERER_H
+#ifndef MBLINK_UNIFIED_RENDERER_H
+#define MBLINK_UNIFIED_RENDERER_H
 
 #include "core/render/utils/color.h"
 #include "core/render/utils/paint.h"
@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 统一渲染器 - 提供简化的高层渲染 API
@@ -317,7 +317,7 @@ private:
     void EnsureImageRenderer();   ///< 确保 ImageRenderer 已创建
 };
 
-} // namespace mbink
+} // namespace mblink
 
-#endif // MBINK_UNIFIED_RENDERER_H
+#endif // MBLINK_UNIFIED_RENDERER_H
 

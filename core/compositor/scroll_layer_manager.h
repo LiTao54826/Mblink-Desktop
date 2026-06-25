@@ -24,7 +24,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -348,4 +348,4 @@ private:
     static uint32_t next_layer_id_;
 };
 
-} // namespace mbink
+} // namespace mblink

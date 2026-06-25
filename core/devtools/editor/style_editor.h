@@ -10,7 +10,7 @@
 #include <functional>
 #include "core/dom/element.h"
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 样式编辑器
@@ -62,4 +62,4 @@ private:
     StyleChangeCallback on_style_changed_;
 };
 
-} // namespace mbink
+} // namespace mblink

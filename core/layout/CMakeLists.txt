@@ -49,17 +49,17 @@ set(LAYOUT_HEADERS
     util/resolve.h
 )
 
-add_library(mbink_layout STATIC ${LAYOUT_SOURCES})
+add_library(mblink_layout STATIC ${LAYOUT_SOURCES})
 
-target_include_directories(mbink_layout PUBLIC
+target_include_directories(mblink_layout PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-target_link_libraries(mbink_layout PUBLIC
-    mbink_utils
-    mbink_render
+target_link_libraries(mblink_layout PUBLIC
+    mblink_utils
+    mblink_render
 )
 
 # 原生布局引擎 (Native Layout Engine)
@@ -67,19 +67,19 @@ target_link_libraries(mbink_layout PUBLIC
 
 # 链接Skia（如果启用）
 if(TARGET skia)
-    target_link_libraries(mbink_layout PUBLIC skia)
-    target_include_directories(mbink_layout PUBLIC
+    target_link_libraries(mblink_layout PUBLIC skia)
+    target_include_directories(mblink_layout PUBLIC
         $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
         $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
     )
 
     # Match Skia's runtime library settings (MSVC)
     if(MSVC)
-        target_compile_options(mbink_layout PUBLIC
+        target_compile_options(mblink_layout PUBLIC
             $<$<CONFIG:Debug>:/MT>
             $<$<CONFIG:Release>:/MT>
         )
-        target_compile_definitions(mbink_layout PUBLIC
+        target_compile_definitions(mblink_layout PUBLIC
             $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
         )
     endif()

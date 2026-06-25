@@ -20,7 +20,7 @@
 #include "ui_dev_control.h"
 #include "ui_dev_snapshot.h"
 
-namespace mbink::ui_dev {
+namespace mblink::ui_dev {
 namespace {
 namespace fs = std::filesystem;
 
@@ -293,4 +293,4 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
     }, needs_frame_cadence);
 }
 
-}  // namespace mbink::ui_dev
+}  // namespace mblink::ui_dev

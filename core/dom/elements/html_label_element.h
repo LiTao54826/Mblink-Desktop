@@ -15,7 +15,7 @@
 #include <string>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class HTMLFormElement;
@@ -149,5 +149,5 @@ private:
     std::string html_for_;  ///< for属性（关联控件的ID）
 };
 
-} // namespace mbink
+} // namespace mblink
 

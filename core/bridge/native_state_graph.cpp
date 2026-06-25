@@ -9,7 +9,7 @@
 #include <cctype>
 #include <stdexcept>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -530,4 +530,4 @@ std::vector<SubscriptionRecord> NativeStateGraph::collectSubscriptionsLocked(con
     return matches;
 }
 
-} // namespace mbink
+} // namespace mblink

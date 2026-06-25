@@ -14,7 +14,7 @@
 #include <cmath>
 #include <regex>
 
-namespace mbink {
+namespace mblink {
 
 AnimationLayerBridge::AnimationLayerBridge() = default;
 AnimationLayerBridge::~AnimationLayerBridge() = default;
@@ -310,4 +310,4 @@ void AnimationLayerBridge::RequestLayerDemotion(RenderObject* object) {
     // 注意：实际的层移除会在下一次 LayerTreeBuilder::Build() 时发生
 }
 
-} // namespace mbink
+} // namespace mblink

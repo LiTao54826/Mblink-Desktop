@@ -15,7 +15,7 @@
 #include <fstream>
 #include <iostream>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 
@@ -1215,4 +1215,4 @@ void StyleManager::InvalidateHoverRuleCache() {
     ++stylesheet_version_;
 }
 
-} // namespace mbink
+} // namespace mblink

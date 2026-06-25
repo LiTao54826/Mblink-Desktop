@@ -16,7 +16,7 @@
 #include <vector>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class Element;
@@ -209,5 +209,5 @@ private:
     std::string InheritFromParent(Element* element, const std::string& property) const;
 };
 
-} // namespace mbink
+} // namespace mblink
 

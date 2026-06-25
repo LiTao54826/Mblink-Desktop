@@ -5,7 +5,7 @@
 #include "core/utils/utf8_utils.h"
 #include <SDL3/SDL.h>
 
-namespace mbink {
+namespace mblink {
 
 InputEditingController::InputEditingController(HTMLInputElement* owner,
                                                std::shared_ptr<InputEditState> edit_state)
@@ -220,5 +220,5 @@ void InputEditingController::RequestRepaint() {
 }
 void InputEditingController::NotifyInputEvent() { if (owner_) owner_->TriggerInputEvent(); }
 
-}  // namespace mbink
+}  // namespace mblink
 

@@ -10,5 +10,5 @@ set(CANVAS_HEADERS
 )
 
 # 添加到父级目标
-target_sources(mbink_core PRIVATE ${CANVAS_SOURCES})
-target_sources(mbink_core PUBLIC FILE_SET HEADERS FILES ${CANVAS_HEADERS})
+target_sources(mblink_core PRIVATE ${CANVAS_SOURCES})
+target_sources(mblink_core PUBLIC FILE_SET HEADERS FILES ${CANVAS_HEADERS})

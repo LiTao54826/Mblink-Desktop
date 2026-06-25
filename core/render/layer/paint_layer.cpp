@@ -13,7 +13,7 @@
 #include <sstream>
 #include <atomic>
 
-namespace mbink {
+namespace mblink {
 
 namespace {
 std::atomic<size_t> g_paint_layer_live_count{0};
@@ -778,4 +778,4 @@ void PaintLayer::DumpTree(int indent) const {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

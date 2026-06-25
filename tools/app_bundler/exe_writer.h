@@ -9,7 +9,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief Exe 写入器
@@ -74,4 +74,4 @@ private:
     std::string error_;
 };
 
-}  // namespace mbink
+}  // namespace mblink

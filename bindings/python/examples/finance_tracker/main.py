@@ -1,6 +1,6 @@
 """
 Finance Tracker — 个人财务记账本
-展示 MBink Python 绑定的高级特性：
+展示 MBlink Python 绑定的高级特性：
 
   - 多字段 SharedState（records / summary / filter / months）
   - Python 端数据计算（月度汇总、分类统计）
@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from datetime import date, datetime
 
-from mbink import App
+from mblink import App
 
 # ── 路径 ────────────────────────────────────────────────────
 _DIR = os.path.dirname(os.path.abspath(__file__))

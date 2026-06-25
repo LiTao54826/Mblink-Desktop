@@ -7,7 +7,7 @@
 #include <future>
 #include <thread>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 namespace {
 
@@ -95,4 +95,4 @@ TEST(BackgroundTaskRunnerTest, DestructorJoinsInFlightTask) {
 
 } // namespace
 } // namespace test
-} // namespace mbink
+} // namespace mblink

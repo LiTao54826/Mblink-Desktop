@@ -1,29 +1,29 @@
-# MBink Python Binding
+# MBlink Python Binding
 
-The Python binding is the easiest language binding to understand after `mbink-ui-dev` and `esm_loader`.
+The Python binding is the easiest language binding to understand after `mblink-ui-dev` and `esm_loader`.
 
 ## What it is
 
-- a `ctypes + C ABI` wrapper around `mbink.dll`
+- a `ctypes + C ABI` wrapper around `mblink.dll`
 - the only binding clearly integrated into the top-level CMake build
-- a good reference if you want to see MBink as a host runtime instead of only as a dev tool
+- a good reference if you want to see MBlink as a host runtime instead of only as a dev tool
 
 ## Current repository shape
 
 Important files and folders:
 
-- `bindings/python/mbink/`
+- `bindings/python/mblink/`
 - `bindings/python/setup.py`
 - `bindings/python/examples/`
-- `bindings/python/mbink/bin/mbink.dll`
+- `bindings/python/mblink/bin/mblink.dll`
 
 ## Build/runtime relationship
 
 After building the repository, runtime artifacts are copied into:
 
-- `bindings/python/mbink/bin/`
+- `bindings/python/mblink/bin/`
 
-That means the Python package can load the local MBink runtime without inventing a separate runtime story.
+That means the Python package can load the local MBlink runtime without inventing a separate runtime story.
 
 ## Basic build path
 
@@ -31,7 +31,7 @@ From the repository root:
 
 ```powershell
 cmake -B build
-cmake --build build --config Release --target mbink_ui_dev esm_loader -- /m:1
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
 If you specifically want the Python-integrated build surface as well:
@@ -54,8 +54,8 @@ py -3 -m pip install -e .
 
 Look at:
 
-- `mbink/__init__.py`
-- `mbink/app.py`
+- `mblink/__init__.py`
+- `mblink/app.py`
 
 The main host entry point is `App`.
 
@@ -86,7 +86,7 @@ The Python binding can also expose the same development-only inspection path use
 - `App.ui_dev_command(...)`
 - `App.devtools_http_session(...)`
 
-Those APIs depend on the optional `mbink_devtools.dll` path rather than changing the core runtime model.
+Those APIs depend on the optional `mblink_devtools.dll` path rather than changing the core runtime model.
 
 ## What this README does not claim
 

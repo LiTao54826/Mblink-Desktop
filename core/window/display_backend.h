@@ -17,7 +17,7 @@
 // 前向声明
 struct SDL_Window;
 
-namespace mbink {
+namespace mblink {
 
 /**
  * @brief 显示后端类型
@@ -352,5 +352,5 @@ private:
     void* sdl_surface_ = nullptr;  // SDL_Surface*
 };
 
-} // namespace mbink
+} // namespace mblink
 

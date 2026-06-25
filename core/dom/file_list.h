@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 
 struct FileInfo {
     std::string path;
@@ -24,4 +24,4 @@ FileList BuildFileListFromDirectoryPath(const std::string& path);
 std::string FileListValueString(const FileList& files);
 bool FileListsEqual(const FileList& a, const FileList& b);
 
-} // namespace mbink
+} // namespace mblink

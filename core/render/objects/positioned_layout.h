@@ -5,7 +5,7 @@
 
 #include "render_object.h"
 
-namespace mbink {
+namespace mblink {
 
 inline void MarkPositionedSubtreeNeedsLayout(const std::shared_ptr<RenderObject>& obj) {
     if (!obj) {
@@ -104,4 +104,4 @@ inline void LayoutPositionedChild(const std::shared_ptr<RenderObject>& child,
     }
 }
 
-}  // namespace mbink
+}  // namespace mblink

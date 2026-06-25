@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <sstream>
 
-namespace mbink {
+namespace mblink {
 
 // ========== 构造函数 ==========
 
@@ -117,4 +117,4 @@ void HTMLCanvasElement::ResizeCanvas() {
     }
 }
 
-} // namespace mbink
+} // namespace mblink

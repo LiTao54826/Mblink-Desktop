@@ -10,7 +10,7 @@
 #include <optional>
 #include <memory>
 
-namespace mbink {
+namespace mblink {
 
 // 前向声明
 class RenderObject;
@@ -245,5 +245,5 @@ private:
                                             float progress);
 };
 
-} // namespace mbink
+} // namespace mblink
 

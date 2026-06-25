@@ -24,7 +24,7 @@
 #include <vector>
 #include <chrono>
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 /**
@@ -923,4 +923,4 @@ TEST_F(IncrementalLayoutIntegrationTest, ResizeThenIncrementalUpdate) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

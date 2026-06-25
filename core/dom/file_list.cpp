@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <utility>
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 std::filesystem::path Utf8PathToFsPath(const std::string& path) {
@@ -190,4 +190,4 @@ bool FileListsEqual(const FileList& a, const FileList& b) {
     return true;
 }
 
-} // namespace mbink
+} // namespace mblink

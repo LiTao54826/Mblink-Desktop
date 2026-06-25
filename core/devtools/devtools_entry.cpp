@@ -1,4 +1,4 @@
-#include "core/devtools/mbink_devtools.h"
+#include "core/devtools/mblink_devtools.h"
 #include "devtools_bridge.h"
 
 #include "core/devtools/devtools_manager.h"
@@ -34,14 +34,14 @@
 #include <bcrypt.h>
 #endif
 
-namespace mbink {
+namespace mblink {
 namespace {
 
 constexpr unsigned int kDevToolsAttachVersion = kDevToolsBridgeVersion;
-constexpr int kMbinkOk = 0;
-constexpr int kMbinkErrorInvalidHandle = -1;
-constexpr int kMbinkErrorInvalidParam = -2;
-constexpr int kMbinkErrorUnknown = -99;
+constexpr int kMblinkOk = 0;
+constexpr int kMblinkErrorInvalidHandle = -1;
+constexpr int kMblinkErrorInvalidParam = -2;
+constexpr int kMblinkErrorUnknown = -99;
 constexpr size_t kDefaultSnapshotMaxNodes = 2000;
 constexpr size_t kHttpSnapshotMaxNodes = 10000;
 constexpr int kDefaultSnapshotMaxDepth = 64;
@@ -54,7 +54,7 @@ int RunWithHostMainThread(const DevToolsHostContext* context, Fn&& fn) {
         g_host_services.is_main_thread(context) ||
         !g_host_services.run_on_main_thread_sync) {
         fn();
-        return kMbinkOk;
+        return kMblinkOk;
     }
 
     struct TaskState {
@@ -309,7 +309,7 @@ nlohmann::json DevToolsCommandToJson(const DevToolsHostContext* context,
     char* response = nullptr;
     const auto payload = command.dump();
     const int rc = BridgeCommandJson(context, payload.c_str(), &response);
-    if (rc != kMbinkOk || !response) {
+    if (rc != kMblinkOk || !response) {
         nlohmann::json error{{"ok", false},
                              {"error", {{"code", "ui_dev_command_failed"},
                                          {"message", response ? response : "ui-dev command failed"}}}};
@@ -354,9 +354,9 @@ nlohmann::json SnapshotToJson(const DevToolsHostContext* context,
 
     const auto token = NewCommandToken();
     const auto snapshot_path = std::filesystem::temp_directory_path() /
-        ("mbink-devtools-http-snapshot-" + token + ".json");
+        ("mblink-devtools-http-snapshot-" + token + ".json");
     const auto screenshot_path = std::filesystem::temp_directory_path() /
-        ("mbink-devtools-http-screenshot-" + token + ".png");
+        ("mblink-devtools-http-screenshot-" + token + ".png");
 
     UiDevSnapshotOptionsBridge options;
     options.runtime_epoch = context && context->runtime_epoch ? context->runtime_epoch : nullptr;
@@ -373,7 +373,7 @@ nlohmann::json SnapshotToJson(const DevToolsHostContext* context,
 
     char* error = nullptr;
     const int rc = BridgeSnapshotFile(context, snapshot_path.string().c_str(), &options, &error);
-    if (rc != kMbinkOk) {
+    if (rc != kMblinkOk) {
         const std::string message = error ? error : "snapshot export failed";
         if (error && g_host_services.free_string) {
             g_host_services.free_string(error);
@@ -439,7 +439,7 @@ nlohmann::json HandleMcpJsonRpc(const DevToolsHostContext* context,
             return MakeJsonRpcResult(id,
                                      nlohmann::json{{"protocolVersion", "2025-03-26"},
                                                     {"capabilities", {{"tools", nlohmann::json::object()}}},
-                                                    {"serverInfo", {{"name", "mbink-devtools"},
+                                                    {"serverInfo", {{"name", "mblink-devtools"},
                                                                     {"version", "0.1.0"}}}});
         }
         if (method == "tools/list") {
@@ -562,7 +562,7 @@ std::string HttpResponse(int status,
              << "Content-Type: " << content_type << "\r\n"
              << "Connection: close\r\n"
              << "Access-Control-Allow-Origin: http://127.0.0.1\r\n"
-             << "Access-Control-Allow-Headers: content-type, authorization, x-mbink-devtools-token\r\n"
+             << "Access-Control-Allow-Headers: content-type, authorization, x-mblink-devtools-token\r\n"
              << "Access-Control-Allow-Methods: POST, OPTIONS\r\n"
              << "\r\n"
              << body;
@@ -585,7 +585,7 @@ bool HasValidAuth(const std::unordered_map<std::string, std::string>& headers,
     if (token.empty()) {
         return false;
     }
-    auto it = headers.find("x-mbink-devtools-token");
+    auto it = headers.find("x-mblink-devtools-token");
     if (it != headers.end() && it->second == token) {
         return true;
     }
@@ -609,25 +609,25 @@ public:
         if (!context || !context->host_user_data ||
             !g_host_services.with_current_context_sync || !info) {
             SetHostString(out_error, "invalid HTTP devtools host");
-            return kMbinkErrorInvalidParam;
+            return kMblinkErrorInvalidParam;
         }
 
         std::lock_guard<std::mutex> lock(mutex_);
         if (running_) {
             if (host_user_data_ != context->host_user_data) {
-                SetHostString(out_error, "mbink devtools HTTP MCP is already running for another host");
-                return kMbinkErrorInvalidHandle;
+                SetHostString(out_error, "mblink devtools HTTP MCP is already running for another host");
+                return kMblinkErrorInvalidHandle;
             }
             FillInfoLocked(info);
-            return kMbinkOk;
+            return kMblinkOk;
         }
 
         bind_host_ = options && options->bind_host && options->bind_host[0]
                          ? options->bind_host
                          : "127.0.0.1";
         if (bind_host_ != "127.0.0.1") {
-            SetHostString(out_error, "mbink devtools HTTP currently binds only to 127.0.0.1");
-            return kMbinkErrorInvalidParam;
+            SetHostString(out_error, "mblink devtools HTTP currently binds only to 127.0.0.1");
+            return kMblinkErrorInvalidParam;
         }
         require_auth_ = !options || options->require_auth;
         token_ = options && options->auth_token && options->auth_token[0]
@@ -635,7 +635,7 @@ public:
                      : (require_auth_ ? RandomToken() : std::string{});
         if (require_auth_ && token_.empty()) {
             SetHostString(out_error, "failed to generate devtools auth token");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         host_user_data_ = context->host_user_data;
         stopping_ = false;
@@ -646,7 +646,7 @@ public:
         WSADATA data{};
         if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
             SetHostString(out_error, "WSAStartup failed");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         winsock_started_ = true;
 
@@ -654,7 +654,7 @@ public:
         if (listen_socket_ == INVALID_SOCKET) {
             AbortStartLocked();
             SetHostString(out_error, "socket creation failed");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
 
         sockaddr_in addr{};
@@ -664,26 +664,26 @@ public:
         if (bind(listen_socket_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
             AbortStartLocked();
             SetHostString(out_error, "bind failed");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         if (listen(listen_socket_, SOMAXCONN) == SOCKET_ERROR) {
             AbortStartLocked();
             SetHostString(out_error, "listen failed");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         sockaddr_in bound{};
         int bound_len = sizeof(bound);
         if (getsockname(listen_socket_, reinterpret_cast<sockaddr*>(&bound), &bound_len) == SOCKET_ERROR) {
             AbortStartLocked();
             SetHostString(out_error, "getsockname failed");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         port_ = ntohs(bound.sin_port);
         url_ = "http://127.0.0.1:" + std::to_string(port_) + "/mcp";
         running_ = true;
         worker_ = std::thread([this]() { ServeLoop(); });
         FillInfoLocked(info);
-        return kMbinkOk;
+        return kMblinkOk;
     }
 
     int Stop(const DevToolsHostContext* context) {
@@ -691,14 +691,14 @@ public:
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (!running_) {
-                return kMbinkOk;
+                return kMblinkOk;
             }
             if (requested_host && host_user_data_ != requested_host) {
-                return kMbinkErrorInvalidHandle;
+                return kMblinkErrorInvalidHandle;
             }
         }
         StopServer();
-        return kMbinkOk;
+        return kMblinkOk;
     }
 
 private:
@@ -926,7 +926,7 @@ private:
                 }
             },
             &state);
-        if (rc != kMbinkOk) {
+        if (rc != kMblinkOk) {
             return JsonErrorResponse(500, "host_unavailable", "devtools host is unavailable");
         }
         return HttpResponse(200, "application/json", state.response.dump());
@@ -986,11 +986,11 @@ public:
               DevToolsHttpServerInfoBridge*,
               char** out_error) {
         SetHostString(out_error, "devtools HTTP MCP is not implemented on this platform");
-        return kMbinkErrorUnknown;
+        return kMblinkErrorUnknown;
     }
 
     int Stop(const DevToolsHostContext*) {
-        return kMbinkOk;
+        return kMblinkOk;
     }
 };
 #endif
@@ -1025,7 +1025,7 @@ void BridgeShutdown(const DevToolsHostContext* context) {
 
 int BridgeOpen(const DevToolsHostContext* context) {
     if (!context || !context->document || !context->window) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     return RunWithHostMainThread(context, [&]() {
         auto& devtools = DevToolsManager::GetInstance();
@@ -1147,11 +1147,11 @@ int BridgeSnapshotFile(const DevToolsHostContext* context,
     }
     if (!context || !context->window || !context->document || !output_path) {
         SetHostString(out_error, "invalid snapshot host");
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     if (context->shutdown_requested || (options && options->shutdown_requested)) {
         SetHostString(out_error, "shutdown_in_progress");
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
 
     ui_dev::SnapshotExportOptions snapshot_options;
@@ -1162,13 +1162,13 @@ int BridgeSnapshotFile(const DevToolsHostContext* context,
         options && options->max_nodes > 0 ? options->max_nodes : kDefaultSnapshotMaxNodes;
     if (requested_max_nodes > kHttpSnapshotMaxNodes) {
         SetHostString(out_error, "max_nodes must be between 1 and 10000");
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     const int requested_max_depth =
         options && options->max_depth > 0 ? options->max_depth : kDefaultSnapshotMaxDepth;
     if (requested_max_depth > kHttpSnapshotMaxDepth) {
         SetHostString(out_error, "max_depth must be between 1 and 256");
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     snapshot_options.max_nodes = requested_max_nodes;
     snapshot_options.max_depth = requested_max_depth;
@@ -1180,7 +1180,7 @@ int BridgeSnapshotFile(const DevToolsHostContext* context,
 
     if (g_host_services.flush_for_snapshot) {
         const int flush_rc = g_host_services.flush_for_snapshot(context, 2);
-        if (flush_rc != kMbinkOk) {
+        if (flush_rc != kMblinkOk) {
             SetHostString(out_error, "snapshot flush failed");
             return flush_rc;
         }
@@ -1195,11 +1195,11 @@ int BridgeSnapshotFile(const DevToolsHostContext* context,
                                          snapshot_options,
                                          &error);
     });
-    if (rc != kMbinkOk || !ok) {
+    if (rc != kMblinkOk || !ok) {
         SetHostString(out_error, error.empty() ? "snapshot export failed" : error);
-        return rc == kMbinkOk ? kMbinkErrorUnknown : rc;
+        return rc == kMblinkOk ? kMblinkErrorUnknown : rc;
     }
-    return kMbinkOk;
+    return kMblinkOk;
 }
 
 int BridgeCommandJson(const DevToolsHostContext* context,
@@ -1210,24 +1210,24 @@ int BridgeCommandJson(const DevToolsHostContext* context,
     }
     if (!context || !context->runtime || !context->window || !context->document ||
         !command_json || !out_response_json) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     if (context->shutdown_requested) {
         SetHostString(out_response_json, R"({"ok":false,"error":{"code":"shutdown_in_progress","message":"runtime is shutting down"}})");
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
 
     const auto token = NewCommandToken();
     const auto base = std::filesystem::temp_directory_path();
-    const auto command_path = base / ("mbink-devtools-command-" + token + ".json");
-    const auto response_path = base / ("mbink-devtools-response-" + token + ".json");
+    const auto command_path = base / ("mblink-devtools-command-" + token + ".json");
+    const auto response_path = base / ("mblink-devtools-response-" + token + ".json");
 
     try {
         auto command = nlohmann::json::parse(command_json, nullptr, false);
         if (command.is_discarded() || !command.is_object()) {
             SetHostString(out_response_json,
                           R"({"ok":false,"error":{"code":"invalid_command","message":"ui-dev command must be a JSON object"}})");
-            return kMbinkOk;
+            return kMblinkOk;
         }
         if (!command.contains("id") || !command["id"].is_string() ||
             command.value("id", std::string{}).empty()) {
@@ -1237,7 +1237,7 @@ int BridgeCommandJson(const DevToolsHostContext* context,
         {
             std::ofstream file(command_path, std::ios::binary | std::ios::trunc);
             if (!file) {
-                return kMbinkErrorUnknown;
+                return kMblinkErrorUnknown;
             }
             file << command.dump();
         }
@@ -1260,9 +1260,9 @@ int BridgeCommandJson(const DevToolsHostContext* context,
                                                &handled,
                                                &error);
         });
-        if (marshal_rc != kMbinkOk || !ok || !handled) {
+        if (marshal_rc != kMblinkOk || !ok || !handled) {
             SetHostString(out_response_json, error.empty() ? "ui-dev command not handled" : error);
-            return marshal_rc == kMbinkOk ? kMbinkErrorUnknown : marshal_rc;
+            return marshal_rc == kMblinkOk ? kMblinkErrorUnknown : marshal_rc;
         }
 
         const auto response = ReadFile(response_path);
@@ -1273,16 +1273,16 @@ int BridgeCommandJson(const DevToolsHostContext* context,
         }
         if (response.empty()) {
             SetHostString(out_response_json, "empty ui-dev response");
-            return kMbinkErrorUnknown;
+            return kMblinkErrorUnknown;
         }
         SetHostString(out_response_json, response);
-        return *out_response_json ? kMbinkOk : kMbinkErrorUnknown;
+        return *out_response_json ? kMblinkOk : kMblinkErrorUnknown;
     } catch (const std::exception& e) {
         SetHostString(out_response_json, e.what());
-        return kMbinkErrorUnknown;
+        return kMblinkErrorUnknown;
     } catch (...) {
         SetHostString(out_response_json, "unknown ui-dev command error");
-        return kMbinkErrorUnknown;
+        return kMblinkErrorUnknown;
     }
 }
 
@@ -1335,15 +1335,15 @@ const DevToolsBridgeApi kBridgeApi{
 
 bool EnsureAttached() {
     std::call_once(g_attach_once, []() {
-        if (mbink_devtools_host_get_services(kDevToolsAttachVersion, &g_host_services) != kMbinkOk) {
+        if (mblink_devtools_host_get_services(kDevToolsAttachVersion, &g_host_services) != kMblinkOk) {
             return;
         }
-        g_attach_ok = mbink_devtools_host_attach(kDevToolsAttachVersion, &kBridgeApi) == kMbinkOk;
+        g_attach_ok = mblink_devtools_host_attach(kDevToolsAttachVersion, &kBridgeApi) == kMblinkOk;
     });
     return g_attach_ok;
 }
 
-const DevToolsHostContext* HostContextOrNull(MBinkHandle handle, DevToolsHostContext* storage) {
+const DevToolsHostContext* HostContextOrNull(MBlinkHandle handle, DevToolsHostContext* storage) {
     if (!handle || !storage || !EnsureAttached() || !g_host_services.with_current_context_sync) {
         return nullptr;
     }
@@ -1362,7 +1362,7 @@ const DevToolsHostContext* HostContextOrNull(MBinkHandle handle, DevToolsHostCon
             state->ok = current_context->window && current_context->document;
         },
         &state);
-    return rc == kMbinkOk && state.ok ? storage : nullptr;
+    return rc == kMblinkOk && state.ok ? storage : nullptr;
 }
 
 bool EnsureInitialized(const DevToolsHostContext* context) {
@@ -1377,31 +1377,31 @@ bool EnsureInitialized(const DevToolsHostContext* context) {
 }
 
 }  // namespace
-}  // namespace mbink
+}  // namespace mblink
 
-namespace mbink {
+namespace mblink {
 
-extern "C" MBINK_DEVTOOLS_API int mbink_devtools_open(MBinkHandle handle) {
+extern "C" MBLINK_DEVTOOLS_API int mblink_devtools_open(MBlinkHandle handle) {
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host || !EnsureInitialized(host)) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     return BridgeOpen(host);
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_devtools_close(MBinkHandle handle) {
+extern "C" MBLINK_DEVTOOLS_API int mblink_devtools_close(MBlinkHandle handle) {
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     return BridgeClose(host);
 }
 
-extern "C" MBINK_DEVTOOLS_API MBinkDevToolsHttpOptions
-mbink_devtools_default_http_options(void) {
-    MBinkDevToolsHttpOptions options{};
+extern "C" MBLINK_DEVTOOLS_API MBlinkDevToolsHttpOptions
+mblink_devtools_default_http_options(void) {
+    MBlinkDevToolsHttpOptions options{};
     options.bind_host = "127.0.0.1";
     options.port = 0;
     options.auth_token = nullptr;
@@ -1409,12 +1409,12 @@ mbink_devtools_default_http_options(void) {
     return options;
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_start(
-    MBinkHandle handle,
-    const MBinkDevToolsHttpOptions* options,
-    MBinkDevToolsHttpInfo* out_info) {
+extern "C" MBLINK_DEVTOOLS_API int mblink_devtools_http_start(
+    MBlinkHandle handle,
+    const MBlinkDevToolsHttpOptions* options,
+    MBlinkDevToolsHttpInfo* out_info) {
     if (!out_info) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     out_info->port = 0;
     out_info->url = nullptr;
@@ -1422,7 +1422,7 @@ extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_start(
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
 
     DevToolsHttpServerOptionsBridge bridge_options;
@@ -1437,26 +1437,26 @@ extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_start(
     if (bridge_error && g_host_services.free_string) {
         g_host_services.free_string(bridge_error);
     }
-    if (rc != kMbinkOk) {
+    if (rc != kMblinkOk) {
         return rc;
     }
     out_info->port = bridge_info.port;
     out_info->url = bridge_info.url;
     out_info->auth_token = bridge_info.auth_token;
-    return kMbinkOk;
+    return kMblinkOk;
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_devtools_http_stop(MBinkHandle handle) {
+extern "C" MBLINK_DEVTOOLS_API int mblink_devtools_http_stop(MBlinkHandle handle) {
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     return BridgeHttpStop(host);
 }
 
-extern "C" MBINK_DEVTOOLS_API void mbink_devtools_http_info_free(
-    MBinkDevToolsHttpInfo* info) {
+extern "C" MBLINK_DEVTOOLS_API void mblink_devtools_http_info_free(
+    MBlinkDevToolsHttpInfo* info) {
     if (!info) {
         return;
     }
@@ -1471,9 +1471,9 @@ extern "C" MBINK_DEVTOOLS_API void mbink_devtools_http_info_free(
     info->auth_token = nullptr;
 }
 
-extern "C" MBINK_DEVTOOLS_API MBinkUiDevSnapshotOptions
-mbink_ui_dev_default_snapshot_options(void) {
-    MBinkUiDevSnapshotOptions options{};
+extern "C" MBLINK_DEVTOOLS_API MBlinkUiDevSnapshotOptions
+mblink_ui_dev_default_snapshot_options(void) {
+    MBlinkUiDevSnapshotOptions options{};
     options.runtime_epoch = nullptr;
     options.max_nodes = kDefaultSnapshotMaxNodes;
     options.max_depth = kDefaultSnapshotMaxDepth;
@@ -1486,7 +1486,7 @@ mbink_ui_dev_default_snapshot_options(void) {
 
 UiDevSnapshotOptionsBridge ToBridgeSnapshotOptions(
     const DevToolsHostContext* host,
-    const MBinkUiDevSnapshotOptions* options) {
+    const MBlinkUiDevSnapshotOptions* options) {
     UiDevSnapshotOptionsBridge out;
     out.runtime_epoch = options && options->runtime_epoch
                             ? options->runtime_epoch
@@ -1501,17 +1501,17 @@ UiDevSnapshotOptionsBridge ToBridgeSnapshotOptions(
     return out;
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_snapshot_file(
-    MBinkHandle handle,
+extern "C" MBLINK_DEVTOOLS_API int mblink_ui_dev_snapshot_file(
+    MBlinkHandle handle,
     const char* output_path,
-    const MBinkUiDevSnapshotOptions* options) {
+    const MBlinkUiDevSnapshotOptions* options) {
     if (!output_path) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host || !EnsureInitialized(host)) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     char* bridge_error = nullptr;
     const auto bridge_options = ToBridgeSnapshotOptions(host, options);
@@ -1522,45 +1522,45 @@ extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_snapshot_file(
     return rc;
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_snapshot_json(
-    MBinkHandle handle,
-    const MBinkUiDevSnapshotOptions* options,
+extern "C" MBLINK_DEVTOOLS_API int mblink_ui_dev_snapshot_json(
+    MBlinkHandle handle,
+    const MBlinkUiDevSnapshotOptions* options,
     char** out_json) {
     if (!out_json) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     *out_json = nullptr;
     const auto token = NewCommandToken();
     const auto path = std::filesystem::temp_directory_path() /
-        ("mbink-ui-dev-snapshot-" + token + ".json");
-    const int rc = mbink_ui_dev_snapshot_file(handle, path.string().c_str(), options);
-    if (rc != kMbinkOk) {
+        ("mblink-ui-dev-snapshot-" + token + ".json");
+    const int rc = mblink_ui_dev_snapshot_file(handle, path.string().c_str(), options);
+    if (rc != kMblinkOk) {
         return rc;
     }
     const auto content = ReadFile(path);
     std::error_code ec;
     std::filesystem::remove(path, ec);
     *out_json = CopyHostString(content);
-    return *out_json ? kMbinkOk : kMbinkErrorUnknown;
+    return *out_json ? kMblinkOk : kMblinkErrorUnknown;
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_ui_dev_command_json(
-    MBinkHandle handle,
+extern "C" MBLINK_DEVTOOLS_API int mblink_ui_dev_command_json(
+    MBlinkHandle handle,
     const char* command_json,
     char** out_response_json) {
     if (!command_json || !out_response_json) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
     *out_response_json = nullptr;
     DevToolsHostContext context;
     auto* host = HostContextOrNull(handle, &context);
     if (!host || !EnsureInitialized(host)) {
-        return kMbinkErrorInvalidHandle;
+        return kMblinkErrorInvalidHandle;
     }
     return BridgeCommandJson(host, command_json, out_response_json);
 }
 
-extern "C" MBINK_DEVTOOLS_API int mbink_devtools_attach(
+extern "C" MBLINK_DEVTOOLS_API int mblink_devtools_attach(
     unsigned int version,
     const DevToolsHostServices* host_services,
     DevToolsRegisterBridgeFn register_bridge,
@@ -1576,11 +1576,11 @@ extern "C" MBINK_DEVTOOLS_API int mbink_devtools_attach(
         !host_services->shutdown_requested ||
         !host_services->flush_for_snapshot ||
         !register_bridge) {
-        return kMbinkErrorInvalidParam;
+        return kMblinkErrorInvalidParam;
     }
 
     g_host_services = *host_services;
-    return register_bridge(version, &kBridgeApi) ? kMbinkOk : kMbinkErrorUnknown;
+    return register_bridge(version, &kBridgeApi) ? kMblinkOk : kMblinkErrorUnknown;
 }
 
-}  // namespace mbink
+}  // namespace mblink

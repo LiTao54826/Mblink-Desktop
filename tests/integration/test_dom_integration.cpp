@@ -11,7 +11,7 @@
 #include "dom/element.h"
 #include "dom/text.h"
 
-namespace mbink {
+namespace mblink {
 namespace test {
 
 class DOMIntegrationTest : public DOMTestBase {};
@@ -163,4 +163,4 @@ TEST_F(DOMIntegrationTest, InnerHTML) {
 }
 
 } // namespace test
-} // namespace mbink
+} // namespace mblink

@@ -24,8 +24,8 @@
 #include <vector>
 #include <string>
 
-using namespace mbink;
-using namespace mbink::test;
+using namespace mblink;
+using namespace mblink::test;
 
 class AnimationEventsPropertyTest : public DOMTestBase {
 protected:

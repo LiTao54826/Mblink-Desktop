@@ -6,14 +6,14 @@
  * 监听 DOM 变化并触发窗口重绘。
  */
 
-#ifndef MBINK_WINDOW_DOM_OBSERVER_H
-#define MBINK_WINDOW_DOM_OBSERVER_H
+#ifndef MBLINK_WINDOW_DOM_OBSERVER_H
+#define MBLINK_WINDOW_DOM_OBSERVER_H
 
 #include "core/dom/observers/dom_observer.h"
 #include <memory>
 #include <string>
 
-namespace mbink {
+namespace mblink {
 
 class Window;
 class Node;
@@ -55,6 +55,6 @@ private:
     Window* window_;
 };
 
-}  // namespace mbink
+}  // namespace mblink
 
-#endif  // MBINK_WINDOW_DOM_OBSERVER_H
+#endif  // MBLINK_WINDOW_DOM_OBSERVER_H

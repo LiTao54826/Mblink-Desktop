@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace mbink {
+namespace mblink {
 namespace embedded {
 
 std::string_view GetEmbeddedJS(std::string_view path);
@@ -34,5 +34,5 @@ std::string_view GetBootstrapJS();
 bool HasEmbeddedJS();
 
 }  // namespace embedded
-}  // namespace mbink
+}  // namespace mblink
 
