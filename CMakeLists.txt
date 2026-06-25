@@ -92,6 +92,8 @@ include_directories(${CMAKE_SOURCE_DIR}/core)
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
 # Third-party Dependencies
+# Forward renamed option to third_party (CMakeLists.txt uses MBINK_ prefix internally)
+set(MBINK_USE_SKIA ${MBLINK_USE_SKIA} CACHE INTERNAL "")
 add_subdirectory(third_party)
 
 # Core Library

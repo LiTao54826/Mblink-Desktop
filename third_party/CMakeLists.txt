@@ -69,8 +69,8 @@ endif()
 # ============================================
 # Skia (可选)
 # ============================================
-message(STATUS "  Checking Skia: MBINK_USE_SKIA=${MBINK_USE_SKIA}")
-if(MBINK_USE_SKIA)
+message(STATUS "  Checking Skia: MBLINK_USE_SKIA=${MBLINK_USE_SKIA}")
+if(MBLINK_USE_SKIA)
     if(EXISTS "${THIRD_PARTY_DIR}/skia")
         message(STATUS "  Found Skia")
 
@@ -166,7 +166,7 @@ if(MBINK_USE_SKIA)
         set(SKIA_FOUND FALSE PARENT_SCOPE)
     endif()
 else()
-    message(STATUS "  Skia disabled (MBINK_USE_SKIA=OFF)")
+    message(STATUS "  Skia disabled (MBLINK_USE_SKIA=OFF)")
     set(SKIA_FOUND FALSE PARENT_SCOPE)
 endif()
 
