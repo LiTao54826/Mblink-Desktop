@@ -2098,7 +2098,7 @@ void mblink_run(MBlinkHandle handle) {
     setLifecycle(ctx, MBLINK_LIFECYCLE_RUNNING, "running");
 
     // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + MainThreadQueue + SharedObject 延迟通知 + 用户回调
-    ctx->eventLoop->SetUpdateCallback([ctx](float dt) {
+    ctx->eventLoop->SetUpdateCallback([ctx](float dt) {  // needs_frame_cadence=false: only runs on events, not every frame
         // 处理状态变更队列
         if (ctx->stateManager) {
             ctx->stateManager->processQueue();
@@ -2124,7 +2124,7 @@ void mblink_run(MBlinkHandle handle) {
         if (ctx->onUpdateCallback) {
             ctx->onUpdateCallback(dt, ctx->onUpdateUserData);
         }
-    });
+    }, false);  // false: no frame cadence — only run on events, not every frame
 
     // 阻塞运行事件循环
     ensureInitialFrameWarmup(ctx);
