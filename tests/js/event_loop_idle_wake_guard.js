@@ -1,4 +1,4 @@
-// Regression check: the outer UI event loop should not spin at ~250Hz
+// Regression check: the outer UI event loop should not spin at a busy cadence
 // when no timers, events, repaint, or user frame callback are pending.
 
 const fs = require('fs');
@@ -35,8 +35,8 @@ function run() {
   const clamp = extractFunction(eventLoopSrc, 'Sint32 ClampIdleDelayMs');
   assert(!clamp.includes('kDefaultIdleDelayMs = 4'),
     'No-work idle delay must not default to 4ms');
-  assert(clamp.includes('kDefaultIdleDelayMs = 64'),
-    'No-work idle delay should use the documented 64ms default');
+  assert(clamp.includes('kDefaultIdleDelayMs = 250'),
+    'No-work idle delay should use the documented 250ms default');
 
   const runOnce = extractFunction(eventLoopSrc, 'void EventLoop::RunOnce');
   const runOnceNonBlocking = extractFunction(eventLoopSrc, 'void EventLoop::RunOnceNonBlocking');
@@ -74,6 +74,11 @@ function run() {
   assert(esmLoaderSrc.includes('next_command_check') &&
          esmLoaderSrc.includes('std::chrono::milliseconds(250)'),
     'esm_loader command-file probing must be throttled when the runtime is idle');
+  assert(esmLoaderSrc.includes('writeObservedJsonFileIfChanged') &&
+         esmLoaderSrc.includes('writeLifecycleFileIfChanged') &&
+         esmLoaderSrc.includes('parsed.erase("timestamp")') &&
+         esmLoaderSrc.includes('std::chrono::milliseconds(1000)'),
+    'esm_loader observability files must not be rewritten on every idle tick');
 
   const collectIdle = extractFunction(eventLoopSrc, 'IdleWorkState CollectIdleWorkState');
   assert(collectIdle.includes('WindowManagerHasPendingUiTasks()') &&

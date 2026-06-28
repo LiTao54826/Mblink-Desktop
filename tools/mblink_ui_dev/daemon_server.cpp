@@ -52,6 +52,29 @@ std::filesystem::path GetCurrentExecutablePath() {
     }
 }
 
+bool LooksLikeMblinkRepoRootForTooling(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::exists(path / "bindings" / "python" / "mblink", ec) &&
+           std::filesystem::exists(path / "bindings" / "rust" / "mblink" / "Cargo.toml", ec) &&
+           std::filesystem::exists(path / "bindings" / "go" / "go.mod", ec);
+}
+
+std::optional<std::filesystem::path> FindMblinkRepoRootForTooling(std::filesystem::path start) {
+    std::error_code ec;
+    start = std::filesystem::absolute(start.empty() ? std::filesystem::current_path() : start, ec).lexically_normal();
+    if (ec) return std::nullopt;
+    if (std::filesystem::exists(start, ec) && !std::filesystem::is_directory(start, ec)) {
+        start = start.parent_path();
+    }
+    while (!start.empty()) {
+        if (LooksLikeMblinkRepoRootForTooling(start)) return start;
+        const auto parent = start.parent_path();
+        if (parent == start) break;
+        start = parent;
+    }
+    return std::nullopt;
+}
+
 std::filesystem::path GetRuntimeStdoutLogPath(const DaemonState& state) {
     return GetRuntimeFilePath(state.project_id, "runtime.stdout.log");
 }
@@ -830,6 +853,54 @@ bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem:
     return true;
 }
 
+std::filesystem::path GetDaemonBundleRoot(const std::string& project_id) {
+    const auto root = project_id.empty()
+        ? (std::filesystem::temp_directory_path() / "mblink-ui-dev" / "daemon-bin")
+        : (GetProjectDataPath(project_id) / "daemon-bin");
+    return root / GenerateRuntimeEpoch();
+}
+
+bool CopyDaemonBundleFile(const std::filesystem::path& source_dir,
+                          const std::filesystem::path& target_dir,
+                          const std::string& file_name,
+                          bool required,
+                          std::string* error) {
+    const auto source = source_dir / file_name;
+    std::error_code ec;
+    if (!std::filesystem::exists(source, ec)) {
+        if (!required) return true;
+        if (error) *error = "missing daemon bundle file: " + PathToUtf8(source);
+        return false;
+    }
+    return CopyFileOverwrite(source, target_dir / file_name, error);
+}
+
+bool PrepareDaemonExecutableBundle(const std::filesystem::path& executable_path,
+                                   const std::string& project_id,
+                                   std::filesystem::path* bundled_executable,
+                                   std::string* error) {
+    if (!bundled_executable) return false;
+    const auto source_exe = std::filesystem::absolute(executable_path).lexically_normal();
+    const auto source_dir = source_exe.parent_path();
+    const auto target_dir = GetDaemonBundleRoot(project_id);
+
+    std::error_code ec;
+    std::filesystem::create_directories(target_dir, ec);
+    if (ec) {
+        if (error) *error = "failed to create daemon bundle directory: " + PathToUtf8(target_dir);
+        return false;
+    }
+
+    const auto target_exe = target_dir / source_exe.filename();
+    if (!CopyFileOverwrite(source_exe, target_exe, error)) return false;
+    if (!CopyDaemonBundleFile(source_dir, target_dir, "esm_loader.exe", true, error)) return false;
+    if (!CopyDaemonBundleFile(source_dir, target_dir, "mblink.dll", true, error)) return false;
+    if (!CopyDaemonBundleFile(source_dir, target_dir, "mblink_devtools.dll", false, error)) return false;
+
+    *bundled_executable = target_exe;
+    return true;
+}
+
 size_t CopyUiStaticAssets(const std::filesystem::path& project_root,
                           const ProjectConfig& config,
                           const std::filesystem::path& target_root,
@@ -1569,10 +1640,35 @@ std::filesystem::path FindEsbuildExecutable(const std::filesystem::path& project
         project_root / "node_modules/.bin/esbuild.cmd",
         project_root / "node_modules/.bin/esbuild",
         project_root / "node_modules/@esbuild/win32-x64/esbuild.exe",
+        project_root.parent_path() / "node_modules/.bin/esbuild.cmd",
+        project_root.parent_path() / "node_modules/.bin/esbuild",
+        project_root.parent_path() / "node_modules/@esbuild/win32-x64/esbuild.exe",
         "esbuild.cmd",
         "esbuild.exe",
         "esbuild"
     };
+    const auto add_repo_tool_candidates = [&](const std::filesystem::path& root) {
+        if (root.empty()) return;
+        candidates.push_back(root / "tmp/esbuild_tools/node_modules/.bin/esbuild.cmd");
+        candidates.push_back(root / "tmp/esbuild_tools/node_modules/.bin/esbuild");
+        candidates.push_back(root / "tmp/esbuild_tools/node_modules/@esbuild/win32-x64/esbuild.exe");
+        candidates.push_back(root / "tmp/mbink_ui_dev_tooling/node_modules/.bin/esbuild.cmd");
+        candidates.push_back(root / "tmp/mbink_ui_dev_tooling/node_modules/.bin/esbuild");
+        candidates.push_back(root / "tmp/mbink_ui_dev_tooling/node_modules/@esbuild/win32-x64/esbuild.exe");
+    };
+    if (const char* env_root = std::getenv("MBLINK_REPO_ROOT"); env_root && *env_root) {
+        add_repo_tool_candidates(std::filesystem::path(env_root));
+    }
+    const std::vector<std::filesystem::path> repo_search_roots = {
+        project_root,
+        std::filesystem::current_path(),
+        GetCurrentExecutablePath().parent_path()
+    };
+    for (const auto& root : repo_search_roots) {
+        if (const auto found = FindMblinkRepoRootForTooling(root); found.has_value()) {
+            add_repo_tool_candidates(*found);
+        }
+    }
     if (path_env && *path_env) {
         std::stringstream ss(path_env);
         std::string segment;
@@ -2689,10 +2785,14 @@ bool StartDetachedDaemon(const std::filesystem::path& executable_path,
                          int* spawned_pid,
                          std::string* error) {
 #ifdef _WIN32
+    std::filesystem::path daemon_executable;
+    if (!PrepareDaemonExecutableBundle(executable_path, project_id, &daemon_executable, error)) {
+        return false;
+    }
     std::string args = "daemon run";
     if (!project_root.empty()) args += " --project \"" + project_root + "\"";
     if (!project_id.empty()) args += " --project-id \"" + project_id + "\"";
-    return StartDetachedProcess(executable_path, args, executable_path.parent_path(), nullptr, nullptr, spawned_pid, error);
+    return StartDetachedProcess(daemon_executable, args, daemon_executable.parent_path(), nullptr, nullptr, spawned_pid, error);
 #else
     (void)executable_path; (void)project_root; (void)project_id; (void)spawned_pid;
     if (error) *error = "当前平台未实现 daemon";

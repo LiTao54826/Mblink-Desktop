@@ -797,6 +797,7 @@ void RenderPipeline::DoLayerTreeBuild() {
             std::cout << "[LAYER_BUILD_PATH] mode=incremental\n";
         }
         layer_tree_manager_->ApplyPendingUpdates();
+        RemoveOrphanedLayers(root_layer_.get());
 
         // 更新现有层的边界和脏区域
         UpdateLayerTreeBounds(root_layer_.get());

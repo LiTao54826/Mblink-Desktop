@@ -51,6 +51,15 @@ function Invoke-JsonCommand([string]$name, [string[]]$arguments, [scriptblock]$a
     Write-Host "[OK]  $name"
 }
 
+function Invoke-JsonCommandExpectFailure([string]$name, [string[]]$arguments, [scriptblock]$assert) {
+    Write-Host "[RUN] $name"
+    $raw = & $exe @arguments 2>&1 | Out-String
+    $json = $raw | ConvertFrom-Json
+    Assert ($LASTEXITCODE -ne 0 -or $json.ok -eq $false) "[$name] unexpectedly succeeded"
+    & $assert $json
+    Write-Host "[OK]  $name"
+}
+
 function Assert([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
 }
@@ -241,6 +250,48 @@ Invoke-JsonCommand 'inspect with --project first' @('inspect', '--project', $tod
 Invoke-JsonCommand 'input-text' @('input-text', '--project', $todo, '#todo-input', 'task from regression') {
     param($j)
     Assert ($j.ok -eq $true -and $j.result.value -eq 'task from regression') 'input-text failed'
+}
+Invoke-JsonCommand 'input-text --text' @('input-text', '--project', $todo, '#todo-input', '--text', 'task from --text regression') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq 'task from --text regression') 'input-text --text failed'
+}
+Invoke-JsonCommand 'input-text --text leading dash' @('input-text', '--project', $todo, '#todo-input', '--text', '--literal text value') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '--literal text value') 'input-text --text leading dash failed'
+}
+Invoke-JsonCommand 'input-text --text literal clear flag' @('input-text', '--project', $todo, '#todo-input', '--text', '--clear') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '--clear') 'input-text --text literal clear flag failed'
+}
+Invoke-JsonCommand 'input-text --text literal project flag' @('input-text', '--project', $todo, '#todo-input', '--text', '--project') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '--project') 'input-text --text literal project flag failed'
+}
+Invoke-JsonCommand 'input-text --text literal project before project option' @('input-text', '#todo-input', '--text', '--project', '--project', $todo) {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '--project') 'input-text --text literal project before project option failed'
+}
+Invoke-JsonCommand 'input-text --text literal clear before project option' @('input-text', '#todo-input', '--text', '--clear', '--project', $todo) {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '--clear') 'input-text --text literal clear before project option failed'
+}
+Invoke-JsonCommand 'input-text --clear' @('input-text', '--project', $todo, '#todo-input', '--clear') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq '') 'input-text --clear failed'
+}
+Invoke-JsonCommand 'input-text after clear' @('input-text', '--project', $todo, '#todo-input', 'task from regression') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq 'task from regression') 'input-text after clear failed'
+}
+Invoke-JsonCommandExpectFailure 'input-text --clear with positional text rejected' @('input-text', '--project', $todo, '#todo-input', '--clear', 'unexpected text') {
+    param($j)
+    Assert ($j.ok -eq $false) 'input-text --clear conflict should fail'
+    Assert ($j.error.code -eq 'invalid_args') 'input-text --clear conflict should return invalid_args'
+}
+Invoke-JsonCommandExpectFailure 'input-text --text with positional text rejected' @('input-text', '--project', $todo, '#todo-input', '--text', 'flag text', 'unexpected text') {
+    param($j)
+    Assert ($j.ok -eq $false) 'input-text --text conflict should fail'
+    Assert ($j.error.code -eq 'invalid_args') 'input-text --text conflict should return invalid_args'
 }
 Invoke-JsonCommand 'click submit' @('click', '--project', $todo, 'button[type="submit"]') {
     param($j)

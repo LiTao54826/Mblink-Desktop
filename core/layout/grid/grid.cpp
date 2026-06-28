@@ -342,12 +342,13 @@ static float SumTrackBaseSizes(const std::vector<GridTrack>& tracks) {
 }
 
 
-/// Stretch tracks to fill a definite available size.
-/// Non-flex tracks keep their intrinsic/fixed size; flex tracks are reset to their minimum
-/// contribution first, then receive the remaining free space.
-static void StretchTracksToAvailableSpace(
+/// Expand tracks against a definite available size.
+/// Flexible tracks always receive free space. Intrinsic/auto tracks only stretch
+/// when the relevant content alignment resolves to stretch.
+static void ExpandTracksToAvailableSpace(
     std::vector<GridTrack>& tracks,
-    float available_space
+    float available_space,
+    bool stretch_intrinsic_tracks
 ) {
     if (available_space <= 0.0f) return;
 
@@ -375,6 +376,8 @@ static void StretchTracksToAvailableSpace(
         DistributeFreeSpaceToFlexTracks(tracks, extra_space);
         return;
     }
+
+    if (!stretch_intrinsic_tracks) return;
 
     bool grew = true;
     while (extra_space > 0.0f && grew) {
@@ -408,6 +411,10 @@ static void StretchTracksToAvailableSpace(
         if (!grew || consumed <= 0.0f) return;
         extra_space -= consumed;
     }
+}
+
+static bool ContentAlignmentStretchesTracks(const std::optional<AlignContent>& alignment) {
+    return !alignment.has_value() || *alignment == AlignContent::Stretch;
 }
 
 
@@ -553,7 +560,10 @@ LayoutOutput ComputeGridLayout(
     float row_sum = SumTrackBaseSizes(rows);
 
     if (inner_node_size.width.has_value()) {
-        StretchTracksToAvailableSpace(columns, *inner_node_size.width);
+        ExpandTracksToAvailableSpace(
+            columns,
+            *inner_node_size.width,
+            ContentAlignmentStretchesTracks(style.justify_content));
         col_sum = SumTrackBaseSizes(columns);
     }
 
@@ -569,7 +579,10 @@ LayoutOutput ComputeGridLayout(
 
     float inner_width = container_width - padding_border_size.width;
     if (inner_width > 0.0f) {
-        StretchTracksToAvailableSpace(columns, inner_width);
+        ExpandTracksToAvailableSpace(
+            columns,
+            inner_width,
+            ContentAlignmentStretchesTracks(style.justify_content));
         col_sum = SumTrackBaseSizes(columns);
     }
 
@@ -1131,7 +1144,10 @@ LayoutOutput ComputeGridLayout(
 
     inner_width = container_width - padding_border_size.width;
     if (inner_width > 0.0f) {
-        StretchTracksToAvailableSpace(columns, inner_width);
+        ExpandTracksToAvailableSpace(
+            columns,
+            inner_width,
+            ContentAlignmentStretchesTracks(style.justify_content));
         col_sum = SumTrackBaseSizes(columns);
     }
 
@@ -1143,7 +1159,10 @@ LayoutOutput ComputeGridLayout(
 
     float inner_height = container_height - padding_border_size.height;
     if (inner_height > 0.0f) {
-        StretchTracksToAvailableSpace(rows, inner_height);
+        ExpandTracksToAvailableSpace(
+            rows,
+            inner_height,
+            ContentAlignmentStretchesTracks(style.align_content));
         row_sum = SumTrackBaseSizes(rows);
     }
 

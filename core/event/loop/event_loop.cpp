@@ -120,7 +120,7 @@ inline double GetBaselineTimeMs() {
 }
 
 Sint32 ClampIdleDelayMs(int64_t next_timer_delay_ms) {
-    constexpr Sint32 kDefaultIdleDelayMs = 64;
+    constexpr Sint32 kDefaultIdleDelayMs = 250;
     constexpr Sint32 kMaxTimerIdleDelayMs = 250;
     if (next_timer_delay_ms < 0) {
         return kDefaultIdleDelayMs;

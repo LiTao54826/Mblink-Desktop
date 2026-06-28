@@ -46,7 +46,7 @@ endif()
 # Compiler Settings
 # Disable warnings and configure runtime library to match Skia
 if(MSVC)
-    add_compile_options(/W0 /utf-8 /EHsc)
+    add_compile_options(/W0 /utf-8 /EHsc /FS)
     # Use static runtime /MT to match prebuilt Skia library
     add_compile_options(/MT)
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)

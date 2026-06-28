@@ -1,0 +1,21 @@
+{
+  "name": "complex_layout_dynamics",
+  "entry": "ui/app.js",
+  "runtime": "tool",
+  "window": {
+    "title": "Complex Layout Dynamics",
+    "width": 1240,
+    "height": 820,
+    "resizable": true
+  },
+  "dev": {
+    "watch": true,
+    "debounce_ms": 100,
+    "auto_reload": true
+  },
+  "mcp": {
+    "transport": "stdio",
+    "snapshot_include_screenshot": true,
+    "snapshot_max_depth": 36
+  }
+}

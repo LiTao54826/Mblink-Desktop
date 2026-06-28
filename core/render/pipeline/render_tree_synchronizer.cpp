@@ -625,7 +625,7 @@ bool RenderTreeSynchronizer::ApplyStyleChange(StyleResolver& resolver,
 
     auto render_obj = element->GetRenderObject();
     if (!render_obj) {
-        return false;
+        return RefreshElementSubtreeStyles(resolver, element);
     }
 
     const ComputedStyle* parent_style = nullptr;

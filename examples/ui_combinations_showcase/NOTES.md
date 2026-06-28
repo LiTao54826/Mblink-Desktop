@@ -19,6 +19,12 @@ Preferred direct C API runtime check:
 powershell -ExecutionPolicy Bypass -File examples\ui_combinations_showcase\verify.ps1
 ```
 
+Official `mblink-ui-dev` CLI check with copied snapshot and screenshot evidence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File examples\ui_combinations_showcase\verify_cli.ps1
+```
+
 Manual snapshot check:
 
 ```powershell

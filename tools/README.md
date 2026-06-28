@@ -41,6 +41,7 @@ build\bin\Release\mblink-ui-dev.exe query "#todo-input" --project "examples\todo
 build\bin\Release\mblink-ui-dev.exe inspect 'button[type="submit"]' --project "examples\todo_app_js"
 build\bin\Release\mblink-ui-dev.exe click 'button[type="submit"]' --project "examples\todo_app_js"
 build\bin\Release\mblink-ui-dev.exe input-text "#todo-input" "hello world" --project "examples\todo_app_js"
+build\bin\Release\mblink-ui-dev.exe input-text "#todo-input" --clear --project "examples\todo_app_js"
 build\bin\Release\mblink-ui-dev.exe scroll body --y 400 --project "examples\todo_app_js"
 build\bin\Release\mblink-ui-dev.exe highlight "#todo-input" --color "#ff4d4f" --project "examples\todo_app_js"
 ```

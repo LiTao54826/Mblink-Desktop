@@ -99,10 +99,13 @@ function run() {
          windowSrc.includes('const bool retained_dirty_reason_allowed =') &&
          windowSrc.includes('HasExplicitDirtyRectsForUnknownReason(last_repaint_reason_, has_dirty_bounds)') &&
          dirtyClipBlock.includes('retained_dirty_reason_allowed') &&
-         dirtyClipBlock.includes('(!had_pending_dom_changes || !had_structural_dom_changes)') &&
+         dirtyClipBlock.includes('!had_pending_dom_changes') &&
+         dirtyClipBlock.includes('!had_structural_dom_changes') &&
+         dirtyClipBlock.includes('can_use_structural_dirty_rects') &&
          dirtyClipBlock.includes('!render_tree_rebuild_required') &&
-         dirtyClipBlock.includes('!needs_layout_update'),
-    'Dirty retained-present clipping must stay blocked for structural/tree rebuild and layout update frames');
+         dirtyClipBlock.includes('!needs_layout_update') &&
+         dirtyClipBlock.includes('!dirty_union_too_broad'),
+    'Dirty retained-present clipping must stay blocked for unsafe structural/tree rebuild/layout update frames');
   assert(windowSrc.includes('AddRetainedDirtyRectsForPendingChanges(this, tracker)') &&
          windowSrc.includes('AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get(), app_width, app_height)'),
     'Non-structural DOM batches must collect old and new dirty bounds for retained-present clipping');
@@ -114,15 +117,26 @@ function run() {
   const rasterLimitStart = windowSrc.indexOf('const bool can_limit_pipeline_raster_to_dirty_rects =');
   const rasterLimitEnd = windowSrc.indexOf(';', rasterLimitStart);
   const rasterLimitBlock = windowSrc.slice(rasterLimitStart, rasterLimitEnd);
-  assert(rasterLimitStart >= 0 && rasterLimitBlock.includes('!needs_layout_update'),
-    'Pipeline raster dirty-rect limiting must be disabled for layout update frames');
+  assert(rasterLimitStart >= 0 &&
+         rasterLimitBlock.includes('retained_dirty_reason_allowed') &&
+         rasterLimitBlock.includes('!had_pending_dom_changes') &&
+         rasterLimitBlock.includes('!had_structural_dom_changes') &&
+         rasterLimitBlock.includes('can_use_structural_dirty_rects') &&
+         rasterLimitBlock.includes('!render_tree_rebuild_required') &&
+         rasterLimitBlock.includes('!needs_layout_update'),
+    'Pipeline raster dirty-rect limiting must be disabled for unsafe structural/tree rebuild/layout update frames');
   assert(windowSrc.includes('std::vector<SkRect>{retained_dirty_bounds.logical}') &&
          windowSrc.includes('can_limit_pipeline_raster_to_dirty_rects ? &retained_pipeline_dirty_rects : nullptr'),
     'Pipeline raster dirty-rect limiting must use the same pixel-aligned logical dirty bounds as retained-present clipping');
-  assert(windowSrc.includes('main_canvas->clipRect(SkRect::Make(retained_dirty_bounds.physical)') &&
-         windowSrc.includes('main_canvas->clipRect(retained_dirty_bounds.logical, SkClipOp::kIntersect, false)') &&
-         windowSrc.includes('drawRect(SkRect::Make(retained_dirty_bounds.physical)') &&
-         windowSrc.includes('last_dirty_bounds_ = retained_dirty_bounds.present_physical'),
+  assert(windowSrc.includes('const SkRect dirty_bounds_px = SkRect::Make(retained_dirty_bounds.physical)') &&
+         windowSrc.includes('const SkRect present_dirty_bounds_px = retained_dirty_bounds.present_physical') &&
+         windowSrc.includes('main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, false)') &&
+         windowSrc.includes('main_canvas->drawRect(dirty_bounds_px, clear_paint)') &&
+         windowSrc.includes('const SkRect dirty_bounds = retained_dirty_bounds.logical') &&
+         windowSrc.includes('main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, false)') &&
+         windowSrc.includes('ClampPhysicalRect(') &&
+         windowSrc.includes('dirty_bounds_px, retained_image->width(), retained_image->height()') &&
+         windowSrc.includes('last_dirty_bounds_ = present_dirty_bounds_px'),
     'Retained dirty clear, clip, copy, and present bounds must share the same hard pixel-aligned rectangle');
   assert(windowSrc.includes('RenderDevTools(canvas') &&
          windowSrc.indexOf('RenderDevTools(canvas') > windowSrc.indexOf('retained_main_surface_->makeImageSnapshot()'),

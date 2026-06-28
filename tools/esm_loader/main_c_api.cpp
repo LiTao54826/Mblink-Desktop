@@ -173,6 +173,30 @@ void writeOwnedJsonFile(const std::string& path,
     if (json) mblink_free(json);
 }
 
+std::optional<std::string> produceOwnedJson(int (*producer)(MBlinkHandle, char**),
+                                            MBlinkHandle handle) {
+    if (!producer) return std::nullopt;
+    char* json = nullptr;
+    std::optional<std::string> result;
+    if (producer(handle, &json) == MBLINK_OK && json) {
+        result = std::string(json);
+    }
+    if (json) mblink_free(json);
+    return result;
+}
+
+std::string lifecycleStableKey(const std::string& payload) {
+    try {
+        auto parsed = nlohmann::json::parse(payload);
+        if (parsed.is_object()) {
+            parsed.erase("timestamp");
+            return parsed.dump();
+        }
+    } catch (...) {
+    }
+    return payload;
+}
+
 void printUsage(const char* program_name) {
     std::cout << "MBlink Loader - ES module / HTML app loader\n\n";
     std::cout << "Usage: " << program_name << " <entry.js|index.html> [options]\n\n";
@@ -247,6 +271,9 @@ struct UiDevRuntimeState {
         (std::chrono::steady_clock::time_point::min)();
     std::chrono::steady_clock::time_point next_observability_flush =
         (std::chrono::steady_clock::time_point::min)();
+    std::string last_console_json;
+    std::string last_errors_json;
+    std::string last_lifecycle_stable_key;
 };
 
 bool hasObservabilityFiles(const Options& options) {
@@ -363,10 +390,50 @@ void writeSnapshotIfRequested(MBlinkHandle handle, const Options& options, const
     }
 }
 
-void writeObservabilityFiles(MBlinkHandle handle, const Options& options) {
-    writeOwnedJsonFile(options.console_file, mblink_observe_console_json, handle);
-    writeOwnedJsonFile(options.errors_file, mblink_observe_errors_json, handle);
-    writeOwnedJsonFile(options.lifecycle_file, mblink_observe_lifecycle_json, handle);
+void writeObservedJsonFileIfChanged(const std::string& path,
+                                    int (*producer)(MBlinkHandle, char**),
+                                    MBlinkHandle handle,
+                                    std::string* last_payload,
+                                    bool force) {
+    if (path.empty() || !last_payload) return;
+    auto payload = produceOwnedJson(producer, handle);
+    if (!payload) return;
+    if (force || *payload != *last_payload) {
+        writeTextFile(path, *payload);
+        *last_payload = *payload;
+    }
+}
+
+void writeLifecycleFileIfChanged(MBlinkHandle handle,
+                                 const Options& options,
+                                 UiDevRuntimeState* state,
+                                 bool force) {
+    if (options.lifecycle_file.empty() || !state) return;
+    auto payload = produceOwnedJson(mblink_observe_lifecycle_json, handle);
+    if (!payload) return;
+    const std::string stable_key = lifecycleStableKey(*payload);
+    if (force || stable_key != state->last_lifecycle_stable_key) {
+        writeTextFile(options.lifecycle_file, *payload);
+        state->last_lifecycle_stable_key = stable_key;
+    }
+}
+
+void writeObservabilityFiles(MBlinkHandle handle,
+                             const Options& options,
+                             UiDevRuntimeState* state,
+                             bool force) {
+    if (!state) return;
+    writeObservedJsonFileIfChanged(options.console_file,
+                                   mblink_observe_console_json,
+                                   handle,
+                                   &state->last_console_json,
+                                   force);
+    writeObservedJsonFileIfChanged(options.errors_file,
+                                   mblink_observe_errors_json,
+                                   handle,
+                                   &state->last_errors_json,
+                                   force);
+    writeLifecycleFileIfChanged(handle, options, state, force);
 }
 
 void maybeWriteObservabilityFiles(MBlinkHandle handle,
@@ -376,8 +443,8 @@ void maybeWriteObservabilityFiles(MBlinkHandle handle,
     if (!hasObservabilityFiles(options) || !state) return;
     const auto now = std::chrono::steady_clock::now();
     if (!force && now < state->next_observability_flush) return;
-    writeObservabilityFiles(handle, options);
-    state->next_observability_flush = now + std::chrono::milliseconds(250);
+    writeObservabilityFiles(handle, options, state, force);
+    state->next_observability_flush = now + std::chrono::milliseconds(1000);
 }
 
 void handleCommandFile(MBlinkHandle handle,

@@ -150,7 +150,25 @@ async function main() {
     'devtools HTTP stop must be able to cancel in-flight main-thread marshaling');
 
   const exe = path.resolve('build', 'bin', 'Release', 'esm_loader.exe');
-  const entry = path.resolve('tmp', 'mblink_idle_cpu_probe', 'open_idempotent_app', '.dist', 'App.js');
+  const fixtureDir = path.resolve('tmp', 'devtools_http_stop_guard');
+  fs.rmSync(fixtureDir, { recursive: true, force: true });
+  fs.mkdirSync(fixtureDir, { recursive: true });
+  const entry = path.join(fixtureDir, 'index.html');
+  fs.writeFileSync(entry, `<!doctype html>
+<html>
+<body style="margin:0;font-family:Segoe UI,sans-serif">
+  <main id="root" style="padding:16px">
+    <h1>DevTools HTTP stop guard</h1>
+    <button id="action">Ready</button>
+  </main>
+  <script>
+    document.getElementById('action').addEventListener('click', () => {
+      document.getElementById('action').textContent = 'Clicked';
+    });
+  </script>
+</body>
+</html>
+`);
   const child = spawn(exe, [entry, '--devtools-http-mcp', '--quit', '3'], {
     cwd: process.cwd(),
     windowsHide: true,

@@ -3,9 +3,106 @@
 // node tests/js/layout_incremental_update_check.js
 
 const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+function writeFixture() {
+  const fixtureDir = path.resolve('tmp', 'layout_incremental_update_check');
+  fs.rmSync(fixtureDir, { recursive: true, force: true });
+  fs.mkdirSync(fixtureDir, { recursive: true });
+  const entry = path.join(fixtureDir, 'index.html');
+  fs.writeFileSync(entry, `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Incremental layout guard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Segoe UI, sans-serif; background: #f8fafc; color: #172033; }
+    #grid { display: grid; grid-template-columns: repeat(2, 380px); gap: 18px; padding: 24px; align-items: start; }
+    .card { width: 380px; padding: 16px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; }
+    .card h2 { margin: 0; font-size: 18px; line-height: 24px; }
+    .tag { display: block; margin-top: 8px; width: max-content; padding: 3px 8px; border: 1px solid #94a3b8; border-radius: 4px; }
+    .desc { margin: 10px 0 12px; line-height: 20px; }
+    .card input { display: block; width: 100%; padding: 8px 10px; border: 1px solid #94a3b8; border-radius: 4px; }
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn-row button { padding: 8px 10px; border: 1px solid #64748b; border-radius: 4px; background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <main id="grid"></main>
+  <script>
+    const grid = document.getElementById('grid');
+    for (let i = 1; i <= 6; i += 1) {
+      const card = document.createElement('section');
+      card.className = 'card';
+      card.id = 'card' + i;
+      card.innerHTML =
+        '<h2>Card ' + i + '</h2>' +
+        '<span class="tag">stable tag</span>' +
+        '<p class="desc">A compact paragraph used to verify inline formatting and block flow.</p>' +
+        '<input value="card ' + i + ' value">' +
+        '<div class="btn-row"><button>SetTextContent</button><button>Refill</button></div>';
+      grid.appendChild(card);
+    }
+
+    const rectOf = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        x: rect.x,
+        y: rect.y,
+        w: rect.width,
+        h: rect.height
+      };
+    };
+
+    const boxOf = (element) => {
+      const style = getComputedStyle(element);
+      return {
+        width: style.width,
+        padding: [
+          style.paddingTop,
+          style.paddingRight,
+          style.paddingBottom,
+          style.paddingLeft
+        ].join(' ')
+      };
+    };
+
+    const report = (path, element, depth) => {
+      console.log('[layout] ' + JSON.stringify({
+        path,
+        depth,
+        box: boxOf(element),
+        rect: rectOf(element)
+      }));
+    };
+
+    const reportTree = (path, element, depth) => {
+      report(path, element, depth);
+      [...element.children].forEach((child, childIndex) => {
+        reportTree(path + '.' + childIndex, child, depth + 1);
+      });
+    };
+
+    [...document.querySelectorAll('.card')].forEach((card, cardIndex) => {
+      const cardPath = 'card' + (cardIndex + 1);
+      reportTree(cardPath, card, 0);
+    });
+  </script>
+</body>
+</html>
+`);
+  return entry;
+}
 
 function run() {
-  const cmd = 'build\\bin\\Release\\esm_loader.exe examples\\incremental_update_demo\\app.js -q 3';
+  const entry = writeFixture();
+  const cmd = `build\\bin\\Release\\esm_loader.exe "${entry}" -q 3`;
   const output = execSync(cmd, { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' });
 
   const lines = output.split(/\r?\n/);
@@ -42,9 +139,27 @@ function run() {
     }
   }
 
+  const firstPathUnder = (rootPath, predicate) => {
+    const candidates = [...nodesByPath.entries()]
+      .filter(([nodePath]) => nodePath.startsWith(`${rootPath}.`))
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+    for (const [nodePath, node] of candidates) {
+      if (predicate(nodePath, node)) return { path: nodePath, node };
+    }
+    return null;
+  };
+
+  const card1ContentLeft = Number(cardRoots[0].rect.left) + 17;
+  const nearContentLeft = (node) => Math.abs(Number(node.rect.left) - card1ContentLeft) <= 0.01;
+  const positiveWidth = (node) => Number(node.rect.w) > 0;
+  const card1Desc = firstPathUnder('card1', (_path, node) => nearContentLeft(node) && Number(node.rect.w) > 300 && Number(node.rect.h) >= 30);
+  const card1Input = firstPathUnder('card1', (_path, node) => nearContentLeft(node) && Number(node.rect.w) > 300 && Number(node.rect.h) > 0 && node.box.width === '100%');
+  const card1BtnRow = firstPathUnder('card1', (_path, node) => nearContentLeft(node) && Number(node.rect.w) > 300 && Number(node.rect.h) > 20 && Number(node.rect.top) > Number(card1Input?.node?.rect.bottom || 0));
+  const card1Tag = firstPathUnder('card1', (_path, node) => nearContentLeft(node) && !positiveWidth(node) && Number(node.rect.h) >= 20);
+
   // 核心回归：card1 input (card1.3) 不能横向溢出 card1
   const card1 = nodesByPath.get('card1');
-  const input1 = nodesByPath.get('card1.3');
+  const input1 = card1Input && card1Input.node;
   if (!card1 || !input1) {
     throw new Error('缺少 card1 或 card1.3(input) 布局节点，无法执行溢出断言');
   }
@@ -71,9 +186,9 @@ function run() {
   // 新增回归：匿名块 IFC 不应出现双重偏移导致的右下错位
   // 1) 同一列的元素 left 应一致（标题/标签/描述/input/按钮行都应贴齐 card content 左边）
   const title = nodesByPath.get('card1.0');
-  const tag = nodesByPath.get('card1.1');
-  const desc = nodesByPath.get('card1.2');
-  const btnRow = nodesByPath.get('card1.4');
+  const tag = card1Tag && card1Tag.node;
+  const desc = card1Desc && card1Desc.node;
+  const btnRow = card1BtnRow && card1BtnRow.node;
   if (!title || !tag || !desc || !btnRow) {
     throw new Error('缺少 card1.0/1/2/4 布局节点，无法执行位置偏移断言');
   }
@@ -105,8 +220,15 @@ function run() {
   }
 
   // 3) card2 按钮行高度回归：SetTextContent 不应因文本测量误差产生双行高度
-  const card2BtnSetText = nodesByPath.get('card2.4.0');
-  const card2BtnRefill = nodesByPath.get('card2.4.1');
+  const card2BtnCandidates = [...nodesByPath.entries()]
+    .filter(([nodePath, node]) => nodePath.startsWith('card2.') && Number(node.rect.w) > 0 && Number(node.rect.h) > 20)
+    .sort((a, b) => {
+      const topDelta = Number(b[1].rect.top) - Number(a[1].rect.top);
+      if (Math.abs(topDelta) > epsilon) return topDelta;
+      return Number(a[1].rect.left) - Number(b[1].rect.left);
+    });
+  const card2BtnSetText = card2BtnCandidates[0] && card2BtnCandidates[0][1];
+  const card2BtnRefill = card2BtnCandidates[1] && card2BtnCandidates[1][1];
   if (!card2BtnSetText || !card2BtnRefill) {
     throw new Error('缺少 card2.4.0/4.1 按钮布局节点，无法执行按钮高度断言');
   }

@@ -2320,6 +2320,9 @@ void Window::Render() {
             needs_dom_raster_update = true;
             if (synced) {
                 needs_layout_update = true;
+                if (window_renderer_) {
+                    window_renderer_->MarkAnimationTreeScanNeeded();
+                }
             }
             if (!had_structural_dom_changes && render_pipeline_) {
                 render_pipeline_->MarkNeedsPaint();
@@ -2345,6 +2348,9 @@ void Window::Render() {
                                    body->ChildNeedsStyleRecalc() || body->ChildNeedsLayout();
             if (has_style_dirty) {
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+                if (window_renderer_) {
+                    window_renderer_->MarkAnimationTreeScanNeeded();
+                }
                 // 清除 DOM 节点的脏标记和增量标记（递归清除整个子树）
                 ClearDomDirtyTree(body.get());
             }
@@ -2403,7 +2409,7 @@ void Window::Render() {
             layout_sync_valid_ = true;
 
             // 关键修复：结构变化后强制层树重建，避免父层残留旧位图导致“重影/双实例”
-            if (had_structural_dom_changes && !can_use_structural_dirty_rects && render_pipeline_) {
+            if (had_structural_dom_changes && render_pipeline_) {
                 render_pipeline_->InvalidateLayerTree();
                 render_pipeline_->ForceFullUpdate();
             }
@@ -3560,6 +3566,10 @@ void Window::ForceLayoutSync() {
 }
 
 void Window::InvalidateRenderTree() {
+    if (window_renderer_) {
+        window_renderer_->MarkAnimationTreeScanNeeded();
+    }
+
     // 标记渲染树需要重建
     render_tree_valid_ = false;
     layout_sync_valid_ = false;
@@ -3710,6 +3720,9 @@ void Window::EnsureRenderTree() {
     }
 
     render_tree_valid_ = true;
+    if (window_renderer_) {
+        window_renderer_->MarkAnimationTreeScanNeeded();
+    }
 }
 
 bool Window::HitTestDragRegion(int screen_x, int screen_y) const {

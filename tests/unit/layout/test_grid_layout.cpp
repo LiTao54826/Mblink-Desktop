@@ -13,6 +13,7 @@
 #include "layout/grid/types.h"
 #include "layout/types/style.h"
 #include "layout/types/geometry.h"
+#include <vector>
 #include <unordered_map>
 
 namespace mblink {
@@ -195,16 +196,20 @@ public:
 
         Style child_style;
         child_style.display = Display::Block;
-        styles_[child_id_] = child_style;
-        child_styles_[child_id_] = GridItemStyle{};
+        child_ids_.push_back(first_child_id_);
+        child_sizes_[first_child_id_] = Size<float>{120.0f, 40.0f};
+        styles_[first_child_id_] = child_style;
+        child_styles_[first_child_id_] = GridItemStyle{};
     }
 
     size_t ChildCount(NodeId node) const override {
-        return node == root_id_ ? 1 : 0;
+        return node == root_id_ ? child_ids_.size() : 0;
     }
 
     NodeId GetChildId(NodeId node, size_t index) const override {
-        return node == root_id_ && index == 0 ? child_id_ : INVALID_NODE_ID;
+        return node == root_id_ && index < child_ids_.size()
+            ? child_ids_[index]
+            : INVALID_NODE_ID;
     }
 
     Cache& GetCache(NodeId node) override {
@@ -224,7 +229,7 @@ public:
     }
 
     LayoutOutput PerformChildLayout(
-        NodeId,
+        NodeId node,
         Size<std::optional<float>>,
         Size<std::optional<float>>,
         Size<AvailableSpace> available_space,
@@ -237,13 +242,13 @@ public:
         if (available_space.height.IsMinContent()) min_content_height_calls++;
         if (available_space.height.IsMaxContent()) max_content_height_calls++;
         LayoutOutput output;
-        output.size = Size<float>{120.0f, 40.0f};
+        output.size = ChildSize(node);
         output.content_size = output.size;
         return output;
     }
 
     Size<float> MeasureChildSize(
-        NodeId,
+        NodeId node,
         Size<std::optional<float>>,
         Size<std::optional<float>>,
         Size<AvailableSpace> available_space,
@@ -254,7 +259,7 @@ public:
         if (available_space.width.IsMaxContent()) max_content_width_calls++;
         if (available_space.height.IsMinContent()) min_content_height_calls++;
         if (available_space.height.IsMaxContent()) max_content_height_calls++;
-        return Size<float>{120.0f, 40.0f};
+        return ChildSize(node);
     }
 
     const Style& GetContainerStyle(NodeId node) const override {
@@ -278,6 +283,42 @@ public:
         return false;
     }
 
+    void SetRootSize(float width, float height) {
+        styles_[root_id_].size = Size<Dimension>{
+            Dimension::Length(width),
+            Dimension::Length(height)
+        };
+    }
+
+    void SetRootAlignContent(AlignContent align_content) {
+        styles_[root_id_].align_content = align_content;
+    }
+
+    void SetRootGap(float column_gap, float row_gap) {
+        styles_[root_id_].gap = Size<LengthPercentage>{
+            LengthPercentage::Length(column_gap),
+            LengthPercentage::Length(row_gap)
+        };
+    }
+
+    void SetChildren(size_t count, Size<float> child_size) {
+        child_ids_.clear();
+        for (size_t index = 0; index < count; ++index) {
+            NodeId child_id = first_child_id_ + static_cast<NodeId>(index);
+            child_ids_.push_back(child_id);
+            child_sizes_[child_id] = child_size;
+
+            Style child_style;
+            child_style.display = Display::Block;
+            styles_[child_id] = child_style;
+            child_styles_[child_id] = GridItemStyle{};
+        }
+    }
+
+    const Layout& ChildLayout(size_t index) const {
+        return GetLayout(child_ids_.at(index));
+    }
+
     int perform_child_layout_calls = 0;
     int measure_child_size_calls = 0;
     int set_unrounded_layout_calls = 0;
@@ -290,14 +331,21 @@ public:
 
 private:
     static constexpr NodeId root_id_ = 1;
-    static constexpr NodeId child_id_ = 2;
+    static constexpr NodeId first_child_id_ = 2;
+
+    Size<float> ChildSize(NodeId node) const {
+        auto it = child_sizes_.find(node);
+        return it != child_sizes_.end() ? it->second : Size<float>{120.0f, 40.0f};
+    }
 
     GridContainerStyle grid_style_;
     GridContainerStyle default_grid_style_;
     GridItemStyle default_grid_item_style_;
     Layout default_layout_;
+    std::vector<NodeId> child_ids_;
     std::unordered_map<NodeId, Style> styles_;
     std::unordered_map<NodeId, GridItemStyle> child_styles_;
+    std::unordered_map<NodeId, Size<float>> child_sizes_;
     std::unordered_map<NodeId, Cache> caches_;
     std::unordered_map<NodeId, Layout> layouts_;
 };
@@ -383,6 +431,37 @@ TEST_F(GridLayoutTest, ContentSizeProbeDoesNotCommitGridItemLayout) {
     EXPECT_EQ(tree.perform_child_layout_calls, 0);
     EXPECT_EQ(tree.set_unrounded_layout_calls, 0);
     EXPECT_EQ(tree.last_set_layout_node, INVALID_NODE_ID);
+}
+
+TEST_F(GridLayoutTest, AlignContentStartDoesNotStretchImplicitAutoRows) {
+    GridContainerStyle grid_style;
+    grid_style.grid_template_columns.push_back(TrackSizingFunction::Single(
+        NonRepeatedTrackSizingFunction::Flex(1.0f)
+    ));
+
+    CountingGridTree tree(grid_style);
+    tree.SetRootSize(225.0f, 671.0f);
+    tree.SetRootAlignContent(AlignContent::Start);
+    tree.SetRootGap(0.0f, 6.0f);
+    tree.SetChildren(4, Size<float>{205.0f, 38.0f});
+
+    LayoutInput input;
+    input.run_mode = RunMode::PerformLayout;
+    input.sizing_mode = SizingMode::InherentSize;
+    input.known_dimensions = Size<std::optional<float>>{225.0f, 671.0f};
+    input.parent_size = Size<std::optional<float>>{225.0f, 671.0f};
+    input.available_space = Size<AvailableSpace>{
+        AvailableSpace::Definite(225.0f),
+        AvailableSpace::Definite(671.0f)
+    };
+
+    ComputeGridLayout(tree, 1, input);
+
+    ASSERT_EQ(tree.set_unrounded_layout_calls, 4);
+    for (size_t index = 0; index < 4; ++index) {
+        EXPECT_FLOAT_EQ(tree.ChildLayout(index).size.height, 38.0f);
+        EXPECT_FLOAT_EQ(tree.ChildLayout(index).location.y, static_cast<float>(index) * 44.0f);
+    }
 }
 
 TEST_F(GridLayoutTest, NonRepeatedTrackSizingFunctionMinMax) {

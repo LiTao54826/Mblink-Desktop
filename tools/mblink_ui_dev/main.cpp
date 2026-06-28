@@ -50,10 +50,15 @@ constexpr int kDaemonOpenRetryCount = 3;
 constexpr int kDaemonOpenRetryDelayMs = 250;
 constexpr size_t kMcpInlineTextMaxBytes = 128 * 1024;
 
+bool OptionConsumesNextValue(const std::string& arg);
 std::string GetOptionValue(const std::vector<std::string>& args, const std::string& key);
 
 bool HasOption(const std::vector<std::string>& args, const std::string& key) {
-    return std::find(args.begin(), args.end(), key) != args.end();
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == key) return true;
+        if (args[i].rfind("--", 0) == 0 && OptionConsumesNextValue(args[i])) ++i;
+    }
+    return false;
 }
 
 void ConfigureConsoleForUtf8() {
@@ -182,8 +187,12 @@ void PrintJsonLine(const nlohmann::json& j) {
 }
 
 std::string GetOptionValue(const std::vector<std::string>& args, const std::string& key) {
-    for (size_t i = 0; i + 1 < args.size(); ++i) {
-        if (args[i] == key) return args[i + 1];
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == key) {
+            if (i + 1 < args.size()) return args[i + 1];
+            return "";
+        }
+        if (args[i].rfind("--", 0) == 0 && OptionConsumesNextValue(args[i])) ++i;
     }
     return "";
 }
@@ -394,7 +403,18 @@ std::optional<ProjectIdentity> ResolveExistingProjectIdentity(const std::string&
 
 bool HasRunningDaemon(const ProjectIdentity& identity, bool cleanup_stale_state) {
     const auto state = LoadState(identity.project_id, nullptr);
-    if (state.has_value() && state->running && state->pid > 0 && IsProcessRunning(state->pid)) return true;
+    if (state.has_value() && state->running && state->pid > 0 && IsProcessRunning(state->pid)) {
+        nlohmann::json response;
+        std::string ping_error;
+        if (SendDaemonRequest(GetDaemonPipeName(identity.project_id),
+                              nlohmann::json{{"cmd", "ping"}},
+                              &response,
+                              &ping_error,
+                              500) &&
+            response.value("ok", false)) {
+            return true;
+        }
+    }
     if (cleanup_stale_state && state.has_value()) {
         std::string rm_err;
         RemoveState(identity.project_id, &rm_err);
@@ -494,6 +514,21 @@ bool OptionConsumesNextValue(const std::string& arg) {
            arg == "--x" || arg == "--y" || arg == "--color" || arg == "--code-base64" ||
            arg == "--response" || arg == "--response-mode" ||
            arg == "--max-nodes" || arg == "--max-depth" || arg == "--root-selector" || arg == "--limit";
+}
+
+std::vector<std::string> ArgsForProjectResolution(const std::vector<std::string>& args,
+                                                  const std::string& cmd) {
+    if (cmd != "input-text") return args;
+    std::vector<std::string> filtered;
+    filtered.reserve(args.size());
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "--text") {
+            if (i + 1 < args.size()) ++i;
+            continue;
+        }
+        filtered.push_back(args[i]);
+    }
+    return filtered;
 }
 
 std::vector<std::string> CollectPositionalArgs(const std::vector<std::string>& args) {
@@ -830,7 +865,7 @@ int main(int argc, char** argv) {
     const auto args = CollectCommandLineArgsUtf8(argc, argv);
 
     if (args.empty()) {
-        PrintJson(ErrorResponse("invalid_args", "用法: mblink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|query <selector>|inspect <selector>|click <selector>|input-text <selector> <text>|scroll <selector> [--x <num>] [--y <num>]|highlight <selector> [--color <css-color>]|reload|serve> ..."));
+        PrintJson(ErrorResponse("invalid_args", "用法: mblink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|query <selector>|inspect <selector>|click <selector>|input-text <selector> (<text>|--text <text>|--clear)|scroll <selector> [--x <num>] [--y <num>]|highlight <selector> [--color <css-color>]|reload|serve> ..."));
         return 1;
     }
 
@@ -908,7 +943,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             const auto state = LoadState(identity->project_id, nullptr);
-            if (state.has_value() && state->running && state->pid > 0 && IsProcessRunning(state->pid)) {
+            if (HasRunningDaemon(*identity, true)) {
                 PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "status"}}));
             } else {
                 PrintJson(nlohmann::json{{"ok", true},
@@ -929,10 +964,7 @@ int main(int argc, char** argv) {
             PrintJson(ErrorResponse("project_not_found", err));
             return 1;
         }
-        const auto state = LoadState(identity->project_id, nullptr);
-        if (!state.has_value() || !state->running || state->pid <= 0 || !IsProcessRunning(state->pid)) {
-            std::string rm_err;
-            RemoveState(identity->project_id, &rm_err);
+        if (!HasRunningDaemon(*identity, true)) {
             PrintJson(nlohmann::json{{"ok", true},
                                      {"project_id", identity->project_id},
                                      {"project_root", PathToUtf8(identity->project_root)},
@@ -1051,7 +1083,8 @@ int main(int argc, char** argv) {
     }
 
     std::string command_error;
-    const auto identity = RequireRunningDaemonProject(args, args.size(), true, &command_error);
+    const auto project_args = ArgsForProjectResolution(args, cmd);
+    const auto identity = RequireRunningDaemonProject(project_args, project_args.size(), true, &command_error);
     if (!identity.has_value()) {
         PrintJson(ErrorResponse("daemon_not_running", command_error));
         return 1;
@@ -1136,13 +1169,59 @@ int main(int argc, char** argv) {
         return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", positional[0]}}));
     }
     else if (cmd == "input-text") {
-        if (positional.size() < 2) {
-            PrintJson(ErrorResponse("invalid_args", "用法: mblink-ui-dev input-text <selector> <text>"));
+        std::string option_text;
+        std::vector<std::string> command_positional;
+        bool has_clear = false;
+        bool has_text_option = false;
+        bool missing_text_value = false;
+        for (size_t i = 1; i < args.size(); ++i) {
+            if (args[i] == "--project") {
+                if (i + 1 < args.size()) ++i;
+                continue;
+            }
+            if (args[i] == "--clear") {
+                has_clear = true;
+                continue;
+            }
+            if (args[i] == "--text") {
+                has_text_option = true;
+                if (i + 1 >= args.size()) {
+                    missing_text_value = true;
+                    continue;
+                }
+                option_text = args[++i];
+                continue;
+            }
+            if (args[i].rfind("--", 0) == 0) continue;
+            command_positional.push_back(args[i]);
+        }
+        if (command_positional.empty()) {
+            PrintJson(ErrorResponse("invalid_args", "usage: mblink-ui-dev input-text <selector> <text> | --text <text> | --clear"));
             return 1;
         }
-        std::string text = positional[1];
-        for (size_t i = 2; i < positional.size(); ++i) text += " " + positional[i];
-        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", positional[0]}, {"text", text}}));
+        if (has_clear && has_text_option) {
+            PrintJson(ErrorResponse("invalid_args", "--clear and --text cannot both be specified"));
+            return 1;
+        }
+        if (missing_text_value) {
+            PrintJson(ErrorResponse("invalid_args", "--text requires a value"));
+            return 1;
+        }
+        if ((has_clear || has_text_option) && command_positional.size() > 1) {
+            PrintJson(ErrorResponse("invalid_args", "--clear or --text cannot be combined with positional text"));
+            return 1;
+        }
+        if (has_clear || has_text_option) {
+            const std::string text = has_clear ? std::string{} : option_text;
+            return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", command_positional[0]}, {"text", text}}));
+        }
+        if (command_positional.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mblink-ui-dev input-text <selector> <text> | --text <text> | --clear"));
+            return 1;
+        }
+        std::string text = command_positional[1];
+        for (size_t i = 2; i < command_positional.size(); ++i) text += " " + command_positional[i];
+        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", command_positional[0]}, {"text", text}}));
     }
     else if (cmd == "scroll") {
         if (positional.empty()) {

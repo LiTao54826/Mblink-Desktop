@@ -149,6 +149,7 @@ public:
      * @param current_time 当前时间（秒）
      */
     void UpdateAnimations(double current_time);
+    void MarkAnimationTreeScanNeeded();
     
     /**
      * @brief 应用动画到渲染树
@@ -235,6 +236,9 @@ private:
     // FBO 增量渲染
     bool use_fbo_incremental_ = false;
     bool fbo_needs_full_paint_ = true;
+
+    bool animation_tree_scan_needed_ = true;
+    bool animation_tree_has_pending_startups_ = false;
     
     // 滚动位置跟踪
     float last_body_scroll_x_ = 0.0f;

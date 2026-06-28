@@ -59,6 +59,7 @@ void WindowRenderer::EnsureRenderTree() {
 }
 
 void WindowRenderer::InvalidateRenderTree() {
+    MarkAnimationTreeScanNeeded();
     if (window_) {
         window_->InvalidateRenderTree();
     }
@@ -130,6 +131,10 @@ void WindowRenderer::CollectDirtyRectsFromRenderTree(RenderObject* root) {
     }
 }
 
+void WindowRenderer::MarkAnimationTreeScanNeeded() {
+    animation_tree_scan_needed_ = true;
+}
+
 void WindowRenderer::UpdateAnimations(double current_time) {
     if (!window_) {
         return;
@@ -140,11 +145,14 @@ void WindowRenderer::UpdateAnimations(double current_time) {
     static uint64_t debug_frame = 0;
     ++debug_frame;
 
+    bool had_active_animations = false;
+
     // 更新 CSS Transition 动画
     bool has_active_animations = false;
     bool has_running_transitions = false;
     AnimationTimeline* timeline = window_->GetAnimationTimeline();
     if (timeline) {
+        had_active_animations = timeline->HasRunningTransitions();
         timeline->Update(current_time);
         has_running_transitions = timeline->HasRunningTransitions();
         has_active_animations = has_running_transitions;
@@ -155,6 +163,7 @@ void WindowRenderer::UpdateAnimations(double current_time) {
     Document* document = window_->GetDocument().get();
     if (document && document->GetStyleManager()) {
         auto& controller = document->GetStyleManager()->GetAnimationController();
+        had_active_animations = had_active_animations || !controller.GetRunningAnimations().empty();
         controller.Update(current_time);
         running_css_animations = controller.GetRunningAnimations().size();
         has_active_animations = has_active_animations || running_css_animations > 0;
@@ -166,17 +175,22 @@ void WindowRenderer::UpdateAnimations(double current_time) {
     // 应用动画值到渲染树
     AnimationApplicator* applicator = window_->GetAnimationApplicator();
     RenderObject* cached_tree = window_->GetCachedRenderTree().get();
-    if (applicator && cached_tree) {
+    const bool should_scan_animation_tree =
+        applicator && cached_tree &&
+        (animation_tree_scan_needed_ ||
+         animation_tree_has_pending_startups_ ||
+         had_active_animations ||
+         has_active_animations);
+    bool has_pending_animations = animation_tree_has_pending_startups_;
+    if (should_scan_animation_tree) {
         // 递归遍历渲染树，启动新动画并应用动画值
         ApplyAnimationsToRenderTree(cached_tree);
-    }
 
-    // 关键修复：只靠 running 动画判定会在某些帧出现“短暂空窗”，
-    // 导致主循环停止请求重绘，表现为动画只在交互事件时跳一下。
-    // 这里把 pending（样式中已声明但尚未进入 running）也纳入持续重绘条件。
-    bool has_pending_animations = false;
-    if (cached_tree) {
         has_pending_animations = HasPendingAnimations(cached_tree);
+        animation_tree_has_pending_startups_ = has_pending_animations;
+        animation_tree_scan_needed_ = false;
+    } else if (!cached_tree) {
+        animation_tree_has_pending_startups_ = false;
     }
 
     bool should_request_repaint = has_active_animations || has_pending_animations;

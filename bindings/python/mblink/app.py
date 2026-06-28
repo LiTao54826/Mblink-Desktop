@@ -250,6 +250,15 @@ class App:
             raise RuntimeError(msg)
         return self
 
+    def render_frame(self, passes: int = 1):
+        self._ensure_alive()
+        ret = self._lib.mblink_render_frame(self._handle, int(passes))
+        if ret != 0:
+            err = self._lib.mblink_last_error()
+            msg = err.decode("utf-8") if err else "unknown render frame error"
+            raise RuntimeError(msg)
+        return self
+
     def load_bytecode(self, data: bytes):
         self._ensure_alive()
         buf = ctypes.create_string_buffer(data)

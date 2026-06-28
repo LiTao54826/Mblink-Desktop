@@ -12,11 +12,14 @@ function run() {
   const eventLoopPath = path.join(process.cwd(), 'core', 'event', 'loop', 'event_loop.cpp');
   const windowPath = path.join(process.cwd(), 'core', 'window', 'window.cpp');
   const windowHeaderPath = path.join(process.cwd(), 'core', 'window', 'window.h');
+  const repaintReasonHeaderPath = path.join(process.cwd(), 'core', 'window', 'repaint_reason.h');
   const eventLoopSrc = fs.readFileSync(eventLoopPath, 'utf8');
   const windowSrc = fs.readFileSync(windowPath, 'utf8');
   const windowHeader = fs.readFileSync(windowHeaderPath, 'utf8');
+  const repaintReasonHeader = fs.readFileSync(repaintReasonHeaderPath, 'utf8');
 
-  assert(windowHeader.includes('enum class RepaintReason'),
+  assert(windowHeader.includes('#include "repaint_reason.h"') &&
+         repaintReasonHeader.includes('enum class RepaintReason'),
     'Window must define coarse repaint reason buckets');
   assert(windowHeader.includes('SetNeedsRepaintFor(RepaintReason reason)'),
     'Window must expose tagged repaint requests without removing SetNeedsRepaint compatibility');
