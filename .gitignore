@@ -124,3 +124,4 @@ tmp/
 .omc/
 参考/
 third_party/
+.dev-smoke/
