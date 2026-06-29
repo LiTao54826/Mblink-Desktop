@@ -5,7 +5,6 @@ The Python binding is the easiest language binding to understand after `mblink-u
 ## What it is
 
 - a `ctypes + C ABI` wrapper around `mblink.dll`
-- the only binding clearly integrated into the top-level CMake build
 - a good reference if you want to see MBlink as a host runtime instead of only as a dev tool
 
 ## Current repository shape
@@ -88,11 +87,17 @@ The Python binding can also expose the same development-only inspection path use
 
 Those APIs depend on the optional `mblink_devtools.dll` path rather than changing the core runtime model.
 
+## Parity expectation
+
+Python, Rust, and Go bindings are release-gated against the same C API runtime
+contract. If you add a parity-critical C API surface here, update the Rust and
+Go bindings or record the gap before release.
+
 ## What this README does not claim
 
 - not all platforms are equally verified
 - the API should not yet be described as fully stabilized
-- Python is the clearest binding today, but it is still part of an early-stage repository
+- Python is one supported binding, not a separate runtime from Rust or Go
 
 ## Related docs
 

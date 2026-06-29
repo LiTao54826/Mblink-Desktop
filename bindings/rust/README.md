@@ -1,6 +1,7 @@
 # MBlink Rust Bindings
 
-Rust bindings for MBlink live under this workspace:
+Rust bindings for MBlink live under this workspace and follow the same C API
+runtime contract as the Python and Go bindings:
 
 - `mblink-sys`: raw FFI bindings to `mblink.h`
 - `mblink`: safe Rust wrapper with RAII, `Result`, JSON helpers, callbacks, and resource package helpers

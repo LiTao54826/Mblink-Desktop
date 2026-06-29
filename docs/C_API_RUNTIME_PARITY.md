@@ -70,12 +70,18 @@ When Go and Rust toolchains are available, also run:
 
 ```powershell
 Push-Location bindings\go
+$env:CGO_ENABLED = "1"
 go test ./...
 Pop-Location
 
 Push-Location bindings\rust
 cargo check -p mblink-sys -p mblink
+cargo check -p mblink --examples
 Pop-Location
 ```
+
+Go binding verification requires Windows with cgo enabled and a C compiler on
+`PATH`. A no-cgo build should compile only the unsupported stub surface; it is
+not evidence that the real Go binding passed.
 
 The regression script `test_esm_loader_c_api_parity.ps1` checks the thin dynamic-library dependency, DOM snapshot, console/error/lifecycle JSON, `runtime_epoch`, UI-dev command handling, and `--no-scripts` behavior.

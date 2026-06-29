@@ -28,6 +28,8 @@ Modules currently included from `core/CMakeLists.txt` | 当前 `core/CMakeLists.
 | Shared library | `mblink_api` | 共享库 |
 | Static libraries | `mblink_window`, `mblink_render`, `mblink_devtools`, `mblink_network`, etc. | 静态库聚合 |
 | Python integration | `mblink_api` copied into Python package output | 会复制到 Python 输出目录 |
+| Rust integration | `mblink_api` copied into Rust runtime package output | 会复制到 Rust 运行时目录 |
+| Go integration | `mblink_api` DLL/import library copied into Go binding output | 会复制到 Go 绑定目录 |
 
 ## Layering | 分层
 
@@ -43,8 +45,10 @@ Modules currently included from `core/CMakeLists.txt` | 当前 `core/CMakeLists.
 
 - `core/bridge/`
 - `bindings/python/`
-- Python is the only binding with verified implementation status
-  Python 是当前唯一可确认已实现的绑定
+- `bindings/rust/`
+- `bindings/go/`
+- Python, Rust, and Go should expose the same observable C API runtime behavior
+  Python、Rust、Go 应暴露同一套可观察 C API 运行时行为
 
 ### Runtime and Document Model | 运行时与文档模型层
 

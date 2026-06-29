@@ -19,36 +19,35 @@ MBlink 的结构核心是“一个共享运行时 + 多个宿主表面”。
 
 | 绑定 | 当前状态 | 说明 |
 |---|---|---|
-| Python | 除 `esm_loader` 外最适合作为公开上手路径 | 已接入顶层构建，也最容易读懂 |
-| Rust | 已存在真实绑定包 | 当前更适合作为次级上手路径 |
-| Go | 已存在真实绑定包 | 偏 Windows，仍属次级上手路径 |
+| Python | 已支持的宿主绑定 | `ctypes + C ABI`，运行时会复制到 `bindings/python/mblink/bin/` |
+| Rust | 已支持的宿主绑定 | 原始 FFI 加安全包装层，运行时会复制到 `bindings/rust/mblink-sys/runtime/` |
+| Go | Windows + cgo 下已支持的宿主绑定 | `cgo + C ABI`，需要 `CGO_ENABLED=1`、C 编译器、`mblink.dll` 和 `mblink.lib` |
 | Node.js | 仅占位 | 不应描述为已支持 |
+
+所有已支持绑定都必须跟随同一套可观察运行时契约。如果某个 C API 行为已经在 Python 暴露，发布前也应在 Rust 和 Go 中暴露，或者明确记录并把差距列为发布阻断项。
 
 ## 推荐阅读顺序
 
 1. `mblink-ui-dev`
 2. `esm_loader`
-3. Python
-4. Rust 或 Go（按需）
+3. Python、Rust 或 Go（按你实际需要的宿主语言选择）
 
-这个顺序更符合当前仓库里“最容易理解、也最有工作流证据”的部分。
+这个顺序是先理解工具链和手动运行时，再进入你实际需要的宿主语言。
 
 ## Python
 
-Python 是当前最适合先读的语言绑定，原因包括：
+Python 走直接的 `ctypes + C ABI` 路径，适合需要脚本化宿主且不想先配置复杂原生语言环境的场景。
 
-- 它已经接入顶层 CMake 构建
-- 它采用直接的 `ctypes + C ABI` 模型
+一些重要仓库事实：
+
+- 运行时产物会复制到 `bindings/python/mblink/bin/`
+- Python 包通过 `ctypes` 加载 `mblink.dll`
 - 仓库里有多份可运行 Python 示例
 
 从这里开始：
 
 - [../bindings/python/README.md](../bindings/python/README.md)
 
-一些重要仓库事实：
-
-- 运行时产物会复制到 `bindings/python/mblink/bin/`
-- Python 包通过 `ctypes` 加载 `mblink.dll`
 - UI-dev 快照/控制和 HTTP MCP 可以通过可选 devtools 路径启用
 
 ## Rust
@@ -62,7 +61,8 @@ Rust 绑定位于：
 
 - 原始 FFI 与安全包装层
 - 更显式的动态库控制
-- 比 Python 更偏 idiomatic 的宿主集成方式
+- 基于同一 C API 契约的 idiomatic Rust 宿主集成方式
+- 通过 `cargo check -p mblink-sys -p mblink` 做编译级检查
 
 从这里开始：
 
@@ -74,10 +74,12 @@ Go 绑定位于：
 
 - `bindings/go/mblink`
 
-在下面这些场景下它是一个合理选择：
+在下面这些场景下它是受支持的选择：
 
 - 需要基于 cgo 的宿主集成
 - 需要更直接的原生宿主模型
+
+Go 绑定需要 `CGO_ENABLED=1`、PATH 中可用的 C 编译器，以及由原生构建复制好的 `mblink.dll` / `mblink.lib`。当 cgo 被关闭时，包会明确暴露 unsupported stub，而不是编译出半截绑定。
 
 从这里开始：
 
@@ -89,7 +91,7 @@ Go 绑定位于：
 
 - `mblink_devtools.dll` 需要按需加载
 - 它不应被视为生产运行时
-- 可观察到的运行时行为应尽量和共享 C API 表面保持一致
+- 可观察到的运行时行为必须和共享 C API 表面保持一致
 
 这套约束的目标，请看 [C API Runtime Parity](C_API_RUNTIME_PARITY.md)。
 
@@ -99,4 +101,4 @@ Go 绑定位于：
 
 - Node.js 不是已验证、已支持的绑定
 - 没有新鲜证据时，不应暗示跨平台一致性
-- 某个源码目录存在，不等于这个绑定已经适合公开稳定支持
+- Go 绑定验证需要 Windows cgo 工具链

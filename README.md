@@ -15,7 +15,7 @@ and AI-friendly development workflows.
 - A shared runtime centered on `mblink.dll`
 - A thin manual runner in `esm_loader.exe`
 - An AI-first development surface in `mblink-ui-dev.exe`
-- Python integration today, plus early Rust and Go bindings in the tree
+- Python, Rust, and Go host bindings built around the same C API contract
 
 ## What MBlink is not
 
@@ -175,8 +175,8 @@ MBlink is in an early but usable repository stage:
 - Windows has the strongest build and runtime evidence
 - the dev tooling and example workflow are more mature than the public packaging
   story
-- Python is the clearest binding to read first
-- Rust and Go bindings exist, but public onboarding is still secondary
+- Python, Rust, and Go bindings share the same runtime contract
+- release readiness requires fresh Python, Rust, and Go binding checks
 - Node.js is not a supported binding yet
 
 The goal of this repository is not "ship a full browser." It is to make modern

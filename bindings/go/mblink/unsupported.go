@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows || !cgo
 
 package mblink
 
@@ -18,7 +18,9 @@ type LogView struct{}
 
 type Terminal struct{}
 
-func unsupported() error { return newError(0, "mblink Go bindings currently support Windows only") }
+func unsupported() error {
+	return newError(0, "mblink Go bindings require Windows with CGO_ENABLED=1 and a C compiler")
+}
 
 func Version() string                               { return "" }
 func DefaultConfig() Config                         { return Config{} }

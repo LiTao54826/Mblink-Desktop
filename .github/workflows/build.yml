@@ -24,6 +24,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
       - name: Validate public entry files
         shell: pwsh
         run: |
@@ -42,6 +47,7 @@ jobs:
             "third_party.lock.json",
             "scripts/code_structure_baseline.json",
             "scripts/check_dependency_lock.ps1",
+            "scripts/check_binding_readiness.py",
             "scripts/check_code_structure_baseline.py",
             "scripts/check_skia_provenance.ps1",
             ".github/workflows/release-readiness.yml",
@@ -98,6 +104,9 @@ jobs:
       - name: Check code structure baseline
         run: python scripts/check_code_structure_baseline.py
 
+      - name: Check binding readiness metadata
+        run: python scripts/check_binding_readiness.py
+
       - name: Generate code structure report
         shell: pwsh
         run: |
@@ -120,9 +129,19 @@ jobs:
       - name: Generate circular dependency report
         run: python scripts/check_circular_deps.py
 
+      - name: Check Python binding syntax
+        run: python -m py_compile bindings/python/mblink/_ffi.py bindings/python/mblink/app.py bindings/python/mblink/shared.py bindings/python/mblink/resources.py bindings/python/mblink/controls.py
+
+      - name: Check Go unsupported no-cgo surface
+        working-directory: bindings/go
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "0"
+          go test ./mblink
+
       - name: Explain native build gate
         shell: pwsh
         run: |
           Write-Host "This required CI gate checks repository hygiene and onboarding files."
-          Write-Host "The full Windows native build is still a release gate because it needs prepared Skia libraries."
-          Write-Host "See docs/BUILD.md and docs/RELEASE.md for the current build command and Skia provenance gate."
+          Write-Host "The full Windows native build and cgo Go binding run are release gates because they need prepared Skia libraries and a C toolchain."
+          Write-Host "See docs/BUILD.md and docs/RELEASE.md for the current build command, binding parity checks, and Skia provenance gate."

@@ -14,15 +14,23 @@
 
 ### Bindings | 绑定
 
-Only Python binding has verified implementation status.
-当前只有 Python 绑定具备可验证实现。
+Python, Rust, and Go are the supported host binding surfaces for the shared C API.
+Python、Rust、Go 是当前围绕共享 C API 的受支持宿主绑定表面。
+
+Binding release readiness requires fresh local or CI evidence for all three:
+绑定发布就绪需要三者都有最新的本地或 CI 证据：
+
+- Python syntax/import-level checks / Python 语法与导入级检查
+- Rust `cargo check -p mblink-sys -p mblink` plus example checks / Rust 包与示例检查
+- Go `go test ./...` on Windows with `CGO_ENABLED=1` and a C compiler / Go 在 Windows+cgo+C 编译器环境下测试
 
 The following should not be described as supported bindings:
 以下目录当前不应描述为已支持绑定：
 
-- `bindings/go/`
-- `bindings/rust/`
 - `bindings/nodejs/`
+
+Go without cgo is an explicit unsupported stub surface, not proof that the real Go binding passed.
+未启用 cgo 的 Go 只是明确的 unsupported stub 表面，不能作为真实 Go 绑定已通过的证据。
 
 ### UI Framework Compatibility | UI 框架兼容性
 

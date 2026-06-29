@@ -23,6 +23,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup MSYS2 for Go cgo
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+
       - name: Validate Skia provenance
         shell: pwsh
         run: |
@@ -36,6 +51,9 @@ jobs:
       - name: Check code structure baseline
         run: python scripts/check_code_structure_baseline.py
 
+      - name: Check binding readiness metadata
+        run: python scripts/check_binding_readiness.py
+
       - name: Generate circular dependency report
         run: python scripts/check_circular_deps.py
 
@@ -44,6 +62,21 @@ jobs:
 
       - name: Build release tools
         run: cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
+
+      - name: Check Python binding syntax
+        run: python -m py_compile bindings/python/mblink/_ffi.py bindings/python/mblink/app.py bindings/python/mblink/shared.py bindings/python/mblink/resources.py bindings/python/mblink/controls.py
+
+      - name: Check Rust bindings
+        working-directory: bindings/rust
+        run: cargo check -p mblink-sys -p mblink && cargo check -p mblink --examples
+
+      - name: Check Go bindings
+        working-directory: bindings/go
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "1"
+          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+          go test ./...
 
       - name: Smoke todo_app_js snapshot
         shell: pwsh

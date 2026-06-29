@@ -7,6 +7,8 @@ Runtime behavior follows the shared C API contract documented in `docs/C_API_RUN
 
 - Windows
 - Go 1.23+
+- `CGO_ENABLED=1`
+- a C compiler on `PATH`
 - built native library available at `bindings/go/mblink.lib`
   - CMake now copies it there automatically after building `mblink_api`
 - matching runtime DLL available for the process loader
@@ -17,6 +19,7 @@ Runtime behavior follows the shared C API contract documented in `docs/C_API_RUN
 From `bindings/go/`:
 
 ```bash
+set CGO_ENABLED=1
 go test ./...
 ```
 
@@ -93,6 +96,7 @@ Current package includes:
 
 - current implementation is Windows-oriented
 - non-Windows builds use unsupported stubs
+- Windows builds with `CGO_ENABLED=0` also use unsupported stubs
 - examples are also marked with `//go:build windows`
 - build-time linking now prefers `bindings/go`, with `build/lib/Release` kept as fallback
 - runtime DLL loading is handled by the Windows loader, not by a custom Go `_find_dll()` helper
