@@ -1,59 +1,93 @@
-# Contributing | 贡献
+# Contributing
 
-## Accepted Contributions | 接受的贡献类型
+Thank you for taking MBlink seriously enough to contribute. The project is early,
+Windows-first, and intentionally careful about public claims.
+
+## Good first contribution areas
 
 - Bug fixes with reproducible cases
-  可复现问题的 bug 修复
 - Build stability improvements
-  构建稳定性改进
-- Test additions or fixes
-  测试补充或修复
-- Documentation corrections based on current source state
-  基于当前源码状态的文档修正
+- Dependency/setup documentation fixes
 - Example validation and cleanup
-  示例验证与清理
+- Snapshot-based `mblink-ui-dev` workflow improvements
+- Focused tests or regression assets
 
-## Before You Start | 开始前检查
+## Before you start
 
 Check whether your change affects:
-先确认你的改动是否影响：
 
-1. module boundaries / 模块边界
-2. build entry points or dependencies / 构建入口或依赖
-3. public API or bindings / 公开 API 或绑定
-4. examples or tests / 示例或测试
-5. user-visible behavior / 用户可见行为
+1. module boundaries
+2. build entry points or dependencies
+3. public C API or language bindings
+4. examples or tests
+5. user-visible runtime behavior
+6. public docs that new contributors will trust
 
-## Basic Workflow | 基本流程
+For MBlink-specific automation, read:
 
-```bash
+- [../AGENTS.md](../AGENTS.md)
+- [AI Workflow](AI_WORKFLOW.md)
+- [tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md](../tools/mblink_ui_dev/skills/mblink-ui-dev/SKILL.md)
+
+## Basic workflow
+
+```powershell
 git checkout -b feature/your-change
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\download_deps.ps1 -NonInteractive
 cmake -B build
-cmake --build build --config Release
+cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
 ```
 
-For test-related changes | 涉及测试的改动：
+The default build requires prepared Skia libraries. See [Build](BUILD.md) before
+opening a build issue from a fresh checkout.
 
-```bash
+## Validation
+
+For docs/support changes:
+
+```powershell
+git diff --check
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check_dependency_lock.ps1
+py -3 scripts/check_code_structure_baseline.py
+py -3 scripts/check_circular_deps.py
+```
+
+`scripts/check_code_structure.py` currently reports known source-size debt in
+existing runtime files, so treat it as an advisory report unless your change
+touches those areas.
+
+The hard baseline for oversized source files lives in
+`scripts/code_structure_baseline.json`. Updating it should be treated as a
+reviewable architecture decision, not routine cleanup.
+
+For UI/tooling changes, prefer runtime evidence:
+
+```powershell
+build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+```
+
+For test-related changes:
+
+```powershell
 cmake -B build -DMBLINK_BUILD_TESTS=ON
 cmake --build build --config Release
-ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure -C Release
 ```
 
-## Pull Request Checklist | PR 清单
+## Pull request checklist
 
-- describe what changed / 说明改了什么
-- explain why the change is needed / 说明为什么要改
-- include validation steps / 写明验证步骤
-- mention impact on build, tests, bindings, examples, or public interfaces / 说明影响范围
+- Describe what changed
+- Explain why the change is needed
+- Include exact validation commands and outcomes
+- Mention impact on build, tests, bindings, examples, docs, or public interfaces
+- Avoid broad refactors mixed into behavior changes
+- Keep generated files and local build output out of the PR
 
-## Documentation Requirements | 文档要求
+## Documentation rules
 
-- do not describe placeholder directories as supported features
-  不要把占位目录写成已支持功能
-- do not treat historical plans as current project state
-  不要把历史计划当成当前状态
-- mark unverified capabilities clearly
-  未验证能力要明确标注
-- keep statements aligned with the current source tree and build scripts
-  文档表述必须与当前源码和构建脚本一致
+- Do not describe placeholder directories as supported features
+- Do not treat historical plans as current project state
+- Mark unverified capabilities clearly
+- Keep claims aligned with current source, build scripts, and fresh verification
+- If Skia, QuickJS-ng, SDL3, or bundled third-party code is affected, update
+  [Third-Party Notices](../THIRD_PARTY_NOTICES.md) when needed

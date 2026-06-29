@@ -1,0 +1,57 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    name: Release readiness
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate Skia provenance
+        shell: pwsh
+        run: |
+          .\scripts\check_skia_provenance.ps1 -RequireLibraries
+
+      - name: Validate dependency lock notices
+        shell: pwsh
+        run: |
+          .\scripts\check_dependency_lock.ps1
+
+      - name: Check code structure baseline
+        run: python scripts/check_code_structure_baseline.py
+
+      - name: Generate circular dependency report
+        run: python scripts/check_circular_deps.py
+
+      - name: Configure native build
+        run: cmake -B build
+
+      - name: Build release tools
+        run: cmake --build build --config Release --target mblink_ui_dev esm_loader -- /m:1
+
+      - name: Smoke todo_app_js snapshot
+        shell: pwsh
+        run: |
+          build\bin\Release\mblink-ui-dev.exe snapshot --project "examples\todo_app_js" --response file --include-screenshot
+
+      - name: Explain release build gate
+        shell: pwsh
+        run: |
+          Write-Host "Skia provenance and library presence are required before publishing binary artifacts."
+          Write-Host "Run the documented native build and runtime snapshot checks before attaching release files."

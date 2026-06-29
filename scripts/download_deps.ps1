@@ -1,248 +1,210 @@
-# MBlink Third-Party Dependencies Download Script (PowerShell)
-# Purpose: Automatically download and configure all dependencies
-# PowerShell version with better UTF-8 support and error handling
+# MBlink third-party dependency bootstrap for Windows.
+#
+# This script prepares the public fresh-clone dependencies that can be fetched
+# safely from source. It intentionally does not fabricate the Skia layout,
+# because the current CMake files expect prepared Debug/Release Skia libraries.
 
-# Set UTF-8 encoding
+[CmdletBinding()]
+param(
+    [switch]$IncludeSkia,
+    [switch]$NonInteractive,
+    [switch]$ConfigureGlobalGitProxy,
+    [switch]$Force,
+    [string]$Proxy,
+    [string]$QuickJsRef = "ca0d50dc2991c433f1c265239790e37b38c836b8",
+    [string]$SdlRef = "b9c790949e4ff6bc26813b437d477da694269ef5"
+)
+
+$ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  MBlink Dependencies Download (PowerShell)" -ForegroundColor Cyan
-Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host ""
-
-# ==========================================
-# Proxy Configuration
-# ==========================================
-# Method 1: Set via environment variables (Recommended)
-#   $env:HTTP_PROXY = "http://127.0.0.1:7890"
-#   $env:HTTPS_PROXY = "http://127.0.0.1:7890"
-#
-# Method 2: Set directly below (Uncomment)
-#   $Proxy = "http://127.0.0.1:7890"
-#
-# Method 3: Set when running script
-#   $env:HTTP_PROXY="http://127.0.0.1:7890"; .\download_deps.ps1
-# ==========================================
-
-# Read proxy from environment variables
-$Proxy = $env:HTTP_PROXY
-if (-not $Proxy) {
-    $Proxy = $env:HTTPS_PROXY
-}
-
-# If needed, set proxy directly here (Uncomment)
-# $Proxy = "http://127.0.0.1:7890"
-# $Proxy = "socks5://127.0.0.1:7890"
-
-if ($Proxy) {
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "  Proxy Configuration" -ForegroundColor Cyan
-    Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "[OK] Using proxy: $Proxy" -ForegroundColor Green
-
-    # Set environment variables
-    $env:http_proxy = $Proxy
-    $env:https_proxy = $Proxy
-    $env:HTTP_PROXY = $Proxy
-    $env:HTTPS_PROXY = $Proxy
-    $env:ALL_PROXY = $Proxy
-
-    # Configure Git proxy
-    git config --global http.proxy "$Proxy" 2>$null
-    git config --global https.proxy "$Proxy" 2>$null
-
-    Write-Host "[OK] Git proxy configured" -ForegroundColor Green
-
-    # Configure PowerShell Web proxy
-    $ProxyUri = New-Object System.Uri($Proxy)
-    $WebProxy = New-Object System.Net.WebProxy($ProxyUri, $false)
-    [System.Net.WebRequest]::DefaultWebProxy = $WebProxy
-
-    Write-Host "[OK] PowerShell proxy configured" -ForegroundColor Green
-    Write-Host ""
-} else {
-    Write-Host "==========================================" -ForegroundColor Yellow
-    Write-Host "  No Proxy Configured" -ForegroundColor Yellow
-    Write-Host "==========================================" -ForegroundColor Yellow
-    Write-Host "[INFO] If download fails, please set proxy:" -ForegroundColor Yellow
-    Write-Host '  $env:HTTP_PROXY = "http://127.0.0.1:7890"' -ForegroundColor Yellow
-    Write-Host '  $env:HTTPS_PROXY = "http://127.0.0.1:7890"' -ForegroundColor Yellow
-    Write-Host "Or edit script and uncomment: `$Proxy=" -ForegroundColor Yellow
-    Write-Host ""
-}
-
-# Switch to third_party directory
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $ThirdPartyDir = Join-Path $ProjectRoot "third_party"
 
-if (-not (Test-Path $ThirdPartyDir)) {
+function Write-Step {
+    param([string]$Message)
+    Write-Host "[deps] $Message" -ForegroundColor Cyan
+}
+
+function Require-Command {
+    param([string]$Command)
+    if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
+        throw "Required command not found: $Command"
+    }
+}
+
+function Use-ProxyIfConfigured {
+    $selectedProxy = $Proxy
+    if (-not $selectedProxy) {
+        $selectedProxy = $env:HTTPS_PROXY
+    }
+    if (-not $selectedProxy) {
+        $selectedProxy = $env:HTTP_PROXY
+    }
+
+    if (-not $selectedProxy) {
+        Write-Step "No proxy configured; using the current process environment."
+        return
+    }
+
+    $env:HTTP_PROXY = $selectedProxy
+    $env:HTTPS_PROXY = $selectedProxy
+    $env:http_proxy = $selectedProxy
+    $env:https_proxy = $selectedProxy
+    Write-Step "Using proxy from parameter/environment: $selectedProxy"
+
+    if ($ConfigureGlobalGitProxy) {
+        git config --global http.proxy "$selectedProxy"
+        git config --global https.proxy "$selectedProxy"
+        Write-Step "Configured global Git proxy because -ConfigureGlobalGitProxy was passed."
+    } else {
+        Write-Step "Leaving global Git proxy untouched."
+    }
+}
+
+function Assert-UnderThirdParty {
+    param([string]$Path)
+
+    $fullThirdParty = [System.IO.Path]::GetFullPath($ThirdPartyDir)
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+
+    if (-not $fullPath.StartsWith($fullThirdParty, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to modify path outside third_party: $fullPath"
+    }
+}
+
+function Remove-DependencyDirectory {
+    param([string]$Path)
+
+    Assert-UnderThirdParty -Path $Path
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
+function Invoke-Git {
+    param([string[]]$Arguments)
+
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Get-CurrentGitRef {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath (Join-Path $Path ".git"))) {
+        return $null
+    }
+
+    $current = & git -C $Path rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+    return $current.Trim()
+}
+
+function Clone-OrVerifyDependency {
+    param(
+        [string]$Name,
+        [string]$Url,
+        [string]$TargetName,
+        [string]$Ref
+    )
+
+    $targetPath = Join-Path $ThirdPartyDir $TargetName
+    Write-Step "$Name -> third_party\$TargetName"
+
+    if (Test-Path -LiteralPath $targetPath) {
+        $currentRef = Get-CurrentGitRef -Path $targetPath
+        if ($currentRef -and $currentRef.Equals($Ref, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "  OK: already at $Ref" -ForegroundColor Green
+            return
+        }
+
+        if (-not $Force) {
+            Write-Host "  SKIP: directory already exists." -ForegroundColor Yellow
+            if ($currentRef) {
+                Write-Host "        current ref: $currentRef" -ForegroundColor Yellow
+                Write-Host "        expected ref: $Ref" -ForegroundColor Yellow
+            }
+            Write-Host "        pass -Force to replace it." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "  replacing existing directory because -Force was passed" -ForegroundColor Yellow
+        Remove-DependencyDirectory -Path $targetPath
+    }
+
+    Invoke-Git -Arguments @("clone", $Url, $targetPath)
+    Invoke-Git -Arguments @("-C", $targetPath, "checkout", "--detach", $Ref)
+    Write-Host "  OK: checked out $Ref" -ForegroundColor Green
+}
+
+function Test-SkiaLayout {
+    $debugLib = Join-Path $ThirdPartyDir "skia\Debug\out\Debug-windows-x64\skia.lib"
+    $releaseLib = Join-Path $ThirdPartyDir "skia\Release\out\Release-windows-x64\skia.lib"
+    return (Test-Path -LiteralPath $debugLib) -and (Test-Path -LiteralPath $releaseLib)
+}
+
+function Report-SkiaState {
+    if (Test-SkiaLayout) {
+        Write-Host "  OK: prepared Skia Debug/Release libraries were found." -ForegroundColor Green
+        return
+    }
+
+    $message = @"
+  Skia is still required by the default MBlink build.
+  Current CMake expects prepared libraries under:
+    third_party\skia\Debug\out\Debug-windows-x64\skia.lib
+    third_party\skia\Release\out\Release-windows-x64\skia.lib
+
+  This script does not download a random Skia source/prebuilt tree, because that
+  would not match the layout CMake consumes today. Prepare Skia separately and
+  record provenance before publishing release artifacts. See docs\BUILD.md,
+  docs\RELEASE.md, and THIRD_PARTY_NOTICES.md.
+"@
+
+    if ($IncludeSkia) {
+        throw $message
+    }
+
+    Write-Host $message -ForegroundColor Yellow
+}
+
+Write-Host "MBlink dependency bootstrap" -ForegroundColor Cyan
+Write-Host "Project root: $ProjectRoot"
+Write-Host "Third-party:  $ThirdPartyDir"
+if ($NonInteractive) {
+    Write-Host "Mode:         non-interactive"
+}
+Write-Host ""
+
+Require-Command "git"
+Use-ProxyIfConfigured
+
+if (-not (Test-Path -LiteralPath $ThirdPartyDir)) {
     New-Item -ItemType Directory -Path $ThirdPartyDir | Out-Null
 }
 
-Set-Location $ThirdPartyDir
+Clone-OrVerifyDependency `
+    -Name "QuickJS-ng" `
+    -Url "https://github.com/quickjs-ng/quickjs.git" `
+    -TargetName "quickjs" `
+    -Ref $QuickJsRef
 
-# Check if Git is installed
-function Test-Command {
-    param($Command)
-    try {
-        Get-Command $Command -ErrorAction Stop | Out-Null
-        return $true
-    } catch {
-        return $false
-    }
-}
+Clone-OrVerifyDependency `
+    -Name "SDL3" `
+    -Url "https://github.com/libsdl-org/SDL.git" `
+    -TargetName "SDL3" `
+    -Ref $SdlRef
 
-if (-not (Test-Command "git")) {
-    Write-Host "[ERROR] Git not found, please install Git for Windows" -ForegroundColor Red
-    Write-Host "Download: https://git-scm.com/download/win" -ForegroundColor Yellow
-    Read-Host "Press Enter to exit"
-    exit 1
-}
+Write-Step "Skia"
+Report-SkiaState
 
-# Download QuickJS
-function Download-QuickJS {
-    Write-Host "[1/4] Downloading QuickJS..." -ForegroundColor Yellow
-
-    if (Test-Path "quickjs") {
-        Write-Host "[OK] QuickJS already exists, skipping" -ForegroundColor Green
-        return
-    }
-
-    Write-Host "Downloading QuickJS..." -ForegroundColor Cyan
-
-    try {
-        $url = "https://bellard.org/quickjs/quickjs-2024-01-13.tar.xz"
-        $output = "quickjs.tar.xz"
-
-        # Use Invoke-WebRequest to download
-        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-
-        Write-Host "[OK] QuickJS downloaded" -ForegroundColor Green
-        Write-Host "[INFO] Please extract quickjs.tar.xz to quickjs directory" -ForegroundColor Yellow
-        Write-Host "  Using tar (Windows 10+): tar -xf quickjs.tar.xz" -ForegroundColor Yellow
-        Write-Host "  Or using 7-Zip: 7z x quickjs.tar.xz; 7z x quickjs.tar" -ForegroundColor Yellow
-        Write-Host ""
-    } catch {
-        Write-Host "[ERROR] QuickJS download failed: $_" -ForegroundColor Red
-        Write-Host ""
-    }
-}
-
-# Download SDL3
-function Download-SDL3 {
-    Write-Host "[2/4] Downloading SDL3..." -ForegroundColor Yellow
-
-    if (Test-Path "SDL3") {
-        Write-Host "[OK] SDL3 already exists, skipping" -ForegroundColor Green
-        return
-    }
-
-    Write-Host "Cloning SDL3..." -ForegroundColor Cyan
-
-    try {
-        git clone --depth 1 https://github.com/libsdl-org/SDL SDL3
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] SDL3 downloaded" -ForegroundColor Green
-        } else {
-            Write-Host "[ERROR] SDL3 download failed" -ForegroundColor Red
-        }
-    } catch {
-        Write-Host "[ERROR] SDL3 download failed: $_" -ForegroundColor Red
-    }
-
-    Write-Host ""
-}
-
-# Download Yoga
-function Download-Yoga {
-    Write-Host "[3/4] Downloading Yoga..." -ForegroundColor Yellow
-
-    if (Test-Path "yoga") {
-        Write-Host "[OK] Yoga already exists, skipping" -ForegroundColor Green
-        return
-    }
-
-    Write-Host "Cloning Yoga..." -ForegroundColor Cyan
-
-    try {
-        git clone --depth 1 https://github.com/facebook/yoga.git
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Yoga downloaded" -ForegroundColor Green
-        } else {
-            Write-Host "[ERROR] Yoga download failed" -ForegroundColor Red
-        }
-    } catch {
-        Write-Host "[ERROR] Yoga download failed: $_" -ForegroundColor Red
-    }
-
-    Write-Host ""
-}
-
-# Download Skia (Optional)
-function Download-Skia {
-    Write-Host "[4/4] Downloading Skia (Optional)..." -ForegroundColor Yellow
-
-    if (Test-Path "skia") {
-        Write-Host "[OK] Skia already exists, skipping" -ForegroundColor Green
-        return
-    }
-
-    $response = Read-Host "Skia is large and takes long to compile. Download? (y/N)"
-
-    if ($response -ne "y" -and $response -ne "Y") {
-        Write-Host "Skipping Skia download" -ForegroundColor Yellow
-        Write-Host "[INFO] You can download it later or use prebuilt binaries" -ForegroundColor Yellow
-        return
-    }
-
-    Write-Host "Cloning Skia..." -ForegroundColor Cyan
-
-    try {
-        git clone https://github.com/google/skia.git
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Skia downloaded" -ForegroundColor Green
-            Write-Host "[NOTE] Skia requires: python3 tools/git-sync-deps" -ForegroundColor Yellow
-            Write-Host "[NOTE] Then build with GN and Ninja" -ForegroundColor Yellow
-        } else {
-            Write-Host "[ERROR] Skia download failed" -ForegroundColor Red
-        }
-    } catch {
-        Write-Host "[ERROR] Skia download failed: $_" -ForegroundColor Red
-    }
-
-    Write-Host ""
-}
-
-# Main function
-function Main {
-    # Download all dependencies
-    Download-QuickJS
-    Download-SDL3
-    Download-Yoga
-    Download-Skia
-
-    Write-Host ""
-    Write-Host "==========================================" -ForegroundColor Green
-    Write-Host "  Download Complete!" -ForegroundColor Green
-    Write-Host "==========================================" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Next steps:" -ForegroundColor Cyan
-    Write-Host "  1. Compile QuickJS: cd third_party\quickjs; nmake (requires MSVC)" -ForegroundColor White
-    Write-Host "  2. Configure CMake: mkdir build; cd build; cmake .." -ForegroundColor White
-    Write-Host "  3. Build project: cmake --build . --config Release" -ForegroundColor White
-    Write-Host ""
-    Write-Host "For details, see: third_party\README.md" -ForegroundColor Cyan
-    Write-Host ""
-}
-
-# Run main function
-Main
-
-# Wait for user input
-Read-Host "Press Enter to exit"
-
+Write-Host ""
+Write-Host "Dependency bootstrap finished." -ForegroundColor Green
+Write-Host "Next: prepare Skia if needed, then run cmake from the repository root." -ForegroundColor Cyan

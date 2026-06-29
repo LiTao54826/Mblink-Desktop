@@ -1,0 +1,28 @@
+{
+  "maxSourceLines": 2000,
+  "rootDirs": [
+    "core",
+    "tools",
+    "bindings"
+  ],
+  "sourceExtensions": [
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx"
+  ],
+  "oversizedSources": [
+    "core/api/mblink.cpp",
+    "core/editing/contenteditable_handler.cpp",
+    "core/event/dispatch/mouse_event_dispatcher.cpp",
+    "core/layout/flex_layout.cpp",
+    "core/layout/native_layout_engine.cpp",
+    "core/quickjs/bindings/js_element.cpp",
+    "core/render/css/style_resolver.cpp",
+    "core/render/objects/render_block.cpp",
+    "core/render/objects/render_inline_block.cpp",
+    "core/render/objects/render_object.cpp",
+    "core/window/window.cpp",
+    "tools/mblink_ui_dev/daemon_server.cpp"
+  ]
+}

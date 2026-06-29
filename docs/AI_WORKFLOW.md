@@ -1,8 +1,9 @@
 # AI Workflow
 
-English | [中文](AI_WORKFLOW.zh-CN.md)
+English | [Chinese](AI_WORKFLOW.zh-CN.md)
 
-MBlink is intentionally shaped so AI-assisted development is a first-class workflow, not an afterthought.
+MBlink is intentionally shaped so AI-assisted development is a first-class
+workflow, not an afterthought.
 
 ## Recommended mental model
 
@@ -10,7 +11,8 @@ Use these layers:
 
 1. `mblink-ui-dev.exe` for project work
 2. `mblink.dll` for runtime behavior
-3. `mblink_devtools.dll` only when you need development-only snapshot/control or runtime HTTP MCP
+3. `mblink_devtools.dll` only when you need development-only snapshot/control or
+   runtime HTTP MCP
 
 In practice:
 
@@ -31,7 +33,8 @@ The development surface is already organized around machine-readable feedback:
 - `input-text`
 - `scroll`
 
-That means an AI agent can work from real runtime evidence instead of only code inspection.
+That means an AI agent can work from real runtime evidence instead of only code
+inspection.
 
 ## Fastest workflow
 
@@ -99,7 +102,8 @@ Use it as the detailed reference for:
 4. only then wire the real Python, Rust, or Go host
 5. re-run the same verification path against the real host
 
-This is important because MBlink is not trying to imitate a complete browser. The safest workflow is to prove runtime behavior directly.
+This is important because MBlink is not trying to imitate a complete browser. The
+safest workflow is to prove runtime behavior directly.
 
 ## When to drop down to lower layers
 
@@ -117,8 +121,12 @@ Use Python/Rust/Go hosts when:
 
 ## Important constraints
 
-- `tool` runtime is great for UI shape, but not final proof for host-specific behavior
-- `mblink_devtools.dll` is development-only and should not be treated as the production runtime
+- `tool` runtime is great for UI shape, but not final proof for host-specific
+  behavior
+- `mblink_devtools.dll` is development-only and should not be treated as the
+  production runtime
 - Windows has the strongest verified workflow
 - build success alone is not enough; a real snapshot is the better proof
-- for public-facing examples and docs, prefer `snapshot --response file --include-screenshot` so the proof includes both DOM data and a PNG artifact
+- for public-facing examples and docs, prefer
+  `snapshot --response file --include-screenshot` so the proof includes both DOM
+  data and a PNG artifact

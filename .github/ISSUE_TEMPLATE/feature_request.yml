@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a scoped MBlink improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or contributor problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Build/dependencies
+        - mblink-ui-dev
+        - Runtime/rendering/layout
+        - Bindings
+        - Examples/docs
+        - Release/open-source packaging
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation idea
+      description: What command, test, snapshot, or example would prove this works?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

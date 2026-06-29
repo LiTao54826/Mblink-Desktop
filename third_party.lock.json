@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "dependencies": [
+    {
+      "name": "QuickJS-ng",
+      "target": "third_party/quickjs",
+      "url": "https://github.com/quickjs-ng/quickjs.git",
+      "license": "MIT",
+      "ref": "ca0d50dc2991c433f1c265239790e37b38c836b8"
+    },
+    {
+      "name": "SDL3",
+      "target": "third_party/SDL3",
+      "url": "https://github.com/libsdl-org/SDL.git",
+      "license": "zlib-style",
+      "ref": "b9c790949e4ff6bc26813b437d477da694269ef5"
+    }
+  ]
+}
