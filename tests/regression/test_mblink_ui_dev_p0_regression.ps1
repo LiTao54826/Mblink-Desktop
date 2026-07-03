@@ -64,6 +64,29 @@ function Assert([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
 }
 
+function Invoke-HelpCommand([string]$name, [string[]]$arguments) {
+    Write-Host "[RUN] $name"
+    $emptyDir = Join-Path $env:TEMP 'mblink-ui-dev-help-empty'
+    if (Test-Path $emptyDir) { Remove-Item -LiteralPath $emptyDir -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $emptyDir | Out-Null
+    Push-Location $emptyDir
+    try {
+        $raw = & $exe @arguments 2>&1 | Out-String
+        Assert ($LASTEXITCODE -eq 0) "[$name] help failed with exit $LASTEXITCODE`n$raw"
+        Assert ($raw -like '*Usage:*') "[$name] help did not print usage`n$raw"
+        Assert ($raw -notlike '*daemon_not_running*') "[$name] help tried to resolve daemon`n$raw"
+        Assert ($raw -notlike '*project_not_found*') "[$name] help tried to resolve project`n$raw"
+    } finally {
+        Pop-Location
+    }
+    Write-Host "[OK]  $name"
+}
+
+Invoke-HelpCommand 'top-level --help without project' @('--help')
+Invoke-HelpCommand 'snapshot --help without project' @('snapshot', '--help')
+Invoke-HelpCommand 'query --help without project' @('query', '--help')
+Invoke-HelpCommand 'click --help without project' @('click', '--help')
+
 function Assert-PngFile([string]$path) {
     Assert ((Test-Path -LiteralPath $path) -eq $true) "missing png file: $path"
     $bytes = [System.IO.File]::ReadAllBytes($path)

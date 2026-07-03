@@ -186,6 +186,10 @@ void PrintJsonLine(const nlohmann::json& j) {
     std::cout << j.dump() << std::endl;
 }
 
+bool IsHelpFlag(const std::string& arg) {
+    return arg == "--help" || arg == "-h";
+}
+
 std::string GetOptionValue(const std::vector<std::string>& args, const std::string& key) {
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == key) {
@@ -514,6 +518,119 @@ bool OptionConsumesNextValue(const std::string& arg) {
            arg == "--x" || arg == "--y" || arg == "--color" || arg == "--code-base64" ||
            arg == "--response" || arg == "--response-mode" ||
            arg == "--max-nodes" || arg == "--max-depth" || arg == "--root-selector" || arg == "--limit";
+}
+
+bool CommandOptionConsumesNextValue(const std::string& cmd, const std::string& arg) {
+    if (cmd == "init" && (arg == "--template" || arg == "--purpose" || arg == "--runtime")) return true;
+    if (cmd == "input-text" && arg == "--text") return true;
+    return OptionConsumesNextValue(arg);
+}
+
+bool IsHelpRequest(const std::vector<std::string>& args) {
+    if (args.empty()) return false;
+    if (args[0] == "help" || IsHelpFlag(args[0])) return true;
+    const auto& cmd = args[0];
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (IsHelpFlag(args[i])) return true;
+        if (args[i].rfind("--", 0) == 0 && CommandOptionConsumesNextValue(cmd, args[i])) ++i;
+    }
+    return false;
+}
+
+std::string HelpCommandName(const std::vector<std::string>& args) {
+    if (args.empty()) return "";
+    if (args[0] == "help") {
+        if (args.size() > 1 && !IsHelpFlag(args[1])) return args[1];
+        return "";
+    }
+    if (IsHelpFlag(args[0])) return "";
+    return args[0];
+}
+
+void PrintTopLevelHelp() {
+    std::cout
+        << "Usage:\n"
+        << "  mblink-ui-dev <command> [options]\n"
+        << "  mblink-ui-dev <command> --help\n"
+        << "\n"
+        << "Commands:\n"
+        << "  init [target-dir] [--purpose minimal|showcase|desktop-app --runtime tool|python|rust|go]\n"
+        << "  open [project] [--project <path>] [--force]\n"
+        << "  info [--project <path>]\n"
+        << "  build [--project <path>] [--watch]\n"
+        << "  build-status [--project <path>]\n"
+        << "  snapshot [--project <path>] [--response inline|file|auto]\n"
+        << "  query <selector> [--project <path>] [--limit <n>]\n"
+        << "  inspect <selector> [--project <path>]\n"
+        << "  click <selector> [--project <path>]\n"
+        << "  input-text <selector> (<text>|--text <text>|--clear) [--project <path>]\n"
+        << "  scroll <selector> [--project <path>] (--x <num>|--y <num>)\n"
+        << "  highlight <selector> [--project <path>] [--color <css-color>]\n"
+        << "  read <path> [--project <path>] [--encoding utf8|base64]\n"
+        << "  write <path> [--project <path>] [--content <text>|--from <file>] [--encoding utf8|base64]\n"
+        << "  logs [--project <path>]\n"
+        << "  errors [--project <path>]\n"
+        << "  eval <code> [--project <path>] | --code-base64 <base64> | --from <file|->\n"
+        << "  reload [--project <path>]\n"
+        << "  stop [--project <path>]\n"
+        << "  serve [--project <path>]\n"
+        << "  daemon <start|stop|status|run> [--project <path>]\n";
+}
+
+bool PrintCommandHelp(const std::string& cmd) {
+    if (cmd.empty()) {
+        PrintTopLevelHelp();
+        return true;
+    }
+    if (cmd == "snapshot") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev snapshot [--project <path>] [--response inline|file|auto]\n"
+            << "    [--include-screenshot|--inline-screenshot]\n"
+            << "    [--root-selector <selector>] [--max-nodes <n>] [--max-depth <n>]\n"
+            << "\n"
+            << "Capture a live UI snapshot from an already opened project runtime.\n";
+        return true;
+    }
+    if (cmd == "query" || cmd == "query-element") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev query <selector> [--project <path>] [--limit <n>]\n"
+            << "  mblink-ui-dev query-element <selector> [--project <path>] [--limit <n>]\n"
+            << "\n"
+            << "Query live UI elements by selector.\n";
+        return true;
+    }
+    if (cmd == "click") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev click <selector> [--project <path>]\n"
+            << "\n"
+            << "Click a live UI element matched by selector.\n";
+        return true;
+    }
+    if (cmd == "init") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev init [target-dir]\n"
+            << "    [--purpose minimal|showcase|desktop-app --runtime tool|python|rust|go]\n"
+            << "    [--template legacy-name]\n";
+        return true;
+    }
+    if (cmd == "open") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev open [project]\n"
+            << "  mblink-ui-dev open --project <path> [--force]\n";
+        return true;
+    }
+    if (cmd == "daemon") {
+        std::cout
+            << "Usage:\n"
+            << "  mblink-ui-dev daemon <start|stop|status|run> [--project <path>]\n";
+        return true;
+    }
+    return false;
 }
 
 std::vector<std::string> ArgsForProjectResolution(const std::vector<std::string>& args,
@@ -866,6 +983,13 @@ int main(int argc, char** argv) {
 
     if (args.empty()) {
         PrintJson(ErrorResponse("invalid_args", "用法: mblink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|query <selector>|inspect <selector>|click <selector>|input-text <selector> (<text>|--text <text>|--clear)|scroll <selector> [--x <num>] [--y <num>]|highlight <selector> [--color <css-color>]|reload|serve> ..."));
+        return 1;
+    }
+
+    if (IsHelpRequest(args)) {
+        const auto help_command = HelpCommandName(args);
+        if (PrintCommandHelp(help_command)) return 0;
+        PrintJson(ErrorResponse("invalid_args", "unknown command for help: " + help_command));
         return 1;
     }
 
