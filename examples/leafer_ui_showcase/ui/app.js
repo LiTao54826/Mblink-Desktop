@@ -1,4 +1,21 @@
-import { Leafer, Rect, Text } from '../js/leafer-ui/web.module.min.js';
+import {
+  Leafer,
+  Rect,
+  Text,
+  Group,
+  Ellipse,
+  Line,
+  Path,
+  Polygon,
+  Star,
+  Canvas as LeaferCanvas,
+  Pen,
+  Image as LeaferImage,
+  PointerEvent,
+  PointerButton,
+  DragEvent,
+  RenderEvent
+} from '../js/leafer-ui/web.module.min.js';
 
 const STAGE = { width: 620, height: 430 };
 
@@ -45,6 +62,9 @@ const shuffleSlots = [
   { x: 456, y: 242, width: 112, height: 86 }
 ];
 
+const imageFixtureUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAYSURBVBhXY9BvePsfhH+dEQVjkgVE/wMAvCsrqWVhawoAAAAASUVORK5CYII=';
+const docsShapeNames = ['Rect', 'Text', 'Group', 'Ellipse', 'Line', 'Path', 'Polygon', 'Star', 'Canvas', 'Pen', 'Image'];
+
 let refs = {};
 let leafer = null;
 let stageObjects = {};
@@ -55,6 +75,16 @@ const state = {
   activeColor: swatches[0].fill,
   motionStep: 0,
   customSerial: 0,
+  docsGroupStep: 0,
+  docsGroupRemoved: false,
+  eventCount: 0,
+  tapCount: 0,
+  clickCount: 0,
+  dragCount: 0,
+  rafStep: 0,
+  renderCount: 0,
+  visibilityOn: false,
+  assetStatus: 'pending',
   lastAction: 'ready',
   shapes: initialShapes.map((shape) => ({ ...shape }))
 };
@@ -363,6 +393,12 @@ function readout(id, key, value) {
     mode: 'mode-readout',
     motion: 'motion-readout',
     color: 'color-readout',
+    apiSurface: 'api-shapes-readout',
+    groupState: 'group-state-readout',
+    canvasEvent: 'canvas-event-readout',
+    dragState: 'drag-state-readout',
+    rafState: 'raf-readout',
+    assetState: 'asset-readout',
     lastAction: 'last-action-readout'
   };
   const valueNode = el('span', {
@@ -474,6 +510,48 @@ function buildDom() {
           type: 'button',
           text: 'Clear selection',
           onclick: clearSelection
+        }),
+        el('button', {
+          id: 'simulate-canvas-tap-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Canvas tap',
+          onclick: simulateCanvasTap
+        }),
+        el('button', {
+          id: 'simulate-drag-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Drag node',
+          onclick: simulateDrag
+        }),
+        el('button', {
+          id: 'reorder-group-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Reorder group',
+          onclick: reorderDocsGroup
+        }),
+        el('button', {
+          id: 'remove-group-child-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Remove child',
+          onclick: toggleDocsChild
+        }),
+        el('button', {
+          id: 'raf-step-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'RAF frame',
+          onclick: stepRafFrame
+        }),
+        el('button', {
+          id: 'toggle-visible-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Visible node',
+          onclick: toggleVisibilityNode
         })
       ])
     ]),
@@ -488,6 +566,12 @@ function buildDom() {
       readout('mode', 'Mode', 'compose'),
       readout('motion', 'Motion', 'step 0'),
       readout('color', 'Fill', 'Blue'),
+      readout('apiSurface', 'API', 'pending'),
+      readout('groupState', 'Group', 'pending'),
+      readout('canvasEvent', 'Events', 'tap 0 click 0'),
+      readout('dragState', 'Drag', '0 drags'),
+      readout('rafState', 'RAF', 'step 0'),
+      readout('assetState', 'Assets', 'pending'),
       readout('lastAction', 'Action', 'ready')
     ]),
     el('section', { id: 'leafer-runtime-strip', className: 'runtime-strip' }, [
@@ -553,7 +637,6 @@ function applyLeaferProps(node, props) {
   if (!node) return;
   if (typeof node.set === 'function') node.set(props);
   else Object.assign(node, props);
-  if (typeof node.forceUpdate === 'function') node.forceUpdate();
 }
 
 function addStageText(props) {
@@ -569,6 +652,8 @@ function createShapeObjects(shape) {
     width: shape.width,
     height: shape.height,
     fill: shape.fill,
+    stroke: '#102033',
+    strokeWidth: 2,
     cornerRadius: 16
   });
   const label = new Text({
@@ -601,6 +686,388 @@ function createShapeObjects(shape) {
   }
 
   stageObjects[shape.id] = { rect, label, detail };
+}
+
+function updateDocsReadouts(actionLabel) {
+  if (refs.apiSurface) refs.apiSurface.textContent = docsShapeNames.join(', ');
+  if (refs.groupState) {
+    const children = stageObjects.docsGroup && stageObjects.docsGroup.children
+      ? stageObjects.docsGroup.children.length
+      : 0;
+    refs.groupState.textContent = `step ${state.docsGroupStep}, ${children} children, removed ${state.docsGroupRemoved ? 'yes' : 'no'}`;
+  }
+  if (refs.canvasEvent) refs.canvasEvent.textContent = `tap ${state.tapCount} click ${state.clickCount} events ${state.eventCount}`;
+  if (refs.dragState) refs.dragState.textContent = `${state.dragCount} drags`;
+  if (refs.rafState) refs.rafState.textContent = `step ${state.rafStep}, render ${state.renderCount}`;
+  if (refs.assetState) refs.assetState.textContent = state.assetStatus;
+  if (actionLabel && refs.lastAction && refs.stageActionChip) {
+    refs.lastAction.textContent = actionLabel;
+    refs.stageActionChip.textContent = `action: ${actionLabel}`;
+  }
+}
+
+function assertLeaferApiSurface() {
+  const constructors = {
+    Leafer,
+    Rect,
+    Text,
+    Group,
+    Ellipse,
+    Line,
+    Path,
+    Polygon,
+    Star,
+    LeaferCanvas,
+    Pen,
+    LeaferImage
+  };
+  for (const [name, value] of Object.entries(constructors)) {
+    if (typeof value !== 'function') throw new Error(`Leafer export missing: ${name}`);
+  }
+  if (typeof PointerEvent !== 'function' || typeof DragEvent !== 'function') {
+    throw new Error('Leafer pointer or drag event exports missing');
+  }
+  if (typeof PointerButton !== 'object' || typeof PointerButton.MIDDLE !== 'number' || typeof PointerButton.RIGHT !== 'number') {
+    throw new Error('Leafer pointer button constants missing');
+  }
+  if (typeof PointerEvent.TAP !== 'string' || typeof DragEvent.DRAG !== 'string') {
+    throw new Error('Leafer event constants missing');
+  }
+  if (typeof RenderEvent !== 'function' || typeof RenderEvent.END !== 'string') {
+    throw new Error('Leafer render event constants missing');
+  }
+}
+
+function drawLeaferCanvasFixture(canvasNode, colorA, colorB) {
+  const { context } = canvasNode;
+  if (!context) throw new Error('Leafer Canvas context missing');
+  context.clearRect(0, 0, 60, 52);
+  context.fillStyle = colorA;
+  context.roundRect(0, 0, 60, 52, 12);
+  context.fill();
+  context.fillStyle = colorB;
+  context.beginPath();
+  context.arc(30, 26, 14, 0, Math.PI * 2);
+  context.fill();
+  canvasNode.paint();
+}
+
+function buildDocsCoverage() {
+  assertLeaferApiSurface();
+
+  const group = new Group({ x: 44, y: 270 });
+  const ellipse = new Ellipse({
+    x: 0,
+    y: 4,
+    width: 58,
+    height: 46,
+    innerRadius: 0.35,
+    fill: '#feb027',
+    stroke: '#4338ca',
+    strokeWidth: 4,
+    opacity: 0.92
+  });
+  const line = new Line({
+    x: 74,
+    y: 27,
+    width: 76,
+    stroke: '#334155',
+    strokeWidth: 7,
+    strokeCap: 'round'
+  });
+  const path = new Path({
+    x: 166,
+    y: 4,
+    path: 'M0 44 L28 0 L56 44 Z',
+    fill: '#e85d75',
+    stroke: '#111827',
+    strokeWidth: 2,
+    opacity: 0.95
+  });
+  const polygon = new Polygon({
+    x: 246,
+    y: 0,
+    width: 54,
+    height: 54,
+    sides: 6,
+    cornerRadius: 8,
+    fill: '#20b486',
+    stroke: '#0f766e',
+    strokeWidth: 3
+  });
+  const star = new Star({
+    x: 324,
+    y: 0,
+    width: 56,
+    height: 56,
+    innerRadius: 0.48,
+    corners: 5,
+    cornerRadius: 4,
+    fill: '#d99a24',
+    stroke: '#78350f',
+    strokeWidth: 2
+  });
+  const hidden = new Rect({
+    x: 398,
+    y: 8,
+    width: 50,
+    height: 40,
+    fill: '#7c3aed',
+    stroke: '#facc15',
+    strokeWidth: 2,
+    cornerRadius: 8,
+    visible: false,
+    zIndex: 4
+  });
+  const docsCanvas = new LeaferCanvas({ x: 460, y: 2, width: 60, height: 52 });
+  drawLeaferCanvasFixture(docsCanvas, '#6d28d9', '#facc15');
+
+  const pen = new Pen();
+  pen.setStyle({ x: 536, y: 5, fill: '#ff4b4b', windingRule: 'evenodd' });
+  pen.roundRect(0, 0, 46, 42, 12).arc(23, 21, 11);
+
+  group.add([ellipse, line, path, polygon, star, hidden, docsCanvas, pen]);
+  leafer.add(group);
+
+  const image = new LeaferImage({
+    x: 542,
+    y: 72,
+    width: 34,
+    height: 34,
+    url: imageFixtureUrl,
+    opacity: 1
+  });
+  leafer.add(image);
+
+  const eventTarget = new Rect({
+    x: 44,
+    y: 326,
+    width: 76,
+    height: 30,
+    fill: '#7c3aed',
+    stroke: '#111827',
+    strokeWidth: 2,
+    cornerRadius: 8,
+    zIndex: 20
+  });
+  const eventText = new Text({
+    x: 56,
+    y: 333,
+    width: 54,
+    text: 'tap',
+    fill: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    hittable: false,
+    zIndex: 21
+  });
+  leafer.add(eventTarget);
+  leafer.add(eventText);
+
+  eventTarget.on(PointerEvent.DOWN, () => {
+    state.eventCount += 1;
+    eventTarget.fill = '#9333ea';
+    updateDocsReadouts('pointer down');
+  });
+  eventTarget.on(PointerEvent.TAP, () => {
+    state.tapCount += 1;
+    eventTarget.fill = '#c026d3';
+    eventText.text = `tap ${state.tapCount}`;
+    updateDocsReadouts('tap event');
+  });
+  eventTarget.on(PointerEvent.CLICK, () => {
+    state.clickCount += 1;
+    eventTarget.stroke = '#facc15';
+    updateDocsReadouts('click event');
+  });
+
+  const dragTarget = new Rect({
+    x: 144,
+    y: 326,
+    width: 78,
+    height: 30,
+    fill: '#0ea5e9',
+    stroke: '#0f172a',
+    strokeWidth: 2,
+    cornerRadius: 8,
+    draggable: true,
+    zIndex: 20
+  });
+  const dragText = new Text({
+    x: 158,
+    y: 333,
+    width: 48,
+    text: 'drag',
+    fill: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    hittable: false,
+    zIndex: 21
+  });
+  leafer.add(dragTarget);
+  leafer.add(dragText);
+
+  dragTarget.on(DragEvent.START, () => {
+    dragTarget.fill = '#2563eb';
+    updateDocsReadouts('drag start');
+  });
+  dragTarget.on(DragEvent.DRAG, () => {
+    state.dragCount += 1;
+    dragTarget.fill = '#ef4444';
+    dragText.x = dragTarget.x + 14;
+    dragText.y = dragTarget.y + 7;
+    dragText.text = `drag ${state.dragCount}`;
+    updateDocsReadouts('drag event');
+  });
+  dragTarget.on(DragEvent.END, () => {
+    dragTarget.stroke = '#facc15';
+    updateDocsReadouts('drag end');
+  });
+
+  const rafRect = new Rect({
+    x: 248,
+    y: 326,
+    width: 82,
+    height: 30,
+    fill: '#14b8a6',
+    stroke: '#0f172a',
+    strokeWidth: 2,
+    cornerRadius: 8,
+    zIndex: 20
+  });
+  leafer.add(rafRect);
+
+  leafer.on(RenderEvent.END, () => {
+    state.renderCount += 1;
+    if (refs.rafState) refs.rafState.textContent = `step ${state.rafStep}, render ${state.renderCount}`;
+  });
+
+  stageObjects.docsGroup = group;
+  stageObjects.docsEllipse = ellipse;
+  stageObjects.docsLine = line;
+  stageObjects.docsPath = path;
+  stageObjects.docsPolygon = polygon;
+  stageObjects.docsStar = star;
+  stageObjects.docsHidden = hidden;
+  stageObjects.docsCanvas = docsCanvas;
+  stageObjects.docsPen = pen;
+  stageObjects.docsImage = image;
+  stageObjects.eventTarget = eventTarget;
+  stageObjects.dragTarget = dragTarget;
+  stageObjects.dragText = dragText;
+  stageObjects.rafRect = rafRect;
+
+  const probeImage = new globalThis.Image();
+  probeImage.onload = () => {
+    state.assetStatus = `image ${probeImage.naturalWidth}x${probeImage.naturalHeight} loaded`;
+    updateDocsReadouts('image loaded');
+  };
+  probeImage.onerror = () => {
+    throw new Error('data URL image fixture failed to load');
+  };
+  probeImage.src = imageFixtureUrl;
+
+  updateDocsReadouts('docs coverage ready');
+}
+
+function simulateCanvasTap() {
+  if (!leafer || !leafer.interaction || !stageObjects.eventTarget) {
+    throw new Error('Leafer interaction surface missing for pointer simulation');
+  }
+  const x = stageObjects.eventTarget.x + 18;
+  const y = stageObjects.eventTarget.y + 15;
+  leafer.interaction.pointerDown({ x, y });
+  leafer.interaction.pointerUp({ x, y });
+  state.lastAction = 'simulated canvas tap';
+  updateDocsReadouts(state.lastAction);
+}
+
+function simulateDrag() {
+  if (!leafer || !leafer.interaction || !stageObjects.dragTarget) {
+    throw new Error('Leafer interaction surface missing for drag simulation');
+  }
+  const startX = stageObjects.dragTarget.x + 18;
+  const startY = stageObjects.dragTarget.y + 15;
+  const endX = startX + 42;
+  const endY = startY + 18;
+  leafer.interaction.pointerDown({ x: startX, y: startY });
+  leafer.interaction.pointerMove({ x: endX, y: endY });
+  leafer.interaction.pointerUp({ x: endX, y: endY });
+  state.lastAction = 'simulated drag';
+  updateDocsReadouts(state.lastAction);
+}
+
+function reorderDocsGroup() {
+  const { docsGroup, docsEllipse, docsPath, docsPolygon, docsStar } = stageObjects;
+  if (!docsGroup || typeof docsGroup.addAt !== 'function' || typeof docsGroup.addBefore !== 'function' || typeof docsGroup.addAfter !== 'function') {
+    throw new Error('Leafer Group reorder APIs missing');
+  }
+  state.docsGroupStep += 1;
+  const variant = state.docsGroupStep % 3;
+  if (variant === 1) {
+    docsGroup.addAt(docsStar, 0);
+    docsPath.fill = '#2563eb';
+    docsPolygon.x = 252;
+  } else if (variant === 2) {
+    docsGroup.addBefore(docsPath, docsEllipse);
+    docsPath.fill = '#f97316';
+    docsPolygon.x = 238;
+  } else {
+    docsGroup.remove(docsStar);
+    docsGroup.addAfter(docsStar, docsPolygon);
+    if (docsGroup.children.indexOf(docsStar) !== docsGroup.children.indexOf(docsPolygon) + 1) {
+      throw new Error('Leafer Group.addAfter failed to insert after target');
+    }
+    docsPath.fill = '#e85d75';
+    docsPolygon.x = 246;
+  }
+  state.lastAction = `reordered group ${state.docsGroupStep}`;
+  updateDocsReadouts(state.lastAction);
+}
+
+function toggleDocsChild() {
+  const { docsGroup, docsHidden } = stageObjects;
+  if (!docsGroup || !docsHidden || typeof docsGroup.remove !== 'function' || typeof docsGroup.addAt !== 'function') {
+    throw new Error('Leafer Group remove/addAt APIs missing');
+  }
+  if (state.docsGroupRemoved) {
+    docsGroup.addAt(docsHidden, 5);
+    state.docsGroupRemoved = false;
+    state.lastAction = 'restored group child';
+  } else {
+    docsGroup.remove(docsHidden);
+    state.docsGroupRemoved = true;
+    state.lastAction = 'removed group child';
+  }
+  updateDocsReadouts(state.lastAction);
+}
+
+function stepRafFrame() {
+  const { rafRect } = stageObjects;
+  if (!rafRect || typeof requestAnimationFrame !== 'function') {
+    throw new Error('requestAnimationFrame or RAF target missing');
+  }
+  state.lastAction = 'raf scheduled';
+  updateDocsReadouts(state.lastAction);
+  requestAnimationFrame(() => {
+    state.rafStep += 1;
+    const even = state.rafStep % 2 === 0;
+    rafRect.x = even ? 248 : 372;
+    rafRect.width = even ? 82 : 112;
+    rafRect.fill = even ? '#14b8a6' : '#f97316';
+    state.lastAction = `raf frame ${state.rafStep}`;
+    updateDocsReadouts(state.lastAction);
+  });
+}
+
+function toggleVisibilityNode() {
+  const { docsHidden } = stageObjects;
+  if (!docsHidden) throw new Error('Leafer visible test node missing');
+  state.visibilityOn = !state.visibilityOn;
+  docsHidden.visible = state.visibilityOn;
+  docsHidden.fill = state.visibilityOn ? '#7c3aed' : '#7c3aed';
+  state.lastAction = state.visibilityOn ? 'visible node on' : 'visible node off';
+  updateDocsReadouts(state.lastAction);
 }
 
 function buildStage() {
@@ -683,6 +1150,7 @@ function buildStage() {
   leafer.add(stageObjects.selectionHalo);
 
   for (const shape of state.shapes) createShapeObjects(shape);
+  buildDocsCoverage();
   updateScene('ready');
 }
 
@@ -872,6 +1340,7 @@ function updateScene(actionLabel) {
   refs.stageObjectChip.textContent = `objects: ${state.shapes.length}`;
   refs.stageSelectionChip.textContent = `selection: ${selectedName}`;
   refs.stageActionChip.textContent = `action: ${actionLabel || state.lastAction}`;
+  updateDocsReadouts(actionLabel || state.lastAction);
   updateButtonState();
 }
 
@@ -904,6 +1373,15 @@ function boot() {
         activeColor: state.activeColor,
         motionStep: state.motionStep,
         shapeCount: state.shapes.length,
+        docsGroupStep: state.docsGroupStep,
+        eventCount: state.eventCount,
+        tapCount: state.tapCount,
+        clickCount: state.clickCount,
+        dragCount: state.dragCount,
+        rafStep: state.rafStep,
+        renderCount: state.renderCount,
+        visibilityOn: state.visibilityOn,
+        assetStatus: state.assetStatus,
         lastAction: state.lastAction
       })
     };

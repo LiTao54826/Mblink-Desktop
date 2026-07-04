@@ -25,9 +25,14 @@ $liveInitialSnapshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.json'
 $liveInitialScreenshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.png'
 $liveInspectSnapshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.json'
 $liveInspectScreenshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.png'
-$liveInspectWindowScreenshot = Join-Path $verify 'mblink_ui_dev_inspect_live_window.png'
 $liveAfterSnapshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.json'
 $liveAfterScreenshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.png'
+$devTapScreenshot = Join-Path $verify 'mblink_ui_dev_tap_snapshot.png'
+$devDragScreenshot = Join-Path $verify 'mblink_ui_dev_drag_snapshot.png'
+$devReorderScreenshot = Join-Path $verify 'mblink_ui_dev_reorder_snapshot.png'
+$devRafScreenshot = Join-Path $verify 'mblink_ui_dev_raf_snapshot.png'
+$devVisibleScreenshot = Join-Path $verify 'mblink_ui_dev_visible_snapshot.png'
+$devRemovedScreenshot = Join-Path $verify 'mblink_ui_dev_removed_snapshot.png'
 
 function Assert([bool]$condition, [string]$message) {
     if (-not $condition) {
@@ -58,6 +63,15 @@ function Copy-EvidenceFile([object]$source, [string]$destination, [string]$label
     Copy-Item -LiteralPath $source -Destination $destination -Force
 }
 
+function Capture-DevScreenshot([string]$screenshotDestination, [string]$label, [string]$snapshotDestination = '') {
+    $snapshot = Invoke-MblinkCli @('snapshot', '--project', $project, '--response', 'file', '--include-screenshot')
+    if ($snapshotDestination) {
+        Copy-EvidenceFile $snapshot.snapshot.path $snapshotDestination "$label snapshot"
+    }
+    Copy-EvidenceFile $snapshot.screenshot.path $screenshotDestination "$label screenshot"
+    return $snapshot
+}
+
 function Assert-SelectorRect([string]$selector) {
     $query = Invoke-MblinkCli @('query', $selector, '--project', $project)
     Assert ([int]$query.result.count -eq 1) "selector count mismatch for $selector"
@@ -71,6 +85,22 @@ function Assert-InspectContains([string]$selector, [string]$needle) {
     $inspect = Invoke-MblinkCli @('inspect', $selector, '--project', $project)
     Assert ($inspect.result.found -eq $true) "inspect did not find $selector"
     Assert ($inspect.result.outer_html -like "*$needle*") "inspect $selector missing '$needle': $($inspect.result.outer_html)"
+}
+
+function Wait-InspectContains([string]$selector, [string]$needle, [int]$timeoutMs = 3000) {
+    $deadline = (Get-Date).AddMilliseconds($timeoutMs)
+    $lastHtml = ''
+    do {
+        $inspect = Invoke-MblinkCli @('inspect', $selector, '--project', $project)
+        Assert ($inspect.result.found -eq $true) "inspect did not find $selector"
+        $lastHtml = [string]$inspect.result.outer_html
+        if ($lastHtml -like "*$needle*") {
+            return
+        }
+        Start-Sleep -Milliseconds 120
+    } while ((Get-Date) -lt $deadline)
+
+    throw "inspect $selector missing '$needle' after ${timeoutMs}ms: $lastHtml"
 }
 
 function Assert-ActiveClass([string]$selector, [bool]$expected) {
@@ -87,70 +117,9 @@ function Assert-Click([string]$selector) {
     Start-Sleep -Milliseconds 120
 }
 
-function Get-ShowcaseWindowHandle() {
-    $deadline = (Get-Date).AddSeconds(5)
-    do {
-        $process = Get-Process |
-            Where-Object { $_.ProcessName -eq 'esm_loader' -and $_.MainWindowTitle -eq 'Leafer UI Showcase' -and $_.MainWindowHandle -ne 0 } |
-            Sort-Object StartTime -Descending |
-            Select-Object -First 1
-        if ($process) {
-            return $process.MainWindowHandle
-        }
-        Start-Sleep -Milliseconds 100
-    } while ((Get-Date) -lt $deadline)
-
-    throw 'Leafer UI Showcase window not found'
-}
-
-function Capture-LiveShowcaseWindow([string]$destination) {
-    Add-Type -AssemblyName System.Drawing
-    if (-not ('MblinkLeaferWindowCapture' -as [type])) {
-        Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-
-public static class MblinkLeaferWindowCapture {
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-}
-'@
-    }
-
-    $handle = Get-ShowcaseWindowHandle
-    [MblinkLeaferWindowCapture]::ShowWindow($handle, 9) | Out-Null
-    [MblinkLeaferWindowCapture]::SetForegroundWindow($handle) | Out-Null
-    Start-Sleep -Milliseconds 250
-
-    $rect = [MblinkLeaferWindowCapture+RECT]::new()
-    Assert ([MblinkLeaferWindowCapture]::GetWindowRect($handle, [ref]$rect)) 'GetWindowRect failed'
-    $width = $rect.Right - $rect.Left
-    $height = $rect.Bottom - $rect.Top
-    Assert ($width -gt 100 -and $height -gt 100) "invalid live window bounds ${width}x${height}"
-
-    $bitmap = [System.Drawing.Bitmap]::new($width, $height)
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    try {
-        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
-        $bitmap.Save($destination, [System.Drawing.Imaging.ImageFormat]::Png)
-    } finally {
-        $graphics.Dispose()
-        $bitmap.Dispose()
-    }
+function Assert-NoLiveErrors([string]$label) {
+    $liveErrors = Invoke-MblinkCli @('errors', '--project', $project)
+    Assert (@($liveErrors.errors).Count -eq 0) "$label reported JS errors: $($liveErrors | ConvertTo-Json -Compress -Depth 8)"
 }
 
 function Get-ColorCounts([string]$path) {
@@ -190,6 +159,24 @@ function Assert-PixelNear([string]$path, [int]$x, [int]$y, [int]$r, [int]$g, [in
     } finally {
         $bitmap.Dispose()
     }
+}
+
+function Assert-CanvasPixelNear([int]$x, [int]$y, [int]$r, [int]$g, [int]$b, [int]$tolerance, [string]$label) {
+    $code = @"
+(() => {
+  const canvas = document.querySelector('#leafer-stage-frame canvas');
+  if (!canvas) return { ok: false, error: 'stage canvas missing' };
+  const context = canvas.getContext('2d');
+  if (!context) return { ok: false, error: '2d context missing' };
+  const data = context.getImageData($x, $y, 1, 1).data;
+  return { ok: true, rgba: [data[0], data[1], data[2], data[3]] };
+})()
+"@
+    $sample = Invoke-MblinkCli @('eval', $code, '--project', $project)
+    Assert ($sample.result.ok -eq $true) "$label canvas sample failed: $($sample | ConvertTo-Json -Compress -Depth 8)"
+    $rgba = @($sample.result.rgba)
+    $delta = [Math]::Abs([int]$rgba[0] - $r) + [Math]::Abs([int]$rgba[1] - $g) + [Math]::Abs([int]$rgba[2] - $b)
+    Assert ($delta -le $tolerance) "$label canvas pixel mismatch at $x,$y; expected rgb($r,$g,$b) actual rgb($($rgba[0]),$($rgba[1]),$($rgba[2])) delta=$delta"
 }
 
 Assert (Test-Path -LiteralPath $project) "missing example project: $project"
@@ -245,6 +232,18 @@ foreach ($needle in @(
     'leafer-stage-frame',
     'add-shape-button',
     'shuffle-scene-button',
+    'simulate-canvas-tap-button',
+    'simulate-drag-button',
+    'reorder-group-button',
+    'remove-group-child-button',
+    'raf-step-button',
+    'toggle-visible-button',
+    'api-shapes-readout',
+    'group-state-readout',
+    'canvas-event-readout',
+    'drag-state-readout',
+    'raf-readout',
+    'asset-readout',
     'selection-readout',
     'ready: compose mode, Brief',
     'leafer-canvas-view'
@@ -281,9 +280,21 @@ try {
         '#shuffle-scene-button',
         '#step-motion-button',
         '#clear-selection-button',
+        '#simulate-canvas-tap-button',
+        '#simulate-drag-button',
+        '#reorder-group-button',
+        '#remove-group-child-button',
+        '#raf-step-button',
+        '#toggle-visible-button',
         '#scene-count-readout',
         '#shape-list-readout',
         '#selection-readout',
+        '#api-shapes-readout',
+        '#group-state-readout',
+        '#canvas-event-readout',
+        '#drag-state-readout',
+        '#raf-readout',
+        '#asset-readout',
         '#last-action-readout'
     )) {
         Assert-SelectorRect $selector | Out-Null
@@ -293,21 +304,25 @@ try {
     Assert-InspectContains '#shape-list-readout' 'Brief'
     Assert-InspectContains '#selection-readout' 'Brief'
     Assert-InspectContains '#mode-readout' 'Compose'
+    Assert-InspectContains '#api-shapes-readout' 'Rect'
+    Assert-InspectContains '#api-shapes-readout' 'Image'
+    Assert-InspectContains '#group-state-readout' 'step 0'
+    Assert-InspectContains '#canvas-event-readout' 'tap 0 click 0 events 0'
+    Assert-InspectContains '#drag-state-readout' '0 drags'
+    Assert-InspectContains '#raf-readout' 'step 0'
+    Wait-InspectContains '#asset-readout' 'image 4x4 loaded'
     Assert-ActiveClass '#mode-compose' $true
     Assert-ActiveClass '#mode-inspect' $false
     Assert-ActiveClass '#mode-motion' $false
 
     Assert-Click '#mode-inspect'
-    Capture-LiveShowcaseWindow $liveInspectWindowScreenshot
-    Assert-PixelNear $liveInspectWindowScreenshot 700 230 15 63 58 8 'live window inspect mode Leafer banner'
+    Assert-CanvasPixelNear 326 64 15 63 58 18 'inspect mode immediate repaint'
     Assert-InspectContains '#mode-readout' 'Inspect'
     Assert-InspectContains '#leafer-stage-caption' 'Mode Inspect'
     Assert-ActiveClass '#mode-compose' $false
     Assert-ActiveClass '#mode-inspect' $true
     Assert-ActiveClass '#mode-motion' $false
-    $inspectSnapshot = Invoke-MblinkCli @('snapshot', '--project', $project, '--response', 'file', '--include-screenshot')
-    Copy-EvidenceFile $inspectSnapshot.snapshot.path $liveInspectSnapshot 'inspect snapshot'
-    Copy-EvidenceFile $inspectSnapshot.screenshot.path $liveInspectScreenshot 'inspect screenshot'
+    Capture-DevScreenshot $liveInspectScreenshot 'inspect mode' $liveInspectSnapshot | Out-Null
     Assert-PixelNear $liveInspectScreenshot 700 190 15 63 58 8 'inspect mode Leafer banner'
 
     Assert-Click '#palette-coral'
@@ -338,12 +353,70 @@ try {
     Assert-InspectContains '#selection-readout' 'none selected'
     Assert-InspectContains '#last-action-readout' 'cleared selection'
 
+    Assert-Click '#simulate-canvas-tap-button'
+    Assert-InspectContains '#canvas-event-readout' 'tap 1 click 1 events 1'
+    Assert-InspectContains '#last-action-readout' 'simulated canvas tap'
+    Assert-CanvasPixelNear 52 350 192 38 211 45 'tap event immediate repaint'
+    Capture-DevScreenshot $devTapScreenshot 'canvas tap' | Out-Null
+    Assert-PixelNear $devTapScreenshot 450 475 192 38 211 45 'dev screenshot tap event Leafer fill'
+    Assert-NoLiveErrors 'canvas tap interaction'
+
+    Assert-Click '#simulate-drag-button'
+    Assert-InspectContains '#drag-state-readout' '1 drags'
+    Assert-InspectContains '#last-action-readout' 'simulated drag'
+    Assert-CanvasPixelNear 198 364 239 68 68 50 'drag event immediate repaint'
+    Capture-DevScreenshot $devDragScreenshot 'drag event' | Out-Null
+    Assert-PixelNear $devDragScreenshot 570 505 239 68 68 50 'dev screenshot drag event Leafer fill'
+    Assert-NoLiveErrors 'drag interaction'
+
+    Assert-Click '#reorder-group-button'
+    Assert-InspectContains '#group-state-readout' 'step 1'
+    Assert-InspectContains '#last-action-readout' 'reordered group 1'
+    Assert-CanvasPixelNear 226 306 37 99 235 55 'group reorder immediate repaint'
+    Capture-DevScreenshot $devReorderScreenshot 'group reorder' | Out-Null
+    Assert-PixelNear $devReorderScreenshot 622 440 37 99 235 55 'dev screenshot reordered path fill'
+    Assert-NoLiveErrors 'group reorder interaction'
+
+    Assert-Click '#raf-step-button'
+    Wait-InspectContains '#raf-readout' 'step 1'
+    Wait-InspectContains '#last-action-readout' 'raf frame 1'
+    Assert-CanvasPixelNear 400 340 249 115 22 55 'RAF frame immediate repaint'
+    Capture-DevScreenshot $devRafScreenshot 'RAF frame' | Out-Null
+    Assert-PixelNear $devRafScreenshot 760 485 249 115 22 55 'dev screenshot RAF frame fill'
+    Assert-NoLiveErrors 'RAF frame interaction'
+
+    Assert-Click '#toggle-visible-button'
+    Assert-InspectContains '#last-action-readout' 'visible node on'
+    Assert-CanvasPixelNear 456 290 124 58 237 55 'visible toggle immediate repaint'
+    Capture-DevScreenshot $devVisibleScreenshot 'visible toggle' | Out-Null
+    Assert-PixelNear $devVisibleScreenshot 845 440 124 58 237 55 'dev screenshot visible node fill'
+    Assert-NoLiveErrors 'visible toggle interaction'
+
+    Assert-Click '#remove-group-child-button'
+    Assert-InspectContains '#group-state-readout' 'removed yes'
+    Assert-InspectContains '#last-action-readout' 'removed group child'
+    Assert-CanvasPixelNear 456 290 248 250 252 55 'remove child immediate repaint'
+    Capture-DevScreenshot $devRemovedScreenshot 'remove child' | Out-Null
+    Assert-PixelNear $devRemovedScreenshot 845 440 248 250 252 55 'dev screenshot removed child background'
+    Assert-NoLiveErrors 'remove group child interaction'
+
     $afterSnapshot = Invoke-MblinkCli @('snapshot', '--project', $project, '--response', 'file', '--include-screenshot')
     Copy-EvidenceFile $afterSnapshot.snapshot.path $liveAfterSnapshot 'post-click snapshot'
     Copy-EvidenceFile $afterSnapshot.screenshot.path $liveAfterScreenshot 'post-click screenshot'
 
     $afterText = Get-Content -Raw -LiteralPath $liveAfterSnapshot
-    foreach ($needle in @('4 objects', 'Layer 1', 'Motion', 'none selected', 'cleared selection')) {
+    foreach ($needle in @(
+        '4 objects',
+        'Layer 1',
+        'Motion',
+        'none selected',
+        'tap 1 click 1 events 1',
+        '1 drags',
+        'step 1',
+        'removed yes',
+        'image 4x4 loaded',
+        'removed group child'
+    )) {
         Assert ($afterText.Contains($needle)) "post-click snapshot missing $needle"
     }
 
