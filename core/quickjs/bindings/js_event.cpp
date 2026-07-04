@@ -7,6 +7,7 @@
 #include "js_node.h"
 #include "js_data_transfer.h"
 #include "core/dom/drag_event.h"
+#include "core/event/types/data_transfer.h"
 #include <SDL3/SDL.h>
 #include <iostream>
 
@@ -57,6 +58,79 @@ JSValue JSONStringToJSValue(JSContext* ctx, const std::string& json_string) {
         return JS_NULL;
     }
     return value;
+}
+
+bool GetBooleanOption(JSContext* ctx, JSValueConst options, const char* name, bool fallback) {
+    if (!JS_IsObject(options)) {
+        return fallback;
+    }
+    JSValue value = JS_GetPropertyStr(ctx, options, name);
+    bool result = fallback;
+    if (!JS_IsUndefined(value) && !JS_IsNull(value)) {
+        result = JS_ToBool(ctx, value);
+    }
+    JS_FreeValue(ctx, value);
+    return result;
+}
+
+int GetIntOption(JSContext* ctx, JSValueConst options, const char* name, int fallback) {
+    if (!JS_IsObject(options)) {
+        return fallback;
+    }
+    JSValue value = JS_GetPropertyStr(ctx, options, name);
+    int32_t result = fallback;
+    if (!JS_IsUndefined(value) && !JS_IsNull(value)) {
+        if (JS_ToInt32(ctx, &result, value) != 0) {
+            result = fallback;
+        }
+    }
+    JS_FreeValue(ctx, value);
+    return result;
+}
+
+std::string GetStringOption(JSContext* ctx, JSValueConst options, const char* name, const char* fallback) {
+    if (!JS_IsObject(options)) {
+        return fallback;
+    }
+    JSValue value = JS_GetPropertyStr(ctx, options, name);
+    std::string result = fallback;
+    if (!JS_IsUndefined(value) && !JS_IsNull(value)) {
+        const char* text = JS_ToCString(ctx, value);
+        if (text) {
+            result = text;
+            JS_FreeCString(ctx, text);
+        }
+    }
+    JS_FreeValue(ctx, value);
+    return result;
+}
+
+JSValue WrapEventWithPrototype(JSContext* ctx, JSValueConst new_target, std::shared_ptr<Event> event) {
+    JSValue obj = WrapEvent(ctx, event);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    JSValue proto = JS_GetPropertyStr(ctx, new_target, "prototype");
+    if (JS_IsObject(proto)) {
+        JS_SetPrototype(ctx, obj, proto);
+    }
+    JS_FreeValue(ctx, proto);
+    return obj;
+}
+
+void RegisterEventConstructor(JSContext* ctx,
+                              JSValueConst global,
+                              const char* name,
+                              JSCFunction* constructor,
+                              JSValueConst base_proto) {
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPrototype(ctx, proto, base_proto);
+
+    JSValue ctor = JS_NewCFunction2(ctx, constructor, name, 1, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, ctor, proto);
+    JS_SetPropertyStr(ctx, global, name, ctor);
+    JS_FreeValue(ctx, proto);
 }
 
 } // namespace
@@ -815,6 +889,92 @@ static JSValue JSCustomEvent_constructor(JSContext* ctx, JSValueConst new_target
 
 // ========== 类定义 ==========
 
+static JSValue JSMouseEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "MouseEvent constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    JSValueConst options = argc >= 2 ? argv[1] : JS_UNDEFINED;
+    auto event = std::make_shared<MouseEvent>(
+        type,
+        GetIntOption(ctx, options, "clientX", 0),
+        GetIntOption(ctx, options, "clientY", 0),
+        GetIntOption(ctx, options, "button", 0),
+        GetIntOption(ctx, options, "detail", 1),
+        GetIntOption(ctx, options, "buttons", 0));
+    JS_FreeCString(ctx, type);
+    return WrapEventWithPrototype(ctx, new_target, event);
+}
+
+static JSValue JSPointerEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    return JSMouseEvent_constructor(ctx, new_target, argc, argv);
+}
+
+static JSValue JSDragEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "DragEvent constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    JSValueConst options = argc >= 2 ? argv[1] : JS_UNDEFINED;
+    std::shared_ptr<DataTransfer> data_transfer;
+    if (JS_IsObject(options)) {
+        JSValue data_transfer_value = JS_GetPropertyStr(ctx, options, "dataTransfer");
+        data_transfer = UnwrapDataTransfer(ctx, data_transfer_value);
+        JS_FreeValue(ctx, data_transfer_value);
+    }
+    if (!data_transfer) {
+        data_transfer = std::make_shared<DataTransfer>();
+    }
+
+    auto event = std::make_shared<DragEvent>(
+        type,
+        GetIntOption(ctx, options, "clientX", 0),
+        GetIntOption(ctx, options, "clientY", 0),
+        GetIntOption(ctx, options, "button", 0),
+        data_transfer,
+        GetBooleanOption(ctx, options, "ctrlKey", false),
+        GetBooleanOption(ctx, options, "shiftKey", false),
+        GetBooleanOption(ctx, options, "altKey", false),
+        GetBooleanOption(ctx, options, "metaKey", false));
+    JS_FreeCString(ctx, type);
+    return WrapEventWithPrototype(ctx, new_target, event);
+}
+
+static JSValue JSKeyboardEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "KeyboardEvent constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    JSValueConst options = argc >= 2 ? argv[1] : JS_UNDEFINED;
+    auto event = std::make_shared<KeyboardEvent>(
+        type,
+        GetStringOption(ctx, options, "key", ""),
+        GetStringOption(ctx, options, "code", ""),
+        GetIntOption(ctx, options, "keyCode", 0),
+        GetBooleanOption(ctx, options, "ctrlKey", false),
+        GetBooleanOption(ctx, options, "shiftKey", false),
+        GetBooleanOption(ctx, options, "altKey", false),
+        GetBooleanOption(ctx, options, "metaKey", false),
+        GetBooleanOption(ctx, options, "repeat", false));
+    JS_FreeCString(ctx, type);
+    return WrapEventWithPrototype(ctx, new_target, event);
+}
+
 static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("type", JSEvent_get_type, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("target", JSEvent_get_target, nullptr, 0),
@@ -901,6 +1061,11 @@ void InitEventBinding(JSContext* ctx) {
     JSValue custom_event_ctor = JS_NewCFunction2(ctx, JSCustomEvent_constructor, "CustomEvent", 1, JS_CFUNC_constructor, 0);
     JS_SetConstructor(ctx, custom_event_ctor, custom_proto);
     JS_SetPropertyStr(ctx, global, "CustomEvent", custom_event_ctor);
+
+    RegisterEventConstructor(ctx, global, "MouseEvent", JSMouseEvent_constructor, proto);
+    RegisterEventConstructor(ctx, global, "PointerEvent", JSPointerEvent_constructor, proto);
+    RegisterEventConstructor(ctx, global, "DragEvent", JSDragEvent_constructor, proto);
+    RegisterEventConstructor(ctx, global, "KeyboardEvent", JSKeyboardEvent_constructor, proto);
 
     JS_FreeValue(ctx, custom_proto);
     JS_FreeValue(ctx, global);

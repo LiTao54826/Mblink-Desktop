@@ -344,6 +344,15 @@ static JSValue JSNode_get_childNodes(JSContext* ctx, JSValueConst this_val, int 
 
 // ========== 方法实现 ==========
 
+static JSValue JSNode_hasChildNodes(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewBool(ctx, node->GetFirstChild() != nullptr);
+}
+
 // appendChild(child)
 static JSValue JSNode_appendChild(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto node = UnwrapNode(ctx, this_val);
@@ -504,6 +513,7 @@ static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CFUNC_DEF("compareDocumentPosition", 1, JSNode_compareDocumentPosition),
     JS_CGETSET_MAGIC_DEF("nodeValue", JSNode_get_nodeValue, JSNode_set_nodeValue, 0),
     JS_CGETSET_MAGIC_DEF("data", JSNode_get_data, JSNode_set_data, 0),
+    JS_CFUNC_DEF("hasChildNodes", 0, JSNode_hasChildNodes),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
     JS_CFUNC_DEF("insertBefore", 2, JSNode_insertBefore),

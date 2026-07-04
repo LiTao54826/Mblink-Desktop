@@ -776,6 +776,42 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 获取关联的 DOM 节点
     auto node = GetNode();
+    auto paint_canvas_surface = [&]() {
+        if (!node || node->GetNodeType() != NodeType::ELEMENT_NODE) {
+            return;
+        }
+
+        auto element = std::static_pointer_cast<Element>(node);
+        if (element->GetTagName() != "canvas") {
+            return;
+        }
+
+        auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
+        if (!canvas_element) {
+            return;
+        }
+
+        auto context_2d = canvas_element->GetContext2D();
+        if (!context_2d) {
+            return;
+        }
+
+        auto* surface = context_2d->GetSurface();
+        if (!surface) {
+            return;
+        }
+
+        auto image = surface->makeImageSnapshot();
+        if (!image) {
+            return;
+        }
+
+        SkRect dest_rect = SkRect::MakeXYWH(
+            box.content_x, box.content_y,
+            box.content_width, box.content_height
+        );
+        canvas->drawImageRect(image, dest_rect, SkSamplingOptions());
+    };
 
     // 检查是否是 <hr> 元素
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
@@ -794,30 +830,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
             canvas->restore(); // 恢复 canvas 状态
             return; // 不绘制其他内容
-        }
-
-        // 检查是否是 <canvas> 元素
-        if (element->GetTagName() == "canvas") {
-            auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
-            if (canvas_element) {
-                auto context_2d = canvas_element->GetContext2D();
-                if (context_2d) {
-                    // 获取Canvas的Surface并绘制到屏幕
-                    auto* surface = context_2d->GetSurface();
-                    if (surface) {
-                        auto image = surface->makeImageSnapshot();
-                        if (image) {
-                            // 绘制Canvas内容到content区域
-                            SkRect dest_rect = SkRect::MakeXYWH(
-                                box.content_x, box.content_y,
-                                box.content_width, box.content_height
-                            );
-                            canvas->drawImageRect(image, dest_rect, SkSamplingOptions());
-                        }
-                    }
-                }
-            }
-            // Canvas元素绘制完Surface后继续正常绘制背景边框等
         }
     }
 
@@ -975,6 +987,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
     auto bg_end = std::chrono::high_resolution_clock::now();
     g_paint_bg_time += std::chrono::duration_cast<std::chrono::microseconds>(bg_end - bg_start).count();
+
+    paint_canvas_surface();
 
     // 渲染边框 - 使用缓存的标志位
     if (cache.has_border) {

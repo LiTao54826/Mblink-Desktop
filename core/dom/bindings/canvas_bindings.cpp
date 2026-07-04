@@ -15,7 +15,23 @@ namespace mblink {
 
 // 静态成员初始化
 JSClassID CanvasBindings::context_2d_class_id = 0;
+JSClassID CanvasBindings::path_2d_class_id = 0;
 bool CanvasBindings::initialized = false;
+
+static JSValue js_canvas_illegal_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    return JS_ThrowTypeError(ctx, "Illegal constructor");
+}
+
+static void RegisterCanvasConstructor(JSContext* ctx,
+                                      const char* name,
+                                      JSValueConst proto,
+                                      JSCFunction* constructor) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue ctor = JS_NewCFunction2(ctx, constructor, name, 0, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, ctor, proto);
+    JS_SetPropertyStr(ctx, global, name, ctor);
+    JS_FreeValue(ctx, global);
+}
 
 // ========== CanvasRenderingContext2D 绑定 ==========
 
@@ -1220,6 +1236,7 @@ void CanvasBindings::InitContext2DClass(JSContext* ctx) {
     JS_SetPropertyFunctionList(ctx, proto, js_context_2d_proto_funcs,
                                sizeof(js_context_2d_proto_funcs) / sizeof(js_context_2d_proto_funcs[0]));
     JS_SetClassProto(ctx, context_2d_class_id, proto);
+    RegisterCanvasConstructor(ctx, "CanvasRenderingContext2D", proto, js_canvas_illegal_constructor);
 }
 
 // ========== CanvasGradient 绑定 ==========
@@ -1272,6 +1289,7 @@ void CanvasBindings::InitGradientClass(JSContext* ctx) {
     JS_SetPropertyFunctionList(ctx, proto, js_gradient_proto_funcs,
                                sizeof(js_gradient_proto_funcs) / sizeof(js_gradient_proto_funcs[0]));
     JS_SetClassProto(ctx, gradient_class_id, proto);
+    RegisterCanvasConstructor(ctx, "CanvasGradient", proto, js_canvas_illegal_constructor);
 }
 
 JSValue CanvasBindings::WrapGradient(JSContext* ctx, CanvasGradient* gradient) {
@@ -1336,6 +1354,22 @@ static const JSCFunctionListEntry js_image_data_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("data", js_image_data_get_data, nullptr, 0),
 };
 
+static JSValue js_image_data_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "ImageData constructor requires width and height");
+    }
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if (JS_ToUint32(ctx, &width, argv[0]) != 0) return JS_EXCEPTION;
+    if (JS_ToUint32(ctx, &height, argv[1]) != 0) return JS_EXCEPTION;
+    if (width == 0 || height == 0) {
+        return JS_ThrowRangeError(ctx, "ImageData width and height must be positive");
+    }
+
+    return CanvasBindings::WrapImageData(ctx, new ImageData(width, height));
+}
+
 void CanvasBindings::InitImageDataClass(JSContext* ctx) {
     JS_NewClassID(JS_GetRuntime(ctx), &image_data_class_id);
     
@@ -1353,6 +1387,7 @@ void CanvasBindings::InitImageDataClass(JSContext* ctx) {
     JS_SetPropertyFunctionList(ctx, proto, js_image_data_proto_funcs,
                                sizeof(js_image_data_proto_funcs) / sizeof(js_image_data_proto_funcs[0]));
     JS_SetClassProto(ctx, image_data_class_id, proto);
+    RegisterCanvasConstructor(ctx, "ImageData", proto, js_image_data_constructor);
 }
 
 JSValue CanvasBindings::WrapImageData(JSContext* ctx, ImageData* imageData) {
@@ -1399,6 +1434,7 @@ void CanvasBindings::InitPatternClass(JSContext* ctx) {
     // CanvasPattern 目前没有公开方法，所以不设置函数列表
     // 如果未来添加方法（如setTransform），可以在这里添加
     JS_SetClassProto(ctx, pattern_class_id, proto);
+    RegisterCanvasConstructor(ctx, "CanvasPattern", proto, js_canvas_illegal_constructor);
 }
 
 JSValue CanvasBindings::WrapPattern(JSContext* ctx, CanvasPattern* pattern) {
@@ -1418,6 +1454,74 @@ CanvasPattern* CanvasBindings::UnwrapPattern(JSContext* ctx, JSValue obj) {
 
 // ========== 公共接口 ==========
 
+// ========== Path2D binding ==========
+
+struct JSPath2DData {
+};
+
+static void js_path_2d_finalizer(JSRuntime* rt, JSValue val) {
+    auto* data = static_cast<JSPath2DData*>(JS_GetOpaque(val, CanvasBindings::path_2d_class_id));
+    delete data;
+}
+
+static JSValue js_path_2d_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    JSValue proto = JS_GetPropertyStr(ctx, new_target, "prototype");
+    if (JS_IsException(proto)) {
+        return proto;
+    }
+
+    JSValue obj = JS_NewObjectProtoClass(ctx, proto, CanvasBindings::path_2d_class_id);
+    JS_FreeValue(ctx, proto);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    JS_SetOpaque(obj, new JSPath2DData());
+    return obj;
+}
+
+static JSValue js_path_2d_noop(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSPath2DData*>(JS_GetOpaque(this_val, CanvasBindings::path_2d_class_id));
+    if (!data) {
+        return JS_ThrowTypeError(ctx, "Illegal invocation");
+    }
+    return JS_UNDEFINED;
+}
+
+static const JSCFunctionListEntry js_path_2d_proto_funcs[] = {
+    JS_CFUNC_DEF("addPath", 1, js_path_2d_noop),
+    JS_CFUNC_DEF("closePath", 0, js_path_2d_noop),
+    JS_CFUNC_DEF("moveTo", 2, js_path_2d_noop),
+    JS_CFUNC_DEF("lineTo", 2, js_path_2d_noop),
+    JS_CFUNC_DEF("bezierCurveTo", 6, js_path_2d_noop),
+    JS_CFUNC_DEF("quadraticCurveTo", 4, js_path_2d_noop),
+    JS_CFUNC_DEF("arc", 6, js_path_2d_noop),
+    JS_CFUNC_DEF("arcTo", 5, js_path_2d_noop),
+    JS_CFUNC_DEF("ellipse", 7, js_path_2d_noop),
+    JS_CFUNC_DEF("rect", 4, js_path_2d_noop),
+    JS_CFUNC_DEF("roundRect", 5, js_path_2d_noop),
+};
+
+void CanvasBindings::InitPath2DClass(JSContext* ctx) {
+    JS_NewClassID(JS_GetRuntime(ctx), &path_2d_class_id);
+
+    JSClassDef path_2d_class = {
+        "Path2D",
+        js_path_2d_finalizer,
+        nullptr,
+        nullptr,
+        nullptr,
+    };
+
+    JS_NewClass(JS_GetRuntime(ctx), path_2d_class_id, &path_2d_class);
+
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPropertyFunctionList(ctx, proto, js_path_2d_proto_funcs,
+                               sizeof(js_path_2d_proto_funcs) / sizeof(js_path_2d_proto_funcs[0]));
+    JS_SetClassProto(ctx, path_2d_class_id, proto);
+    RegisterCanvasConstructor(ctx, "Path2D", proto, js_path_2d_constructor);
+}
+
 void CanvasBindings::Init(JSContext* ctx) {
     if (initialized) return;
     
@@ -1425,6 +1529,7 @@ void CanvasBindings::Init(JSContext* ctx) {
     InitGradientClass(ctx);
     InitPatternClass(ctx);
     InitImageDataClass(ctx);
+    InitPath2DClass(ctx);
     
     initialized = true;
 }

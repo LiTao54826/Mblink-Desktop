@@ -14,6 +14,7 @@
 #include "canvas_image_data.h"
 #include "core/render/utils/color.h"
 #include "core/render/objects/render_object.h"
+#include "core/render/text/font_manager.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
@@ -24,6 +25,7 @@
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 #include <cmath>
+#include <cctype>
 #include <stdexcept>
 #include <iostream>
 
@@ -77,7 +79,7 @@ CanvasRenderingContext2D::DrawingState::DrawingState()
     stroke_paint.setStrokeWidth(1.0f);
     
     // 初始化字体
-    font.setSize(10);
+    font = FontManager::GetInstance().GetDefaultFont(10.0f);
     
     // 初始化变换矩阵（单位矩阵）
     transform.reset();
@@ -505,6 +507,27 @@ void CanvasRenderingContext2D::SetFont(const std::string& font) {
     // 简单解析：提取字号（如 "12px Arial"）
     size_t px_pos = font.find("px");
     if (px_pos != std::string::npos) {
+        try {
+            size_t start = px_pos;
+            while (start > 0) {
+                unsigned char ch = static_cast<unsigned char>(font[start - 1]);
+                if (!std::isdigit(ch) && font[start - 1] != '.') {
+                    break;
+                }
+                --start;
+            }
+
+            std::string size_str = font.substr(start, px_pos - start);
+            if (!size_str.empty()) {
+                float size = std::stof(size_str);
+                if (size > 0) {
+                    current_state_.font.setSize(size);
+                    return;
+                }
+            }
+        } catch (...) {
+        }
+
         try {
             std::string size_str = font.substr(0, px_pos);
             // 去除空格

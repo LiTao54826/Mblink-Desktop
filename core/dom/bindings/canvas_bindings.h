@@ -77,6 +77,7 @@ public:
     static JSClassID gradient_class_id;
     static JSClassID pattern_class_id;
     static JSClassID image_data_class_id;
+    static JSClassID path_2d_class_id;
 
 private:
     static bool initialized;
@@ -84,6 +85,7 @@ private:
     static void InitGradientClass(JSContext* ctx);
     static void InitPatternClass(JSContext* ctx);
     static void InitImageDataClass(JSContext* ctx);
+    static void InitPath2DClass(JSContext* ctx);
 };
 
 } // namespace mblink

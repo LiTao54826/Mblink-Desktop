@@ -831,6 +831,158 @@ void WindowBindings::BindWindowObject() {
         }
         // 也设置到 window 上
         globalThis.window.navigator = globalThis.navigator;
+
+        (function(global) {
+            function hasElementShape(value) {
+                return !!value && typeof value === 'object' && typeof value.tagName === 'string';
+            }
+
+            function hasTagName(value, tagName) {
+                return hasElementShape(value) && value.tagName.toLowerCase() === tagName;
+            }
+
+            function installInterface(name, baseName, predicate) {
+                if (typeof global[name] === 'function') {
+                    return;
+                }
+
+                const ctor = function() {
+                    throw new TypeError('Illegal constructor');
+                };
+                const base = baseName && global[baseName] && global[baseName].prototype
+                    ? global[baseName].prototype
+                    : Object.prototype;
+                ctor.prototype = Object.create(base);
+                Object.defineProperty(ctor.prototype, 'constructor', {
+                    value: ctor,
+                    writable: true,
+                    configurable: true
+                });
+                if (typeof Symbol === 'function' && Symbol.hasInstance) {
+                    Object.defineProperty(ctor, Symbol.hasInstance, {
+                        value: predicate,
+                        configurable: true
+                    });
+                }
+                Object.defineProperty(global, name, {
+                    value: ctor,
+                    writable: true,
+                    configurable: true
+                });
+            }
+
+            installInterface('Element', null, hasElementShape);
+            installInterface('HTMLElement', 'Element', hasElementShape);
+            installInterface('HTMLCanvasElement', 'HTMLElement', function(value) {
+                return hasTagName(value, 'canvas');
+            });
+            installInterface('HTMLImageElement', 'HTMLElement', function(value) {
+                return hasTagName(value, 'img');
+            });
+
+            function rectFor(target) {
+                if (target && typeof target.getBoundingClientRect === 'function') {
+                    try {
+                        const rect = target.getBoundingClientRect();
+                        const x = Number(rect.x || rect.left || 0);
+                        const y = Number(rect.y || rect.top || 0);
+                        const width = Number(rect.width || 0);
+                        const height = Number(rect.height || 0);
+                        return {
+                            x,
+                            y,
+                            width,
+                            height,
+                            top: Number(rect.top || y),
+                            left: Number(rect.left || x),
+                            right: Number(rect.right || (x + width)),
+                            bottom: Number(rect.bottom || (y + height))
+                        };
+                    } catch (_) {}
+                }
+
+                const width = Number((target && (target.clientWidth || target.width)) || 0);
+                const height = Number((target && (target.clientHeight || target.height)) || 0);
+                return {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                    top: 0,
+                    left: 0,
+                    right: width,
+                    bottom: height
+                };
+            }
+
+            if (typeof global.ResizeObserver !== 'function') {
+                global.ResizeObserver = class ResizeObserver {
+                    constructor(callback) {
+                        if (typeof callback !== 'function') {
+                            throw new TypeError('ResizeObserver callback must be a function');
+                        }
+                        this._callback = callback;
+                        this._targets = [];
+                        this._scheduled = false;
+                    }
+
+                    observe(target) {
+                        if (!target) {
+                            throw new TypeError('ResizeObserver.observe requires a target');
+                        }
+                        if (this._targets.indexOf(target) < 0) {
+                            this._targets.push(target);
+                        }
+                        this._schedule();
+                    }
+
+                    unobserve(target) {
+                        this._targets = this._targets.filter(function(item) {
+                            return item !== target;
+                        });
+                    }
+
+                    disconnect() {
+                        this._targets = [];
+                        this._scheduled = false;
+                    }
+
+                    _schedule() {
+                        if (this._scheduled) {
+                            return;
+                        }
+                        this._scheduled = true;
+                        const run = () => {
+                            this._scheduled = false;
+                            if (!this._targets.length) {
+                                return;
+                            }
+                            const entries = this._targets.map(function(target) {
+                                const rect = rectFor(target);
+                                const size = { inlineSize: rect.width, blockSize: rect.height };
+                                return {
+                                    target,
+                                    contentRect: rect,
+                                    borderBoxSize: [size],
+                                    contentBoxSize: [size],
+                                    devicePixelContentBoxSize: [size]
+                                };
+                            });
+                            this._callback(entries, this);
+                        };
+                        if (typeof global.queueMicrotask === 'function') {
+                            global.queueMicrotask(run);
+                        } else if (typeof global.setTimeout === 'function') {
+                            global.setTimeout(run, 0);
+                        } else if (typeof global.requestAnimationFrame === 'function') {
+                            global.requestAnimationFrame(run);
+                        } else {
+                            Promise.resolve().then(run);
+                        }
+                    }
+                };
+            }
+        })(globalThis);
     )";
 
     runtime_->Eval(window_code, "<window_bindings>");
