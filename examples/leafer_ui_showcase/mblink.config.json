@@ -1,0 +1,25 @@
+{
+  "name": "leafer_ui_showcase",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "runtime": "tool",
+  "purpose": "showcase",
+  "window": {
+    "title": "Leafer UI Showcase",
+    "width": 1024,
+    "height": 700,
+    "resizable": true
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": [
+      "preact",
+      "preact/hooks"
+    ],
+    "sourcemap": true,
+    "minify": false
+  }
+}

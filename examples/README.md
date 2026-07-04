@@ -13,6 +13,7 @@ the current build.
 | `terminal_logview_demo` | Native terminal/log view elements | `open`, inspect relevant elements |
 | `component_demo` | Smaller UI component combinations | `snapshot` |
 | `official_preact_jsx_dev` | Preact ESM path reference | build/open after `esbuild` setup |
+| `leafer_ui_showcase` | Interactive npm `leafer-ui` canvas package check | `tests/regression/test_leafer_ui_showcase.ps1` |
 
 ## Standard smoke commands
 
