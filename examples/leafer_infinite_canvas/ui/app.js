@@ -73,7 +73,6 @@ let world = null;
 let gridGroup = null;
 let edgeGroup = null;
 let nodeGroup = null;
-let halo = null;
 let refs = {};
 
 const state = {
@@ -83,7 +82,7 @@ const state = {
   zoom: 1,
   renderCount: 0,
   moveStep: 0,
-  pulseStep: 0,
+  traceStep: 0,
   nodeSerial: 0,
   lastAction: 'ready',
   nodes: new Map(),
@@ -389,7 +388,7 @@ function buildDom() {
         el('div', { id: 'toolbar-link-stat', className: 'toolbar-stat', text: '4 links' }),
         button('move-node-button', 'Move node', moveSelectedNode, 'primary'),
         button('add-node-button', 'Add node', addIdeaNode),
-        button('pulse-button', 'Pulse', pulseGraph, 'warn')
+        button('trace-links-button', 'Trace links', traceLinks, 'warn')
       ]),
       el('div', { id: 'stage-shell' }, [
         el('div', { id: 'infinite-stage-frame' })
@@ -600,13 +599,6 @@ function createEdge(spec) {
   const to = state.nodes.get(spec.to);
   if (!from || !to) throw new Error(`edge ${spec.id} references missing node`);
 
-  const glow = new Path({
-    path: edgePath(from, to),
-    stroke: spec.color,
-    strokeWidth: 10,
-    opacity: 0.12,
-    hittable: false
-  });
   const line = new Path({
     path: edgePath(from, to),
     stroke: spec.color,
@@ -615,9 +607,8 @@ function createEdge(spec) {
     opacity: 0.94,
     hittable: false
   });
-  edgeGroup.add(glow);
   edgeGroup.add(line);
-  const edge = { ...spec, glow, path: line };
+  const edge = { ...spec, path: line };
   state.edges.push(edge);
   return edge;
 }
@@ -650,20 +641,6 @@ function buildStage() {
 
   for (const spec of nodeSeed) createNode(spec);
   for (const edge of edgeSeed) createEdge(edge);
-
-  halo = new Ellipse({
-    x: -118,
-    y: -214,
-    width: 280,
-    height: 204,
-    fill: 'rgba(32, 180, 134, 0.08)',
-    stroke: '#20b486',
-    strokeWidth: 2,
-    opacity: 0.42,
-    hittable: false,
-    zIndex: 5
-  });
-  world.add(halo);
 
   leafer.on(RenderEvent.END, () => {
     state.renderCount += 1;
@@ -779,27 +756,17 @@ function addIdeaNode() {
   selectNode(id, `added ${node.title}`);
 }
 
-function pulseGraph() {
-  state.pulseStep += 1;
-  const step = state.pulseStep;
-  updateReadouts('pulse scheduled');
+function traceLinks() {
+  state.traceStep += 1;
+  const step = state.traceStep;
+  updateReadouts('trace scheduled');
   requestAnimationFrame(() => {
-    const selected = state.nodes.get(state.selectedId);
     const active = step % 2 === 1;
     for (const edge of state.edges) {
       edge.path.strokeWidth = active ? 6 : 4;
-      edge.glow.opacity = active ? 0.28 : 0.12;
+      edge.path.opacity = active ? 1 : 0.94;
     }
-    if (selected) {
-      selected.body.fill = active ? '#ffffff' : selected.fill;
-      halo.x = selected.x - 44;
-      halo.y = selected.y - 44;
-      halo.width = selected.width + 88;
-      halo.height = selected.height + 88;
-      halo.stroke = selected.color;
-      halo.opacity = active ? 0.64 : 0.42;
-    }
-    updateReadouts(`pulse ${step}`);
+    updateReadouts(`trace ${step}`);
   });
 }
 

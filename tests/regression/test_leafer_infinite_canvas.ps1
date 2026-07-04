@@ -22,7 +22,7 @@ $afterMoveScreenshot = Join-Path $verify 'after_move_screenshot.png'
 $afterZoomScreenshot = Join-Path $verify 'after_zoom_screenshot.png'
 $afterPanScreenshot = Join-Path $verify 'after_pan_screenshot.png'
 $afterAddScreenshot = Join-Path $verify 'after_add_screenshot.png'
-$afterPulseScreenshot = Join-Path $verify 'after_pulse_screenshot.png'
+$afterTraceScreenshot = Join-Path $verify 'after_trace_screenshot.png'
 
 function Assert([bool]$condition, [string]$message) {
     if (-not $condition) {
@@ -148,7 +148,7 @@ try {
         '#center-view-button',
         '#move-node-button',
         '#add-node-button',
-        '#pulse-button',
+        '#trace-links-button',
         '#selection-readout',
         '#view-readout',
         '#node-count-readout',
@@ -199,10 +199,10 @@ try {
     Capture-DevScreenshot $afterAddScreenshot 'after add' | Out-Null
     Assert-NoLiveErrors 'add node interaction'
 
-    Assert-Click '#pulse-button'
-    Assert-InspectContains '#last-action-readout' 'pulse 1'
-    Capture-DevScreenshot $afterPulseScreenshot 'after pulse' | Out-Null
-    Assert-NoLiveErrors 'pulse interaction'
+    Assert-Click '#trace-links-button'
+    Assert-InspectContains '#last-action-readout' 'trace 1'
+    Capture-DevScreenshot $afterTraceScreenshot 'after trace' | Out-Null
+    Assert-NoLiveErrors 'trace interaction'
 
     $logs = Invoke-MblinkCli @('logs', '--project', $project)
     $logText = $logs | ConvertTo-Json -Compress -Depth 8
@@ -212,4 +212,4 @@ finally {
     Stop-InfiniteCanvasRuntime
 }
 
-Write-Host '[PASS] leafer infinite canvas renders nodes, links, pan, zoom, add, pulse, and live repaint'
+Write-Host '[PASS] leafer infinite canvas renders nodes, links, pan, zoom, add, trace links, and live repaint'
