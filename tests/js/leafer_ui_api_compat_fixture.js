@@ -13,6 +13,7 @@ import {
   Image as LeaferImage,
   PointerButton,
   PointerEvent,
+  UIEvent,
   DragEvent,
   RenderEvent
 } from '../../examples/leafer_ui_showcase/js/leafer-ui/web.module.min.js';
@@ -62,12 +63,30 @@ function assertLeaferExports() {
   assert(typeof PointerEvent.DOWN === 'string', 'PointerEvent.DOWN missing');
   assert(typeof PointerEvent.TAP === 'string', 'PointerEvent.TAP missing');
   assert(typeof PointerEvent.CLICK === 'string', 'PointerEvent.CLICK missing');
+  assert(typeof PointerEvent.changeName === 'function', 'PointerEvent.changeName missing');
+  assert(typeof UIEvent === 'function', 'Leafer UIEvent export missing');
+  assert(typeof UIEvent.changeName === 'function', 'UIEvent.changeName missing');
   assert(typeof DragEvent === 'function', 'Leafer DragEvent export missing');
   assert(typeof DragEvent.START === 'string', 'DragEvent.START missing');
   assert(typeof DragEvent.DRAG === 'string', 'DragEvent.DRAG missing');
   assert(typeof DragEvent.END === 'string', 'DragEvent.END missing');
   assert(typeof RenderEvent === 'function', 'Leafer RenderEvent export missing');
   assert(typeof RenderEvent.END === 'string', 'RenderEvent.END missing');
+
+  const originalDown = PointerEvent.DOWN;
+  const renamedDown = `${originalDown}.mblinkCompat`;
+  PointerEvent.changeName(originalDown, renamedDown);
+  assert(PointerEvent.DOWN === renamedDown, 'PointerEvent.changeName did not rename DOWN');
+  PointerEvent.changeName(renamedDown, originalDown);
+  assert(PointerEvent.DOWN === originalDown, 'PointerEvent.changeName did not restore DOWN');
+
+  Object.defineProperty(UIEvent.prototype, '__mblinkCompatEvt', {
+    configurable: true,
+    get() { return this.origin || this.type; }
+  });
+  const uiEvent = new UIEvent({ type: 'compat.event' });
+  assert(uiEvent.__mblinkCompatEvt === 'compat.event', 'UIEvent prototype extension did not read type');
+  delete UIEvent.prototype.__mblinkCompatEvt;
 }
 
 function assertDomCanvasSurface(canvas, context) {
