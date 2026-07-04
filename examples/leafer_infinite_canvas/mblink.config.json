@@ -1,0 +1,25 @@
+{
+  "name": "leafer_infinite_canvas",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "runtime": "tool",
+  "purpose": "showcase",
+  "window": {
+    "title": "Leafer Infinite Canvas",
+    "width": 1320,
+    "height": 760,
+    "resizable": true
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": [
+      "preact",
+      "preact/hooks"
+    ],
+    "sourcemap": true,
+    "minify": false
+  }
+}
