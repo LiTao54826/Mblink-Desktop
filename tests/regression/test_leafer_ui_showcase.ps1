@@ -70,6 +70,14 @@ function Assert-InspectContains([string]$selector, [string]$needle) {
     Assert ($inspect.result.outer_html -like "*$needle*") "inspect $selector missing '$needle': $($inspect.result.outer_html)"
 }
 
+function Assert-ActiveClass([string]$selector, [bool]$expected) {
+    $inspect = Invoke-MblinkCli @('inspect', $selector, '--project', $project)
+    Assert ($inspect.result.found -eq $true) "inspect did not find $selector"
+    $classes = @([string]$inspect.result.element.class_name -split ' ' | Where-Object { $_ })
+    $hasActive = $classes -contains 'active'
+    Assert ($hasActive -eq $expected) "active class mismatch for $selector; expected=$expected actual=$hasActive class=$($inspect.result.element.class_name)"
+}
+
 function Assert-Click([string]$selector) {
     $click = Invoke-MblinkCli @('click', $selector, '--project', $project)
     Assert ($click.result.clicked -eq $true) "click did not report clicked=true for $selector"
@@ -202,6 +210,9 @@ try {
     Assert-InspectContains '#shape-list-readout' 'Brief'
     Assert-InspectContains '#selection-readout' 'Brief'
     Assert-InspectContains '#mode-readout' 'Compose'
+    Assert-ActiveClass '#mode-compose' $true
+    Assert-ActiveClass '#mode-inspect' $false
+    Assert-ActiveClass '#mode-motion' $false
 
     Assert-Click '#palette-coral'
     Assert-InspectContains '#color-readout' 'Coral'
@@ -218,6 +229,9 @@ try {
 
     Assert-Click '#mode-motion'
     Assert-InspectContains '#mode-readout' 'Motion'
+    Assert-ActiveClass '#mode-compose' $false
+    Assert-ActiveClass '#mode-inspect' $false
+    Assert-ActiveClass '#mode-motion' $true
 
     Assert-Click '#step-motion-button'
     Assert-InspectContains '#last-action-readout' 'motion step'

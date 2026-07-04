@@ -569,8 +569,6 @@ function createShapeObjects(shape) {
     width: shape.width,
     height: shape.height,
     fill: shape.fill,
-    stroke: '#c9d6e3',
-    strokeWidth: 1,
     cornerRadius: 16
   });
   const label = new Text({
@@ -619,8 +617,6 @@ function buildStage() {
     width: 572,
     height: 386,
     fill: '#f8fbff',
-    stroke: '#bfd0df',
-    strokeWidth: 1,
     cornerRadius: 18
   });
   leafer.add(stageObjects.backdrop);
@@ -661,8 +657,6 @@ function buildStage() {
     width: 514,
     height: 32,
     fill: '#eef4fa',
-    stroke: '#c7d6e5',
-    strokeWidth: 1,
     cornerRadius: 10
   });
   leafer.add(stageObjects.track);
@@ -676,6 +670,17 @@ function buildStage() {
     fontSize: 13,
     fontWeight: '600'
   });
+
+  stageObjects.selectionHalo = new Rect({
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+    fill: '#f59e0b',
+    opacity: 0,
+    cornerRadius: 20
+  });
+  leafer.add(stageObjects.selectionHalo);
 
   for (const shape of state.shapes) createShapeObjects(shape);
   updateScene('ready');
@@ -771,10 +776,12 @@ function stepMotion() {
 
 function updateButtonState() {
   for (const mode of Object.keys(modeMeta)) {
-    refs[`mode-${mode}`].classList.toggle('active', state.mode === mode);
+    if (state.mode === mode) refs[`mode-${mode}`].classList.add('active');
+    else refs[`mode-${mode}`].classList.remove('active');
   }
   for (const swatch of swatches) {
-    refs[`palette-${swatch.id}`].classList.toggle('active', state.activeColor === swatch.fill);
+    if (state.activeColor === swatch.fill) refs[`palette-${swatch.id}`].classList.add('active');
+    else refs[`palette-${swatch.id}`].classList.remove('active');
   }
 }
 
@@ -799,6 +806,24 @@ function updateScene(actionLabel) {
       : `No selection: ${state.shapes.length} Leafer objects remain on stage.`
   });
 
+  if (selected) {
+    const selectedIndex = state.shapes.findIndex((shape) => shape.id === selected.id);
+    const haloWobble = state.mode === 'motion'
+      ? Math.round(Math.sin((state.motionStep + selectedIndex) * 0.85) * 14)
+      : 0;
+    applyLeaferProps(stageObjects.selectionHalo, {
+      x: selected.x + haloWobble - 6,
+      y: selected.y - 10,
+      width: selected.width + 12,
+      height: selected.height + 12,
+      fill: meta.accent,
+      opacity: 1,
+      cornerRadius: 20
+    });
+  } else {
+    applyLeaferProps(stageObjects.selectionHalo, { opacity: 0 });
+  }
+
   state.shapes.forEach((shape, index) => {
     const nodes = stageObjects[shape.id];
     if (!nodes) return;
@@ -807,8 +832,6 @@ function updateScene(actionLabel) {
       ? Math.round(Math.sin((state.motionStep + index) * 0.85) * 14)
       : 0;
     const lift = isSelected ? -4 : 0;
-    const stroke = isSelected ? meta.accent : '#c9d6e3';
-    const strokeWidth = isSelected ? 4 : 1;
     const opacity = isSelected || !state.selectedId ? 1 : 0.72;
 
     applyLeaferProps(nodes.rect, {
@@ -817,8 +840,6 @@ function updateScene(actionLabel) {
       width: shape.width,
       height: shape.height,
       fill: shape.fill,
-      stroke,
-      strokeWidth,
       opacity,
       cornerRadius: isSelected ? 18 : 14
     });
