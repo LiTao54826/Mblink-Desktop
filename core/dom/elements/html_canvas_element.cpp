@@ -5,6 +5,7 @@
 
 #include "html_canvas_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
+#include "core/window/repaint_reason.h"
 #include <stdexcept>
 #include <sstream>
 
@@ -46,7 +47,8 @@ void* HTMLCanvasElement::GetContext(const std::string& context_id) {
     if (context_id == "2d") {
         // 延迟创建2D上下文
         if (!context_2d_) {
-            context_2d_ = std::make_unique<CanvasRenderingContext2D>(width_, height_);
+            context_2d_ = std::make_unique<CanvasRenderingContext2D>(
+                width_, height_, [this]() { RequestRepaint(RepaintReason::API); });
         }
         return context_2d_.get();
     }

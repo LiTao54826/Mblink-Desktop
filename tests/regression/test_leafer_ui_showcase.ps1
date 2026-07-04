@@ -25,6 +25,7 @@ $liveInitialSnapshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.json'
 $liveInitialScreenshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.png'
 $liveInspectSnapshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.json'
 $liveInspectScreenshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.png'
+$liveInspectWindowScreenshot = Join-Path $verify 'mblink_ui_dev_inspect_live_window.png'
 $liveAfterSnapshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.json'
 $liveAfterScreenshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.png'
 
@@ -84,6 +85,72 @@ function Assert-Click([string]$selector) {
     $click = Invoke-MblinkCli @('click', $selector, '--project', $project)
     Assert ($click.result.clicked -eq $true) "click did not report clicked=true for $selector"
     Start-Sleep -Milliseconds 120
+}
+
+function Get-ShowcaseWindowHandle() {
+    $deadline = (Get-Date).AddSeconds(5)
+    do {
+        $process = Get-Process |
+            Where-Object { $_.ProcessName -eq 'esm_loader' -and $_.MainWindowTitle -eq 'Leafer UI Showcase' -and $_.MainWindowHandle -ne 0 } |
+            Sort-Object StartTime -Descending |
+            Select-Object -First 1
+        if ($process) {
+            return $process.MainWindowHandle
+        }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+
+    throw 'Leafer UI Showcase window not found'
+}
+
+function Capture-LiveShowcaseWindow([string]$destination) {
+    Add-Type -AssemblyName System.Drawing
+    if (-not ('MblinkLeaferWindowCapture' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class MblinkLeaferWindowCapture {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+}
+'@
+    }
+
+    $handle = Get-ShowcaseWindowHandle
+    [MblinkLeaferWindowCapture]::ShowWindow($handle, 9) | Out-Null
+    [MblinkLeaferWindowCapture]::SetForegroundWindow($handle) | Out-Null
+    Start-Sleep -Milliseconds 250
+
+    $rect = [MblinkLeaferWindowCapture+RECT]::new()
+    Assert ([MblinkLeaferWindowCapture]::GetWindowRect($handle, [ref]$rect)) 'GetWindowRect failed'
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    Assert ($width -gt 100 -and $height -gt 100) "invalid live window bounds ${width}x${height}"
+
+    $bitmap = [System.Drawing.Bitmap]::new($width, $height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+        $bitmap.Save($destination, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
 }
 
 function Get-ColorCounts([string]$path) {
@@ -231,6 +298,8 @@ try {
     Assert-ActiveClass '#mode-motion' $false
 
     Assert-Click '#mode-inspect'
+    Capture-LiveShowcaseWindow $liveInspectWindowScreenshot
+    Assert-PixelNear $liveInspectWindowScreenshot 700 230 15 63 58 8 'live window inspect mode Leafer banner'
     Assert-InspectContains '#mode-readout' 'Inspect'
     Assert-InspectContains '#leafer-stage-caption' 'Mode Inspect'
     Assert-ActiveClass '#mode-compose' $false

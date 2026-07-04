@@ -87,9 +87,11 @@ CanvasRenderingContext2D::DrawingState::DrawingState()
 
 // ========== 构造/析构 ==========
 
-CanvasRenderingContext2D::CanvasRenderingContext2D(unsigned int width, unsigned int height)
+CanvasRenderingContext2D::CanvasRenderingContext2D(unsigned int width, unsigned int height,
+                                                   std::function<void()> invalidation_callback)
     : width_(width)
-    , height_(height) {
+    , height_(height)
+    , invalidation_callback_(std::move(invalidation_callback)) {
     // 创建离屏渲染 Surface
     surface_ = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height));
     if (!surface_) {
@@ -113,6 +115,7 @@ void CanvasRenderingContext2D::Resize(unsigned int width, unsigned int height) {
     current_state_ = DrawingState();
     state_stack_.clear();
     current_path_.reset();
+    NotifyCanvasChanged();
 }
 
 std::string CanvasRenderingContext2D::ToDataURL(const std::string& type, double quality) {
@@ -164,6 +167,7 @@ void CanvasRenderingContext2D::ClearRect(double x, double y, double width, doubl
     canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), clear_paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::FillRect(double x, double y, double width, double height) {
@@ -178,6 +182,7 @@ void CanvasRenderingContext2D::FillRect(double x, double y, double width, double
     canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::StrokeRect(double x, double y, double width, double height) {
@@ -192,6 +197,7 @@ void CanvasRenderingContext2D::StrokeRect(double x, double y, double width, doub
     canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 // ========== 路径 ==========
@@ -285,6 +291,7 @@ void CanvasRenderingContext2D::Fill() {
     canvas->drawPath(current_path_, paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::Stroke() {
@@ -299,6 +306,7 @@ void CanvasRenderingContext2D::Stroke() {
     canvas->drawPath(current_path_, paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::Clip() {
@@ -392,6 +400,7 @@ void CanvasRenderingContext2D::FillText(const std::string& text, double x, doubl
     canvas->drawString(text.c_str(), x, y, current_state_.font, paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::StrokeText(const std::string& text, double x, double y) {
@@ -407,6 +416,7 @@ void CanvasRenderingContext2D::StrokeText(const std::string& text, double x, dou
     canvas->drawString(text.c_str(), x, y, current_state_.font, paint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 double CanvasRenderingContext2D::MeasureText(const std::string& text) {
@@ -803,6 +813,7 @@ void CanvasRenderingContext2D::DrawImage(void* image, double dx, double dy) {
     canvas->drawImage(sk_image, dx, dy, sampling);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::DrawImage(void* image, double dx, double dy, double dwidth, double dheight) {
@@ -819,6 +830,7 @@ void CanvasRenderingContext2D::DrawImage(void* image, double dx, double dy, doub
     canvas->drawImageRect(sk_image, dest, sampling);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float dy) {
@@ -832,6 +844,7 @@ void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float d
     canvas->drawImage(image, dx, dy, sampling);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float dy, float dwidth, float dheight) {
@@ -846,6 +859,7 @@ void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float d
     canvas->drawImageRect(image, dest, sampling);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, 
@@ -863,6 +877,7 @@ void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image,
     canvas->drawImageRect(image, src, dest, sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
     
     canvas->restore();
+    NotifyCanvasChanged();
 }
 
 // ========== 像素操作 ==========
@@ -898,6 +913,7 @@ void CanvasRenderingContext2D::PutImageData(ImageData* imageData, int dx, int dy
     
     // 写入到Surface
     surface_->writePixels(pixmap, dx, dy);
+    NotifyCanvasChanged();
 }
 
 // ========== 私有方法 ==========
@@ -911,6 +927,12 @@ void CanvasRenderingContext2D::ApplyGlobalAlpha(SkPaint& paint) {
         SkColor color = paint.getColor();
         int alpha = SkColorGetA(color);
         paint.setAlpha(static_cast<uint8_t>(alpha * current_state_.global_alpha));
+    }
+}
+
+void CanvasRenderingContext2D::NotifyCanvasChanged() {
+    if (invalidation_callback_) {
+        invalidation_callback_();
     }
 }
 

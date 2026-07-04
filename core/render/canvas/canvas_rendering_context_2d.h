@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
+#include <utility>
 
 namespace mblink {
 
@@ -42,7 +44,8 @@ public:
      * @param width 画布宽度
      * @param height 画布高度
      */
-    CanvasRenderingContext2D(unsigned int width, unsigned int height);
+    CanvasRenderingContext2D(unsigned int width, unsigned int height,
+                             std::function<void()> invalidation_callback = {});
 
     /**
      * @brief 析构函数
@@ -55,6 +58,10 @@ public:
      * @param height 新高度
      */
     void Resize(unsigned int width, unsigned int height);
+
+    void SetInvalidationCallback(std::function<void()> callback) {
+        invalidation_callback_ = std::move(callback);
+    }
 
     /**
      * @brief 导出为Data URL
@@ -333,6 +340,8 @@ private:
      */
     void ApplyGlobalAlpha(SkPaint& paint);
 
+    void NotifyCanvasChanged();
+
 private:
     unsigned int width_;                        ///< 画布宽度
     unsigned int height_;                       ///< 画布高度
@@ -340,6 +349,7 @@ private:
     SkPath current_path_;                      ///< 当前路径
     std::vector<DrawingState> state_stack_;    ///< 状态栈
     DrawingState current_state_;               ///< 当前状态
+    std::function<void()> invalidation_callback_;
 };
 
 } // namespace mblink
