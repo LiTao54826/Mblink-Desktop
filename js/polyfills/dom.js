@@ -34,7 +34,13 @@
     // ========== Element扩展 ==========
 
     // classList API - 使用获取到的 ElementProto
-    if (ElementProto && !ElementProto.classList) {
+    var hasClassList = false;
+    try {
+        hasClassList = !!ElementProto && ('classList' in ElementProto);
+    } catch (e) {
+        hasClassList = false;
+    }
+    if (ElementProto && !hasClassList) {
         Object.defineProperty(ElementProto, 'classList', {
             get: function () {
                 const element = this;
@@ -48,7 +54,15 @@
                             .filter(c => c !== className)
                             .join(' ');
                     },
-                    toggle: function (className) {
+                    toggle: function (className, force) {
+                        if (arguments.length > 1) {
+                            if (force) {
+                                this.add(className);
+                                return true;
+                            }
+                            this.remove(className);
+                            return false;
+                        }
                         if (this.contains(className)) {
                             this.remove(className);
                             return false;

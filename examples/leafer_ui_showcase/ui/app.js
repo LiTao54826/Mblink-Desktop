@@ -776,12 +776,10 @@ function stepMotion() {
 
 function updateButtonState() {
   for (const mode of Object.keys(modeMeta)) {
-    if (state.mode === mode) refs[`mode-${mode}`].classList.add('active');
-    else refs[`mode-${mode}`].classList.remove('active');
+    refs[`mode-${mode}`].classList.toggle('active', state.mode === mode);
   }
   for (const swatch of swatches) {
-    if (state.activeColor === swatch.fill) refs[`palette-${swatch.id}`].classList.add('active');
-    else refs[`palette-${swatch.id}`].classList.remove('active');
+    refs[`palette-${swatch.id}`].classList.toggle('active', state.activeColor === swatch.fill);
   }
 }
 

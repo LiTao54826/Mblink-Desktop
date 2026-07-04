@@ -23,6 +23,8 @@ $errors = Join-Path $verify 'errors.json'
 $lifecycle = Join-Path $verify 'lifecycle.json'
 $liveInitialSnapshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.json'
 $liveInitialScreenshot = Join-Path $verify 'mblink_ui_dev_initial_snapshot.png'
+$liveInspectSnapshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.json'
+$liveInspectScreenshot = Join-Path $verify 'mblink_ui_dev_inspect_snapshot.png'
 $liveAfterSnapshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.json'
 $liveAfterScreenshot = Join-Path $verify 'mblink_ui_dev_after_clicks_snapshot.png'
 
@@ -110,6 +112,19 @@ function Get-ColorCounts([string]$path) {
     }
 }
 
+function Assert-PixelNear([string]$path, [int]$x, [int]$y, [int]$r, [int]$g, [int]$b, [int]$tolerance, [string]$label) {
+    Assert (Test-Path -LiteralPath $path) "missing PNG file: $path"
+    Add-Type -AssemblyName System.Drawing
+    $bitmap = [System.Drawing.Bitmap]::new($path)
+    try {
+        $pixel = $bitmap.GetPixel($x, $y)
+        $delta = [Math]::Abs([int]$pixel.R - $r) + [Math]::Abs([int]$pixel.G - $g) + [Math]::Abs([int]$pixel.B - $b)
+        Assert ($delta -le $tolerance) "$label pixel mismatch at $x,$y; expected rgb($r,$g,$b) actual rgb($($pixel.R),$($pixel.G),$($pixel.B)) delta=$delta"
+    } finally {
+        $bitmap.Dispose()
+    }
+}
+
 Assert (Test-Path -LiteralPath $project) "missing example project: $project"
 Assert (Test-Path -LiteralPath $uiDev) "missing mblink-ui-dev: $uiDev"
 Assert (Test-Path -LiteralPath $esmLoader) "missing esm_loader: $esmLoader"
@@ -183,6 +198,7 @@ try {
     $initialSnapshot = Invoke-MblinkCli @('snapshot', '--project', $project, '--response', 'file', '--include-screenshot')
     Copy-EvidenceFile $initialSnapshot.snapshot.path $liveInitialSnapshot 'initial snapshot'
     Copy-EvidenceFile $initialSnapshot.screenshot.path $liveInitialScreenshot 'initial screenshot'
+    Assert-PixelNear $liveInitialScreenshot 700 190 23 50 77 8 'compose mode Leafer banner'
 
     foreach ($selector in @(
         '#leafer-showcase-root',
@@ -214,6 +230,17 @@ try {
     Assert-ActiveClass '#mode-inspect' $false
     Assert-ActiveClass '#mode-motion' $false
 
+    Assert-Click '#mode-inspect'
+    Assert-InspectContains '#mode-readout' 'Inspect'
+    Assert-InspectContains '#leafer-stage-caption' 'Mode Inspect'
+    Assert-ActiveClass '#mode-compose' $false
+    Assert-ActiveClass '#mode-inspect' $true
+    Assert-ActiveClass '#mode-motion' $false
+    $inspectSnapshot = Invoke-MblinkCli @('snapshot', '--project', $project, '--response', 'file', '--include-screenshot')
+    Copy-EvidenceFile $inspectSnapshot.snapshot.path $liveInspectSnapshot 'inspect snapshot'
+    Copy-EvidenceFile $inspectSnapshot.screenshot.path $liveInspectScreenshot 'inspect screenshot'
+    Assert-PixelNear $liveInspectScreenshot 700 190 15 63 58 8 'inspect mode Leafer banner'
+
     Assert-Click '#palette-coral'
     Assert-InspectContains '#color-readout' 'Coral'
     Assert-InspectContains '#last-action-readout' 'fill Coral'
@@ -229,6 +256,7 @@ try {
 
     Assert-Click '#mode-motion'
     Assert-InspectContains '#mode-readout' 'Motion'
+    Assert-InspectContains '#leafer-stage-caption' 'Mode Motion'
     Assert-ActiveClass '#mode-compose' $false
     Assert-ActiveClass '#mode-inspect' $false
     Assert-ActiveClass '#mode-motion' $true
@@ -254,6 +282,7 @@ try {
     Assert ($afterColors.coral -gt 20) "post-click screenshot missing coral Leafer region; coral=$($afterColors.coral)"
     Assert ($afterColors.green -gt 20) "post-click screenshot missing green Leafer region; green=$($afterColors.green)"
     Assert ($afterColors.dark -gt 20) "post-click screenshot missing dark Leafer region; dark=$($afterColors.dark)"
+    Assert-PixelNear $liveAfterScreenshot 700 190 91 53 18 8 'motion mode Leafer banner'
 
     $logs = Invoke-MblinkCli @('logs', '--project', $project)
     $logText = $logs | ConvertTo-Json -Compress -Depth 8

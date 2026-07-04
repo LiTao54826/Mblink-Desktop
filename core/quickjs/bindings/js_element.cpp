@@ -816,6 +816,28 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
         std::string toToggle = className;
         bool exists = HasExactClass(currentClasses, toToggle);
 
+        if (argc >= 2) {
+            bool force = JS_ToBool(ctx, argv[1]);
+            if (force) {
+                if (!exists) {
+                    if (!currentClasses.empty()) {
+                        currentClasses += " ";
+                    }
+                    currentClasses += toToggle;
+                    data->element->SetClassName(currentClasses);
+                }
+                JS_FreeCString(ctx, className);
+                return JS_TRUE;
+            }
+
+            if (exists) {
+                std::string result = RemoveExactClass(currentClasses, toToggle);
+                data->element->SetClassName(result);
+            }
+            JS_FreeCString(ctx, className);
+            return JS_FALSE;
+        }
+
         if (exists) {
             // 移除
             std::string result = RemoveExactClass(currentClasses, toToggle);

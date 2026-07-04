@@ -584,6 +584,20 @@ TEST_F(DOMBindingsTest, ClassListToggle) {
     EXPECT_EQ(result, true);
 }
 
+TEST_F(DOMBindingsTest, ClassListToggleWithForce) {
+    auto result = runtime_->Eval(R"(
+        var div = document.createElement('div');
+        var addResult = div.classList.toggle('active', true);
+        var afterAdd = div.classList.contains('active') && div.className === 'active';
+        var keepResult = div.classList.toggle('active', true);
+        var afterKeep = div.classList.contains('active') && div.className === 'active';
+        var removeResult = div.classList.toggle('active', false);
+        var afterRemove = !div.classList.contains('active') && div.className === '';
+        addResult && afterAdd && keepResult && afterKeep && !removeResult && afterRemove;
+    )");
+    EXPECT_EQ(result, true);
+}
+
 // ========== style 测试 ==========
 
 TEST_F(DOMBindingsTest, StyleProperty) {
