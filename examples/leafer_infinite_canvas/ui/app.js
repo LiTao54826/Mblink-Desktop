@@ -23,8 +23,8 @@ const nodeSeed = [
     y: -138,
     width: 176,
     height: 92,
-    color: '#2f80ed',
-    fill: '#f8fbff'
+    color: '#5474a8',
+    fill: '#ffffff'
   },
   {
     id: 'model',
@@ -34,8 +34,8 @@ const nodeSeed = [
     y: -168,
     width: 192,
     height: 104,
-    color: '#20b486',
-    fill: '#f4fffb'
+    color: '#2f8f7a',
+    fill: '#ffffff'
   },
   {
     id: 'canvas',
@@ -45,8 +45,8 @@ const nodeSeed = [
     y: -86,
     width: 184,
     height: 96,
-    color: '#e85d75',
-    fill: '#fff7fa'
+    color: '#b8687a',
+    fill: '#ffffff'
   },
   {
     id: 'review',
@@ -56,8 +56,8 @@ const nodeSeed = [
     y: 88,
     width: 186,
     height: 96,
-    color: '#d99a24',
-    fill: '#fffaf0'
+    color: '#a57936',
+    fill: '#ffffff'
   }
 ];
 
@@ -89,6 +89,20 @@ const state = {
   edges: []
 };
 
+function resetState() {
+  state.selectedId = 'model';
+  state.panX = 480;
+  state.panY = 300;
+  state.zoom = 1;
+  state.renderCount = 0;
+  state.moveStep = 0;
+  state.traceStep = 0;
+  state.nodeSerial = 0;
+  state.lastAction = 'ready';
+  state.nodes = new Map();
+  state.edges = [];
+}
+
 function setShellStyles() {
   Object.assign(document.documentElement.style, {
     width: '100%',
@@ -115,8 +129,8 @@ function installStyles() {
   style.textContent = `
     * { box-sizing: border-box; }
     body {
-      color: #172033;
-      background: #eef3f8;
+      color: #182234;
+      background: #d9e3ee;
       font-family: Segoe UI, Arial, sans-serif;
     }
     button { font: inherit; }
@@ -132,7 +146,7 @@ function installStyles() {
     #inspector-pane,
     #canvas-workspace {
       min-height: 0;
-      border: 1px solid #c9d4e1;
+      border: 1px solid #c4d1df;
       border-radius: 8px;
       background: #ffffff;
       overflow: hidden;
@@ -147,7 +161,7 @@ function installStyles() {
     }
     .eyebrow {
       margin: 0 0 6px;
-      color: #0f766e;
+      color: #47627f;
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 0;
@@ -165,10 +179,10 @@ function installStyles() {
       display: flex;
       align-items: center;
       padding: 8px 10px;
-      border: 1px solid #b7c9d9;
+      border: 1px solid #d7e0ea;
       border-radius: 6px;
-      background: #f7fbff;
-      color: #12314f;
+      background: #f8fafc;
+      color: #31465c;
       font-size: 13px;
       line-height: 18px;
     }
@@ -178,7 +192,7 @@ function installStyles() {
     }
     .section-title {
       margin: 0 0 8px;
-      color: #4b5f72;
+      color: #65758a;
       font-size: 12px;
       font-weight: 800;
       letter-spacing: 0;
@@ -195,24 +209,24 @@ function installStyles() {
     .tool-button {
       min-height: 34px;
       padding: 6px 8px;
-      border: 1px solid #aab7c6;
+      border: 1px solid #c6d0dc;
       border-radius: 6px;
-      background: #f8fafc;
-      color: #172033;
+      background: #fbfcfe;
+      color: #25364a;
       cursor: pointer;
       font-size: 12px;
       font-weight: 700;
       line-height: 18px;
     }
     .tool-button.primary {
-      border-color: #1d4ed8;
-      background: #1d4ed8;
+      border-color: #355f88;
+      background: #355f88;
       color: #ffffff;
     }
     .tool-button.warn {
-      border-color: #b45309;
-      background: #fef3c7;
-      color: #633a08;
+      border-color: #b9c4d1;
+      background: #ffffff;
+      color: #3f5268;
     }
     #readout-list {
       min-height: 0;
@@ -221,7 +235,7 @@ function installStyles() {
       display: grid;
       align-content: start;
       gap: 7px;
-      background: #fbfdff;
+      background: #fbfcfe;
     }
     .readout-row {
       min-height: 34px;
@@ -230,33 +244,33 @@ function installStyles() {
       gap: 8px;
       align-items: center;
       padding: 7px 8px;
-      border: 1px solid #d9e3ed;
+      border: 1px solid #e0e7ef;
       border-radius: 6px;
       background: #ffffff;
       font-size: 12px;
       line-height: 17px;
     }
     .readout-key {
-      color: #52657a;
+      color: #65758a;
       font-weight: 800;
     }
     .readout-value {
-      color: #182235;
+      color: #25364a;
       overflow-wrap: anywhere;
     }
     .vendor-note {
       min-height: 32px;
       padding: 8px 14px;
       border-top: 1px solid #e2e8f0;
-      color: #64748b;
+      color: #7b8795;
       font-size: 11px;
       line-height: 16px;
-      background: #f8fafc;
+      background: #eef3f8;
     }
     #canvas-workspace {
       display: grid;
       grid-template-rows: 48px minmax(0, 1fr);
-      background: #f8fafc;
+      background: #e4ebf3;
     }
     #canvas-toolbar {
       display: flex;
@@ -264,12 +278,12 @@ function installStyles() {
       gap: 10px;
       min-width: 0;
       padding: 10px 12px;
-      border-bottom: 1px solid #dbe5ef;
+      border-bottom: 1px solid #e0e7ef;
       background: #ffffff;
     }
     .toolbar-title {
       min-width: 156px;
-      color: #172033;
+      color: #25364a;
       font-size: 14px;
       font-weight: 800;
       line-height: 20px;
@@ -280,10 +294,10 @@ function installStyles() {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid #d3deea;
+      border: 1px solid #dce4ee;
       border-radius: 6px;
-      background: #f8fbff;
-      color: #34495f;
+      background: #fbfcfe;
+      color: #52657a;
       font-size: 12px;
       font-weight: 700;
     }
@@ -299,9 +313,9 @@ function installStyles() {
     #infinite-stage-frame {
       width: ${STAGE.width}px;
       height: ${STAGE.height}px;
-      border: 1px solid #aebed0;
+      border: 1px solid #8fa2b8;
       border-radius: 8px;
-      background: #f6f9fc;
+      background: #d9e4ef;
       overflow: hidden;
     }
     #infinite-stage-frame canvas {
@@ -435,21 +449,21 @@ function addGrid() {
 
   for (let value = -extent; value <= extent; value += GRID.minor) {
     const major = value % GRID.major === 0;
-    const stroke = value === 0 ? '#93a6bc' : (major ? '#c3d0df' : '#e0e7ef');
-    const width = value === 0 ? 2 : 1;
+    const stroke = value === 0 ? '#95a7bb' : (major ? '#adbdce' : '#c5d1de');
+    const width = value === 0 ? 1.4 : 1;
 
     gridGroup.add(new Path({
       path: `M${-extent} ${value} L${extent} ${value}`,
       stroke,
       strokeWidth: width,
-      opacity: major ? 0.9 : 0.72,
+      opacity: value === 0 ? 0.9 : (major ? 0.78 : 0.62),
       hittable: false
     }));
     gridGroup.add(new Path({
       path: `M${value} ${-extent} L${value} ${extent}`,
       stroke,
       strokeWidth: width,
-      opacity: major ? 0.9 : 0.72,
+      opacity: value === 0 ? 0.9 : (major ? 0.78 : 0.62),
       hittable: false
     }));
   }
@@ -458,17 +472,43 @@ function addGrid() {
 }
 
 function endpoint(node, side) {
+  const x = node.x + node.width / 2;
   const y = node.y + node.height / 2;
   if (side === 'left') return { x: node.x, y };
-  return { x: node.x + node.width, y };
+  if (side === 'right') return { x: node.x + node.width, y };
+  if (side === 'top') return { x, y: node.y };
+  return { x, y: node.y + node.height };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function edgePath(from, to) {
-  const startSide = from.x < to.x ? 'right' : 'left';
-  const endSide = from.x < to.x ? 'left' : 'right';
+  const fromCenter = {
+    x: from.x + from.width / 2,
+    y: from.y + from.height / 2
+  };
+  const toCenter = {
+    x: to.x + to.width / 2,
+    y: to.y + to.height / 2
+  };
+  const dx = toCenter.x - fromCenter.x;
+  const dy = toCenter.y - fromCenter.y;
+  const verticalRoute = Math.abs(dy) > Math.abs(dx) * 0.9;
+  const startSide = verticalRoute ? (dy > 0 ? 'bottom' : 'top') : (dx > 0 ? 'right' : 'left');
+  const endSide = verticalRoute ? (dy > 0 ? 'top' : 'bottom') : (dx > 0 ? 'left' : 'right');
   const start = endpoint(from, startSide);
   const end = endpoint(to, endSide);
-  const distance = Math.max(92, Math.abs(end.x - start.x) * 0.42);
+
+  if (verticalRoute) {
+    const distance = clamp(Math.abs(end.y - start.y) * 0.45, 18, 176);
+    const sy = startSide === 'bottom' ? start.y + distance : start.y - distance;
+    const ey = endSide === 'top' ? end.y - distance : end.y + distance;
+    return `M${start.x} ${start.y} C${start.x} ${sy} ${end.x} ${ey} ${end.x} ${end.y}`;
+  }
+
+  const distance = clamp(Math.abs(end.x - start.x) * 0.42, 24, 188);
   const sx = startSide === 'right' ? start.x + distance : start.x - distance;
   const ex = endSide === 'left' ? end.x - distance : end.x + distance;
   return `M${start.x} ${start.y} C${sx} ${start.y} ${ex} ${end.y} ${end.x} ${end.y}`;
@@ -487,8 +527,8 @@ function createNode(spec) {
     ...spec,
     group: null,
     body: null,
-    titleText: null,
-    selectedRing: null
+    shadow: null,
+    titleText: null
   };
 
   const group = new Group({
@@ -497,16 +537,13 @@ function createNode(spec) {
     draggable: true,
     zIndex: 20
   });
-  const selectedRing = new Rect({
-    x: -7,
-    y: -7,
-    width: spec.width + 14,
-    height: spec.height + 14,
-    fill: 'rgba(47, 128, 237, 0.11)',
-    stroke: '#2f80ed',
-    strokeWidth: 2,
-    cornerRadius: 12,
-    visible: false,
+  const shadow = new Rect({
+    x: 4,
+    y: 7,
+    width: spec.width,
+    height: spec.height,
+    fill: 'rgba(31, 45, 61, 0.16)',
+    cornerRadius: 9,
     hittable: false
   });
   const body = new Rect({
@@ -515,61 +552,61 @@ function createNode(spec) {
     width: spec.width,
     height: spec.height,
     fill: spec.fill,
-    stroke: '#26384d',
-    strokeWidth: 2,
-    cornerRadius: 10
+    stroke: '#8fa0b2',
+    strokeWidth: 1.8,
+    cornerRadius: 8
   });
   const cap = new Rect({
-    x: 0,
-    y: 0,
-    width: spec.width,
-    height: 10,
+    x: 14,
+    y: 10,
+    width: spec.width - 28,
+    height: 4,
     fill: spec.color,
-    cornerRadius: 10,
+    cornerRadius: 2,
     hittable: false
   });
   const title = new Text({
     x: 16,
-    y: 20,
+    y: 24,
     width: spec.width - 34,
     text: spec.title,
-    fill: '#142033',
-    fontSize: 18,
-    fontWeight: '800',
+    fill: '#1f2d3d',
+    fontSize: 17,
+    fontWeight: '700',
     hittable: false
   });
   const label = new Text({
     x: 16,
-    y: 50,
+    y: 53,
     width: spec.width - 34,
     text: spec.label,
-    fill: '#53657a',
+    fill: '#65758a',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '500',
     hittable: false
   });
   const inputPort = new Ellipse({
-    x: -7,
-    y: spec.height / 2 - 7,
-    width: 14,
-    height: 14,
-    fill: '#ffffff',
-    stroke: spec.color,
-    strokeWidth: 3,
+    x: -5,
+    y: spec.height / 2 - 5,
+    width: 10,
+    height: 10,
+    fill: '#f8fafc',
+    stroke: '#b5c3d2',
+    strokeWidth: 2,
     hittable: false
   });
   const outputPort = new Ellipse({
-    x: spec.width - 7,
-    y: spec.height / 2 - 7,
-    width: 14,
-    height: 14,
+    x: spec.width - 5,
+    y: spec.height / 2 - 5,
+    width: 10,
+    height: 10,
     fill: spec.color,
     stroke: '#ffffff',
-    strokeWidth: 3,
+    strokeWidth: 2,
     hittable: false
   });
 
-  group.add([selectedRing, body, cap, title, label, inputPort, outputPort]);
+  group.add([shadow, body, cap, title, label, inputPort, outputPort]);
   group.on(PointerEvent.CLICK, () => selectNode(spec.id, `selected ${spec.title}`));
   group.on(PointerEvent.TAP, () => selectNode(spec.id, `selected ${spec.title}`));
   group.on(DragEvent.DRAG, () => {
@@ -587,8 +624,8 @@ function createNode(spec) {
 
   node.group = group;
   node.body = body;
+  node.shadow = shadow;
   node.titleText = title;
-  node.selectedRing = selectedRing;
   nodeGroup.add(group);
   state.nodes.set(spec.id, node);
   return node;
@@ -601,10 +638,10 @@ function createEdge(spec) {
 
   const line = new Path({
     path: edgePath(from, to),
-    stroke: spec.color,
-    strokeWidth: 4,
+    stroke: '#6f8299',
+    strokeWidth: 3.2,
     strokeCap: 'round',
-    opacity: 0.94,
+    opacity: 0.82,
     hittable: false
   });
   edgeGroup.add(line);
@@ -617,12 +654,13 @@ function buildStage() {
   assertLeaferSurface();
 
   if (leafer && typeof leafer.destroy === 'function') leafer.destroy();
+  resetState();
 
   leafer = new Leafer({
     view: refs.stageFrame,
     width: STAGE.width,
     height: STAGE.height,
-    fill: '#f6f9fc'
+    fill: '#d9e4ef'
   });
 
   world = new Group({
@@ -684,9 +722,9 @@ function selectNode(id, action) {
   state.selectedId = id;
   for (const node of state.nodes.values()) {
     const selected = node.id === id;
-    node.selectedRing.visible = selected;
-    node.body.stroke = selected ? node.color : '#26384d';
-    node.body.strokeWidth = selected ? 3 : 2;
+    node.body.stroke = selected ? '#6f8299' : '#8fa0b2';
+    node.body.strokeWidth = selected ? 2.2 : 1.8;
+    node.shadow.fill = selected ? 'rgba(31, 45, 61, 0.21)' : 'rgba(31, 45, 61, 0.16)';
   }
   updateReadouts(action);
 }
@@ -743,8 +781,8 @@ function addIdeaNode() {
     y: baseY,
     width: 168,
     height: 88,
-    color: serial % 2 === 0 ? '#7c3aed' : '#0ea5e9',
-    fill: serial % 2 === 0 ? '#faf5ff' : '#f0fbff'
+    color: serial % 2 === 0 ? '#6f65a8' : '#4f84a8',
+    fill: '#ffffff'
   });
   createEdge({
     id: `edge-${state.selectedId}-${id}`,
@@ -763,8 +801,9 @@ function traceLinks() {
   requestAnimationFrame(() => {
     const active = step % 2 === 1;
     for (const edge of state.edges) {
-      edge.path.strokeWidth = active ? 6 : 4;
-      edge.path.opacity = active ? 1 : 0.94;
+      edge.path.stroke = active ? edge.color : '#6f8299';
+      edge.path.strokeWidth = active ? 4.5 : 3.2;
+      edge.path.opacity = active ? 0.96 : 0.82;
     }
     updateReadouts(`trace ${step}`);
   });
