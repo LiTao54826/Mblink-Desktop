@@ -11,7 +11,8 @@ license file before publishing binary artifacts.
 | --- | --- | --- | --- |
 | Lexbor | `third_party/lexbor` | Apache-2.0 | Includes upstream `LICENSE` and `NOTICE`. |
 | nlohmann/json | `third_party/nlohmann/json.hpp` | MIT | Single-header library with SPDX/header notice. |
-| Preact | `third_party/preact` | MIT | Repository copy currently identifies as `11.0.0-beta.1`. |
+| Preact | `third_party/preact` | MIT | Repository copy currently identifies as `11.0.0-beta.1`. Upstream: `https://github.com/preactjs/preact`. |
+| LeaferJS / leafer-ui | `examples/leafer_ui_showcase/js/leafer-ui` | MIT | Vendored browser ESM bundle and upstream `LICENSE` for Leafer canvas examples. Upstream: `https://github.com/leaferjs/leafer-ui`. |
 | stb_image | `third_party/stb/stb_image.h` | MIT or public domain | Header contains upstream license text. |
 
 ## Bootstrapped source dependencies

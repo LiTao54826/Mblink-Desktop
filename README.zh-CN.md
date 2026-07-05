@@ -73,6 +73,8 @@ MBlink 支持真实的 ESM `import` 风格 UI 代码。当前运行时和工具�
 ![MBlink todo_app_js example](docs/assets/todo_app_js.png)
 ![MBlink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
+![MBlink leafer_ui_showcase example](docs/assets/leafer_ui_showcase.png)
+![MBlink leafer_infinite_canvas example](docs/assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](docs/assets/html_demo.png)
 
 ## 快速开始
@@ -157,6 +159,16 @@ MBlink 目前主要还是一个个人维护项目。
 所以当前公开文档会尽量只围绕仓库里有新鲜验证证据的路径来写，也会持续把读者引导到 Windows-first、以 Preact 为主线、已经实际跑通过的路径上。
 
 凡是没有被当前文档明确配上验证证据的路径，都更适合先当作实验性能力理解，而不是默认已经承诺支持。
+
+## 开源致谢
+
+MBlink 的示例和运行时验证建立在许多开源项目之上，尤其感谢：
+
+- [Preact](https://github.com/preactjs/preact)：提供当前已验证的轻量 ESM UI 主线。
+- [LeaferJS / leafer-ui](https://github.com/leaferjs/leafer-ui)：提供 Leafer 展示和无限画布示例使用的 Canvas 引擎。
+- [QuickJS-ng](https://github.com/quickjs-ng/quickjs)、[SDL](https://github.com/libsdl-org/SDL)、[Skia](https://github.com/google/skia) 等底层项目也支撑了 MBlink 的运行时探索。
+
+第三方依赖与许可证记录见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 支持作者
 

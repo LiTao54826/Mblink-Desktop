@@ -21,6 +21,7 @@
 ![MBlink modern_desktop_demo example](assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
 ![MBlink leafer_ui_showcase example](assets/leafer_ui_showcase.png)
+![MBlink leafer_infinite_canvas example](assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](assets/html_demo.png)
 
 ## 核心文档
@@ -44,9 +45,14 @@
 
 - [贡献指南](CONTRIBUTING.md)
 - [变更记录](../CHANGELOG.md)
+- [第三方依赖声明](../THIRD_PARTY_NOTICES.md)
 - [安全策略](../SECURITY.md)
 - [支持说明](../SUPPORT.md)
 - [行为准则](../CODE_OF_CONDUCT.md)
+
+## 开源致谢
+
+MBlink 的示例和运行时验证引用并感谢 [Preact](https://github.com/preactjs/preact)、[LeaferJS / leafer-ui](https://github.com/leaferjs/leafer-ui) 等上游开源项目；依赖与许可证记录见 [第三方依赖声明](../THIRD_PARTY_NOTICES.md)。
 
 ## 文档规则
 

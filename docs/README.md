@@ -21,6 +21,7 @@ Real runtime screenshots from multiple examples:
 ![MBlink modern_desktop_demo example](assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
 ![MBlink leafer_ui_showcase example](assets/leafer_ui_showcase.png)
+![MBlink leafer_infinite_canvas example](assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](assets/html_demo.png)
 
 ## Core guides
@@ -44,9 +45,18 @@ Real runtime screenshots from multiple examples:
 
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](../CHANGELOG.md)
+- [Third-Party Notices](../THIRD_PARTY_NOTICES.md)
 - [Security](../SECURITY.md)
 - [Support](../SUPPORT.md)
 - [Code of Conduct](../CODE_OF_CONDUCT.md)
+
+## Open Source Acknowledgements
+
+MBlink examples and runtime validation reference upstream projects including
+[Preact](https://github.com/preactjs/preact) and
+[LeaferJS / leafer-ui](https://github.com/leaferjs/leafer-ui). See
+[Third-Party Notices](../THIRD_PARTY_NOTICES.md) for dependency and license
+notes.
 
 ## Documentation rules
 

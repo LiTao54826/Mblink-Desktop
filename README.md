@@ -108,6 +108,7 @@ Windows.
 ![MBlink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
 ![MBlink leafer_ui_showcase example](docs/assets/leafer_ui_showcase.png)
+![MBlink leafer_infinite_canvas example](docs/assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](docs/assets/html_demo.png)
 
 ## Quick Start
@@ -217,6 +218,21 @@ actually been checked.
 
 If a path is not clearly documented with current verification evidence, treat it
 as experimental rather than promised support.
+
+## Open Source Acknowledgements
+
+MBlink builds on and learns from open-source projects. In particular, thanks to:
+
+- [Preact](https://github.com/preactjs/preact) for the lightweight ESM UI path
+  used by many examples.
+- [LeaferJS / leafer-ui](https://github.com/leaferjs/leafer-ui) for the canvas
+  engine used by the Leafer showcase and infinite-canvas examples.
+- [QuickJS-ng](https://github.com/quickjs-ng/quickjs),
+  [SDL](https://github.com/libsdl-org/SDL), and
+  [Skia](https://github.com/google/skia) for important runtime building blocks.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for tracked dependency and
+license notes.
 
 ## Docs
 
