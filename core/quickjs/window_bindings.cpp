@@ -512,7 +512,9 @@ void WindowBindings::BindWindowObject() {
 
 
     // 创建 window 对象（与浏览器行为保持一致：window/self 指向 globalThis）
-    std::string window_code = R"(
+    std::string window_code;
+    window_code.reserve(32768);
+    window_code += R"(
         if (typeof globalThis.globalThis === 'undefined') {
             globalThis.globalThis = globalThis;
         }
@@ -644,7 +646,9 @@ void WindowBindings::BindWindowObject() {
                 navigationState.stack = [createEntry('/', null)];
                 navigationState.index = 0;
             }
+    )";
 
+    window_code += R"(
             function currentEntry() {
                 return navigationState.stack[navigationState.index] || navigationState.stack[0];
             }
@@ -816,6 +820,9 @@ void WindowBindings::BindWindowObject() {
         })(globalThis);
 
         // 创建 navigator 对象（用于平台/浏览器检测）
+    )";
+
+    window_code += R"(
         if (!globalThis.navigator) {
             globalThis.navigator = {
                 platform: 'Win32',
