@@ -102,6 +102,12 @@ Avoid or gate behind verification:
 - `ResizeObserver`, `IntersectionObserver`, Shadow DOM, custom elements, full accessibility tree APIs
 - WebGL, WebGPU, audio/video media APIs, and advanced canvas image-pattern behavior unless specifically verified
 
+Planned WebGL/3D canvas and `<video>` support should be treated as runtime or
+optional-plugin work. Do not claim those features from CSS effects, 2D canvas
+approximations, or project-local JavaScript shims. A supported claim requires
+runtime implementation plus `mblink-ui-dev` evidence such as snapshot, logs,
+errors, screenshots, and pixel checks where visual output matters.
+
 ## MBlink Native Elements
 
 Use [native-elements.md](native-elements.md) when a UI needs terminal output, an interactive shell, command execution, or high-volume logs. MBlink provides two proprietary native-rendered tags:

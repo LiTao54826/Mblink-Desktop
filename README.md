@@ -48,6 +48,26 @@ target yet. Do not assume full React support or compatibility with large
 browser-oriented scaffolds unless the repository documents that with fresh
 verification evidence.
 
+## Planned Optional Runtime Capabilities
+
+The following capabilities are planned as optional runtime work, not current
+support promises:
+
+- WebGL-backed canvas support through an optional native plugin, likely backed by
+  ANGLE on Windows, so `canvas.getContext('webgl')` can return a real
+  `WebGLRenderingContext` when the plugin is present and initialized.
+- Basic 3D canvas validation on top of that WebGL path, starting with simple
+  shader, buffer, texture, resize, repaint, `readPixels`, screenshot, and
+  minimal three.js scene checks.
+- HTML media element support, starting with `<video>` playback as an optional
+  media runtime capability with explicit load, play, pause, seek, sizing,
+  frame-present, audio, error, and cleanup verification.
+
+Until those features land with runtime tests and `mblink-ui-dev` screenshot or
+pixel evidence, WebGL/WebGPU and audio/video media APIs remain unsupported
+contracts. Projects should not rely on CSS or app-side JavaScript shims to claim
+these features; missing APIs need runtime or optional-plugin implementation.
+
 ## Imports and package model
 
 MBlink supports real ESM `import`-based UI code. The runtime and tooling can

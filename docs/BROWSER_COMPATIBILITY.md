@@ -133,6 +133,26 @@
 - `navigator.clipboard`：仅保留字段，未提供可用能力
 - 布局正确性：`core/layout/README.md` 明确提示仍依赖平台验证，不能据此宣称完整浏览器一致性
 
+## Planned Optional Capabilities | Planned Optional Runtime Work
+
+These items are tracked as future project work, not current browser
+compatibility guarantees:
+
+- Optional WebGL canvas plugin: `canvas.getContext('webgl')` should return a
+  real `WebGLRenderingContext` only when the WebGL plugin is present and
+  initialized. The likely Windows backend is ANGLE over D3D11 or another
+  verified ANGLE backend.
+- WebGL/3D validation: the first acceptance target should include a real shader
+  pipeline, vertex/index buffers, textures, resize, repaint scheduling,
+  `readPixels`, screenshot/pixel checks, and a minimal three.js scene.
+- Optional media runtime: `<video>` should be introduced as a real runtime or
+  plugin-backed media element, not as a CSS/app shim. The first acceptance target
+  should cover load, metadata, play, pause, seek, frame presentation, sizing,
+  audio behavior where supported, errors, and cleanup.
+
+Until these land with runtime implementation and tests, WebGL, WebGPU, and
+audio/video media APIs remain unsupported.
+
 ## Unsupported / Not Implemented Yet | 明确不支持或尚未实现
 
 ### 1. 完整浏览器导航行为

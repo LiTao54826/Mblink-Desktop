@@ -164,6 +164,8 @@ Avoid `preact-lite.js`, `globalThis.Preact`, `globalThis.PreactHooks`, legacy `j
 | `canvas.width` | supported | Get/set. |
 | `canvas.height` | supported | Get/set. |
 | `canvas.getContext('2d')` | supported subset | Verify any advanced Canvas API before relying on it. |
+| `canvas.getContext('webgl')` | planned optional plugin | Not currently supported. Future support should return a real WebGL context only when the WebGL plugin is present and verified. |
+| `<video>` / `HTMLVideoElement` | planned optional media runtime | Not currently supported. Future support needs real runtime media loading, playback, frame presentation, and cleanup validation. |
 | `style.cssText` | supported | Get/set. |
 | `style.length` | supported | Read-only getter. |
 | `style.setProperty(name, value, priority?)` | supported | CSS property mutation. |
@@ -365,6 +367,22 @@ Do not use these in MBlink UI code unless the project adds a verified adapter an
 | `ResizeObserver`, `IntersectionObserver` | unsupported contract | Not in the verified API list. |
 | WebGL, WebGPU, audio/video media APIs | unsupported contract | Not in the verified API list. |
 | `preact-lite.js`, `globalThis.Preact`, `globalThis.PreactHooks`, legacy `js/preact/*` | unsupported pattern | Use official embedded Preact ESM modules. |
+
+## Planned Optional Runtime Capabilities
+
+These are future project items, not supported APIs yet:
+
+- WebGL should be implemented as a real runtime capability, preferably through an
+  optional native plugin such as `mblink_webgl.dll` with ANGLE-backed rendering on
+  Windows. App-side CSS or JavaScript shims must not be used to claim WebGL
+  support.
+- The first WebGL acceptance slice should prove shader/program creation,
+  buffer/texture upload, drawing, resize, repaint scheduling, `readPixels`, and
+  `mblink-ui-dev` screenshot or pixel verification.
+- Video should be implemented as a real media element or optional media plugin.
+  The first acceptance slice should prove `<video>` load/metadata, play, pause,
+  seek, frame presentation into the MBlink render pipeline, sizing, errors, and
+  cleanup.
 
 ## Verification Rule for New APIs
 
