@@ -83,10 +83,23 @@ const state = {
   dragCount: 0,
   rafStep: 0,
   renderCount: 0,
+  animationFrame: 0,
+  animationRun: 0,
+  animationRunning: false,
   visibilityOn: false,
   assetStatus: 'pending',
   lastAction: 'ready',
   shapes: initialShapes.map((shape) => ({ ...shape }))
+};
+
+let animationRequestId = 0;
+const animationDemo = {
+  startX: 64,
+  startY: 235,
+  endX: 528,
+  trailY: 245,
+  totalFrames: 18,
+  idleLabel: 'RAF animation drives Leafer node props'
 };
 
 function setShellStyles() {
@@ -195,6 +208,10 @@ function installStyles() {
       background: #f8fafc;
       color: #1f2937;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
     }
     .segment-button {
       height: 34px;
@@ -398,6 +415,7 @@ function readout(id, key, value) {
     canvasEvent: 'canvas-event-readout',
     dragState: 'drag-state-readout',
     rafState: 'raf-readout',
+    animationState: 'animation-readout',
     assetState: 'asset-readout',
     lastAction: 'last-action-readout'
   };
@@ -547,6 +565,13 @@ function buildDom() {
           onclick: stepRafFrame
         }),
         el('button', {
+          id: 'play-animation-button',
+          className: 'control-button',
+          type: 'button',
+          text: 'Play animation',
+          onclick: playAnimationDemo
+        }),
+        el('button', {
           id: 'toggle-visible-button',
           className: 'control-button',
           type: 'button',
@@ -571,6 +596,7 @@ function buildDom() {
       readout('canvasEvent', 'Events', 'tap 0 click 0'),
       readout('dragState', 'Drag', '0 drags'),
       readout('rafState', 'RAF', 'step 0'),
+      readout('animationState', 'Animation', 'idle frame 0'),
       readout('assetState', 'Assets', 'pending'),
       readout('lastAction', 'Action', 'ready')
     ]),
@@ -645,7 +671,20 @@ function addStageText(props) {
   return text;
 }
 
+function shapeTextLayout(shape, wobble = 0, lift = 0) {
+  const centerY = shape.y + lift + Math.round(shape.height / 2);
+  return {
+    x: shape.x + wobble,
+    width: shape.width,
+    labelY: centerY - 24,
+    detailY: centerY + 2,
+    labelHeight: 24,
+    detailHeight: 18
+  };
+}
+
 function createShapeObjects(shape) {
+  const textLayout = shapeTextLayout(shape);
   const rect = new Rect({
     x: shape.x,
     y: shape.y,
@@ -657,21 +696,27 @@ function createShapeObjects(shape) {
     cornerRadius: 16
   });
   const label = new Text({
-    x: shape.x + 16,
-    y: shape.y + 20,
-    width: Math.max(72, shape.width - 28),
+    x: textLayout.x,
+    y: textLayout.labelY,
+    width: textLayout.width,
+    height: textLayout.labelHeight,
     text: shape.name,
     fill: '#ffffff',
     fontSize: 20,
-    fontWeight: '700'
+    fontWeight: '700',
+    textAlign: 'center',
+    verticalAlign: 'middle'
   });
   const detail = new Text({
-    x: shape.x + 16,
-    y: shape.y + 52,
-    width: Math.max(72, shape.width - 28),
+    x: textLayout.x,
+    y: textLayout.detailY,
+    width: textLayout.width,
+    height: textLayout.detailHeight,
     text: shape.detail,
     fill: '#eaf2ff',
-    fontSize: 13
+    fontSize: 13,
+    textAlign: 'center',
+    verticalAlign: 'middle'
   });
 
   leafer.add(rect);
@@ -699,6 +744,10 @@ function updateDocsReadouts(actionLabel) {
   if (refs.canvasEvent) refs.canvasEvent.textContent = `tap ${state.tapCount} click ${state.clickCount} events ${state.eventCount}`;
   if (refs.dragState) refs.dragState.textContent = `${state.dragCount} drags`;
   if (refs.rafState) refs.rafState.textContent = `step ${state.rafStep}, render ${state.renderCount}`;
+  if (refs.animationState) {
+    const label = state.animationRunning ? 'running' : (state.animationFrame > 0 ? 'complete' : 'idle');
+    refs.animationState.textContent = `${label} frame ${state.animationFrame}, run ${state.animationRun}`;
+  }
   if (refs.assetState) refs.assetState.textContent = state.assetStatus;
   if (actionLabel && refs.lastAction && refs.stageActionChip) {
     refs.lastAction.textContent = actionLabel;
@@ -851,13 +900,16 @@ function buildDocsCoverage() {
     zIndex: 20
   });
   const eventText = new Text({
-    x: 56,
-    y: 333,
-    width: 54,
+    x: eventTarget.x,
+    y: eventTarget.y,
+    width: eventTarget.width,
+    height: eventTarget.height,
     text: 'tap',
     fill: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
+    verticalAlign: 'middle',
     hittable: false,
     zIndex: 21
   });
@@ -894,13 +946,16 @@ function buildDocsCoverage() {
     zIndex: 20
   });
   const dragText = new Text({
-    x: 158,
-    y: 333,
-    width: 48,
+    x: dragTarget.x,
+    y: dragTarget.y,
+    width: dragTarget.width,
+    height: dragTarget.height,
     text: 'drag',
     fill: '#ffffff',
     fontSize: 12,
     fontWeight: '700',
+    textAlign: 'center',
+    verticalAlign: 'middle',
     hittable: false,
     zIndex: 21
   });
@@ -914,8 +969,8 @@ function buildDocsCoverage() {
   dragTarget.on(DragEvent.DRAG, () => {
     state.dragCount += 1;
     dragTarget.fill = '#ef4444';
-    dragText.x = dragTarget.x + 14;
-    dragText.y = dragTarget.y + 7;
+    dragText.x = dragTarget.x;
+    dragText.y = dragTarget.y;
     dragText.text = `drag ${state.dragCount}`;
     updateDocsReadouts('drag event');
   });
@@ -953,6 +1008,7 @@ function buildDocsCoverage() {
   stageObjects.docsPen = pen;
   stageObjects.docsImage = image;
   stageObjects.eventTarget = eventTarget;
+  stageObjects.eventText = eventText;
   stageObjects.dragTarget = dragTarget;
   stageObjects.dragText = dragText;
   stageObjects.rafRect = rafRect;
@@ -968,6 +1024,64 @@ function buildDocsCoverage() {
   probeImage.src = imageFixtureUrl;
 
   updateDocsReadouts('docs coverage ready');
+}
+
+function buildAnimationDemo() {
+  const lane = new Rect({
+    x: 54,
+    y: 238,
+    width: 514,
+    height: 22,
+    fill: '#e3edf7',
+    stroke: '#b3c4d6',
+    strokeWidth: 1,
+    cornerRadius: 11,
+    zIndex: 18
+  });
+  const trail = new Rect({
+    x: animationDemo.startX,
+    y: animationDemo.trailY,
+    width: 34,
+    height: 8,
+    fill: '#fdba74',
+    opacity: 0.38,
+    cornerRadius: 4,
+    zIndex: 19
+  });
+  const puck = new Ellipse({
+    x: animationDemo.startX,
+    y: animationDemo.startY,
+    width: 30,
+    height: 30,
+    fill: '#f97316',
+    stroke: '#7c2d12',
+    strokeWidth: 2,
+    zIndex: 20
+  });
+  const label = new Text({
+    x: lane.x,
+    y: lane.y,
+    width: lane.width,
+    height: lane.height,
+    text: animationDemo.idleLabel,
+    fill: '#40576f',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    verticalAlign: 'middle',
+    hittable: false,
+    zIndex: 21
+  });
+
+  leafer.add(lane);
+  leafer.add(trail);
+  leafer.add(puck);
+  leafer.add(label);
+
+  stageObjects.animationLane = lane;
+  stageObjects.animationTrail = trail;
+  stageObjects.animationPuck = puck;
+  stageObjects.animationLabel = label;
 }
 
 function simulateCanvasTap() {
@@ -1060,6 +1174,102 @@ function stepRafFrame() {
   });
 }
 
+function resetAnimationDemoVisual() {
+  const { animationPuck, animationTrail, animationLabel } = stageObjects;
+  if (!animationPuck || !animationTrail || !animationLabel) {
+    throw new Error('Leafer animation demo nodes missing');
+  }
+
+  applyLeaferProps(animationTrail, {
+    x: animationDemo.startX,
+    y: animationDemo.trailY,
+    width: 34,
+    fill: '#fdba74',
+    opacity: 0.38
+  });
+  applyLeaferProps(animationPuck, {
+    x: animationDemo.startX,
+    y: animationDemo.startY,
+    width: 30,
+    height: 30,
+    fill: '#f97316',
+    stroke: '#7c2d12',
+    opacity: 1
+  });
+  applyLeaferProps(animationLabel, {
+    text: animationDemo.idleLabel
+  });
+}
+
+function applyAnimationFrame(frame, totalFrames) {
+  const { animationPuck, animationTrail, animationLabel } = stageObjects;
+  if (!animationPuck || !animationTrail || !animationLabel) {
+    throw new Error('Leafer animation demo nodes missing');
+  }
+
+  const progress = Math.min(1, Math.max(0, frame / totalFrames));
+  const legProgress = progress <= 0.5 ? progress * 2 : (1 - progress) * 2;
+  const eased = legProgress < 0.5
+    ? 2 * legProgress * legProgress
+    : 1 - Math.pow(-2 * legProgress + 2, 2) / 2;
+  const x = Math.round(animationDemo.startX + (animationDemo.endX - animationDemo.startX) * eased);
+  const y = animationDemo.startY + Math.round(Math.sin(frame * 0.72) * 4);
+  const hot = frame % 2 === 0;
+
+  applyLeaferProps(animationTrail, {
+    x: Math.max(animationDemo.startX, x - 38),
+    y: y + 10,
+    width: Math.min(44, Math.max(20, x - animationDemo.startX + 10)),
+    fill: hot ? '#fdba74' : '#c4b5fd',
+    opacity: 0.42
+  });
+  applyLeaferProps(animationPuck, {
+    x,
+    y,
+    width: hot ? 30 : 34,
+    height: hot ? 30 : 34,
+    fill: hot ? '#f97316' : '#14b8a6',
+    stroke: '#7c2d12',
+    opacity: 1
+  });
+  applyLeaferProps(animationLabel, {
+    text: `RAF animation frame ${frame}/${totalFrames}`
+  });
+}
+
+function playAnimationDemo() {
+  if (state.animationRunning) return;
+  if (typeof requestAnimationFrame !== 'function') {
+    throw new Error('requestAnimationFrame missing for Leafer animation demo');
+  }
+
+  const totalFrames = animationDemo.totalFrames;
+  state.animationRun += 1;
+  state.animationFrame = 0;
+  state.animationRunning = true;
+  state.lastAction = 'animation started';
+  applyAnimationFrame(0, totalFrames);
+  updateDocsReadouts(state.lastAction);
+
+  const advance = () => {
+    state.animationFrame += 1;
+    applyAnimationFrame(state.animationFrame, totalFrames);
+    if (state.animationFrame >= totalFrames) {
+      state.animationRunning = false;
+      state.lastAction = 'animation complete';
+      animationRequestId = 0;
+      resetAnimationDemoVisual();
+      updateDocsReadouts(state.lastAction);
+      return;
+    }
+    state.lastAction = `animation frame ${state.animationFrame}`;
+    updateDocsReadouts(state.lastAction);
+    animationRequestId = requestAnimationFrame(advance);
+  };
+
+  animationRequestId = requestAnimationFrame(advance);
+}
+
 function toggleVisibilityNode() {
   const { docsHidden } = stageObjects;
   if (!docsHidden) throw new Error('Leafer visible test node missing');
@@ -1100,22 +1310,28 @@ function buildStage() {
 
   stageObjects.bannerText = addStageText({
     x: 60,
-    y: 49,
+    y: 42,
     width: 320,
+    height: 34,
     text: 'Leafer scene: compose mode',
     fill: '#ffffff',
     fontSize: 16,
-    fontWeight: '700'
+    fontWeight: '700',
+    textAlign: 'left',
+    verticalAlign: 'middle'
   });
 
   stageObjects.counterText = addStageText({
     x: 432,
-    y: 50,
+    y: 42,
     width: 130,
+    height: 34,
     text: '3 objects',
     fill: '#dbeafe',
     fontSize: 14,
-    fontWeight: '700'
+    fontWeight: '700',
+    textAlign: 'center',
+    verticalAlign: 'middle'
   });
 
   stageObjects.track = new Rect({
@@ -1129,13 +1345,16 @@ function buildStage() {
   leafer.add(stageObjects.track);
 
   stageObjects.trackText = addStageText({
-    x: 78,
-    y: 368,
-    width: 460,
+    x: stageObjects.track.x,
+    y: stageObjects.track.y,
+    width: stageObjects.track.width,
+    height: stageObjects.track.height,
     text: 'DOM controls mutate these Leafer Rect and Text nodes.',
     fill: '#40576f',
     fontSize: 13,
-    fontWeight: '600'
+    fontWeight: '600',
+    textAlign: 'center',
+    verticalAlign: 'middle'
   });
 
   stageObjects.selectionHalo = new Rect({
@@ -1151,6 +1370,7 @@ function buildStage() {
 
   for (const shape of state.shapes) createShapeObjects(shape);
   buildDocsCoverage();
+  buildAnimationDemo();
   updateScene('ready');
 }
 
@@ -1299,6 +1519,7 @@ function updateScene(actionLabel) {
       : 0;
     const lift = isSelected ? -4 : 0;
     const opacity = isSelected || !state.selectedId ? 1 : 0.72;
+    const textLayout = shapeTextLayout(shape, wobble, lift);
 
     applyLeaferProps(nodes.rect, {
       x: shape.x + wobble,
@@ -1310,20 +1531,26 @@ function updateScene(actionLabel) {
       cornerRadius: isSelected ? 18 : 14
     });
     applyLeaferProps(nodes.label, {
-      x: shape.x + wobble + 16,
-      y: shape.y + lift + 18,
-      width: Math.max(72, shape.width - 28),
+      x: textLayout.x,
+      y: textLayout.labelY,
+      width: textLayout.width,
+      height: textLayout.labelHeight,
       text: shape.name,
       fill: '#ffffff',
-      opacity
+      opacity,
+      textAlign: 'center',
+      verticalAlign: 'middle'
     });
     applyLeaferProps(nodes.detail, {
-      x: shape.x + wobble + 16,
-      y: shape.y + lift + 50,
-      width: Math.max(72, shape.width - 28),
+      x: textLayout.x,
+      y: textLayout.detailY,
+      width: textLayout.width,
+      height: textLayout.detailHeight,
       text: isSelected ? meta.label : shape.detail,
       fill: '#eaf2ff',
-      opacity
+      opacity,
+      textAlign: 'center',
+      verticalAlign: 'middle'
     });
   });
 
@@ -1354,6 +1581,52 @@ function installResizeGuard() {
   observer.observe(refs.stageHost);
 }
 
+function readTextAlignment(node) {
+  if (!node) return null;
+  return {
+    text: node.text,
+    x: node.x,
+    y: node.y,
+    width: node.width,
+    height: node.height,
+    textAlign: node.textAlign,
+    verticalAlign: node.verticalAlign
+  };
+}
+
+function readVisualNode(node) {
+  if (!node) return null;
+  return {
+    x: node.x,
+    y: node.y,
+    width: node.width,
+    height: node.height,
+    fill: node.fill,
+    stroke: node.stroke,
+    opacity: node.opacity
+  };
+}
+
+function getAlignmentState() {
+  return {
+    shapes: state.shapes.map((shape) => {
+      const nodes = stageObjects[shape.id] || {};
+      return {
+        id: shape.id,
+        label: readTextAlignment(nodes.label),
+        detail: readTextAlignment(nodes.detail)
+      };
+    }),
+    eventText: readTextAlignment(stageObjects.eventText),
+    dragText: readTextAlignment(stageObjects.dragText),
+    animationLabel: readTextAlignment(stageObjects.animationLabel),
+    animationPuck: readVisualNode(stageObjects.animationPuck),
+    animationTrail: readVisualNode(stageObjects.animationTrail),
+    trackText: readTextAlignment(stageObjects.trackText),
+    counterText: readTextAlignment(stageObjects.counterText)
+  };
+}
+
 function boot() {
   setShellStyles();
   installStyles();
@@ -1380,10 +1653,14 @@ function boot() {
         dragCount: state.dragCount,
         rafStep: state.rafStep,
         renderCount: state.renderCount,
+        animationFrame: state.animationFrame,
+        animationRun: state.animationRun,
+        animationRunning: state.animationRunning,
         visibilityOn: state.visibilityOn,
         assetStatus: state.assetStatus,
         lastAction: state.lastAction
-      })
+      }),
+      getAlignmentState
     };
     console.log('leafer-ui interactive showcase ready');
   } catch (error) {

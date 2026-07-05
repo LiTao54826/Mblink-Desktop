@@ -31,6 +31,7 @@ $devTapScreenshot = Join-Path $verify 'mblink_ui_dev_tap_snapshot.png'
 $devDragScreenshot = Join-Path $verify 'mblink_ui_dev_drag_snapshot.png'
 $devReorderScreenshot = Join-Path $verify 'mblink_ui_dev_reorder_snapshot.png'
 $devRafScreenshot = Join-Path $verify 'mblink_ui_dev_raf_snapshot.png'
+$devAnimationScreenshot = Join-Path $verify 'mblink_ui_dev_animation_snapshot.png'
 $devVisibleScreenshot = Join-Path $verify 'mblink_ui_dev_visible_snapshot.png'
 $devRemovedScreenshot = Join-Path $verify 'mblink_ui_dev_removed_snapshot.png'
 
@@ -179,6 +180,79 @@ function Assert-CanvasPixelNear([int]$x, [int]$y, [int]$r, [int]$g, [int]$b, [in
     Assert ($delta -le $tolerance) "$label canvas pixel mismatch at $x,$y; expected rgb($r,$g,$b) actual rgb($($rgba[0]),$($rgba[1]),$($rgba[2])) delta=$delta"
 }
 
+function Assert-ScreenshotCanvasPixelNear([string]$path, [int]$canvasX, [int]$canvasY, [int]$r, [int]$g, [int]$b, [int]$tolerance, [string]$label) {
+    $match = Assert-SelectorRect '#leafer-stage-frame canvas'
+    $screenX = [int][Math]::Round([double]$match.rect.x + $canvasX)
+    $screenY = [int][Math]::Round([double]$match.rect.y + $canvasY)
+    Assert-PixelNear $path $screenX $screenY $r $g $b $tolerance $label
+}
+
+function Assert-LeaferTextAlignment {
+    $code = @'
+(() => {
+  const api = globalThis.__leaferShowcase;
+  if (!api || typeof api.getAlignmentState !== 'function') {
+    return { ok: false, failures: ['alignment state API missing'] };
+  }
+  const state = api.getAlignmentState();
+  const failures = [];
+  const checkCentered = (name, node) => {
+    if (!node) {
+      failures.push(`${name} missing`);
+      return;
+    }
+    if (node.textAlign !== 'center') failures.push(`${name} textAlign ${node.textAlign}`);
+    if (node.verticalAlign !== 'middle') failures.push(`${name} verticalAlign ${node.verticalAlign}`);
+    if (!(node.width > 0 && node.height > 0)) failures.push(`${name} empty text box`);
+  };
+  for (const shape of state.shapes) {
+    checkCentered(`${shape.id}.label`, shape.label);
+    checkCentered(`${shape.id}.detail`, shape.detail);
+  }
+  checkCentered('eventText', state.eventText);
+  checkCentered('dragText', state.dragText);
+  checkCentered('animationLabel', state.animationLabel);
+  checkCentered('trackText', state.trackText);
+  checkCentered('counterText', state.counterText);
+  return { ok: failures.length === 0, failures, state };
+})()
+'@
+    $alignment = Invoke-MblinkCli @('eval', $code, '--project', $project)
+    Assert ($alignment.result.ok -eq $true) "Leafer text alignment mismatch: $($alignment | ConvertTo-Json -Compress -Depth 12)"
+}
+
+function Assert-LeaferAnimationSettled {
+    $code = @'
+(() => {
+  const api = globalThis.__leaferShowcase;
+  const state = api && typeof api.getAlignmentState === 'function' ? api.getAlignmentState() : null;
+  if (!state) return { ok: false, failures: ['alignment state API missing'] };
+  const failures = [];
+  const puck = state.animationPuck;
+  const trail = state.animationTrail;
+  const label = state.animationLabel;
+  if (!puck) failures.push('animationPuck missing');
+  else {
+    if (puck.x !== 64) failures.push(`puck x ${puck.x}`);
+    if (puck.y !== 235) failures.push(`puck y ${puck.y}`);
+    if (puck.width !== 30 || puck.height !== 30) failures.push(`puck size ${puck.width}x${puck.height}`);
+    if (puck.fill !== '#f97316') failures.push(`puck fill ${puck.fill}`);
+  }
+  if (!trail) failures.push('animationTrail missing');
+  else {
+    if (trail.x !== 64) failures.push(`trail x ${trail.x}`);
+    if (trail.y !== 245) failures.push(`trail y ${trail.y}`);
+    if (trail.width !== 34) failures.push(`trail width ${trail.width}`);
+  }
+  if (!label) failures.push('animationLabel missing');
+  else if (label.text !== 'RAF animation drives Leafer node props') failures.push(`label text ${label.text}`);
+  return { ok: failures.length === 0, failures, state };
+})()
+'@
+    $settled = Invoke-MblinkCli @('eval', $code, '--project', $project)
+    Assert ($settled.result.ok -eq $true) "Leafer animation did not settle cleanly: $($settled | ConvertTo-Json -Compress -Depth 12)"
+}
+
 Assert (Test-Path -LiteralPath $project) "missing example project: $project"
 Assert (Test-Path -LiteralPath $uiDev) "missing mblink-ui-dev: $uiDev"
 Assert (Test-Path -LiteralPath $esmLoader) "missing esm_loader: $esmLoader"
@@ -237,12 +311,14 @@ foreach ($needle in @(
     'reorder-group-button',
     'remove-group-child-button',
     'raf-step-button',
+    'play-animation-button',
     'toggle-visible-button',
     'api-shapes-readout',
     'group-state-readout',
     'canvas-event-readout',
     'drag-state-readout',
     'raf-readout',
+    'animation-readout',
     'asset-readout',
     'selection-readout',
     'ready: compose mode, Brief',
@@ -285,6 +361,7 @@ try {
         '#reorder-group-button',
         '#remove-group-child-button',
         '#raf-step-button',
+        '#play-animation-button',
         '#toggle-visible-button',
         '#scene-count-readout',
         '#shape-list-readout',
@@ -294,6 +371,7 @@ try {
         '#canvas-event-readout',
         '#drag-state-readout',
         '#raf-readout',
+        '#animation-readout',
         '#asset-readout',
         '#last-action-readout'
     )) {
@@ -310,7 +388,10 @@ try {
     Assert-InspectContains '#canvas-event-readout' 'tap 0 click 0 events 0'
     Assert-InspectContains '#drag-state-readout' '0 drags'
     Assert-InspectContains '#raf-readout' 'step 0'
+    Assert-InspectContains '#animation-readout' 'idle frame 0'
     Wait-InspectContains '#asset-readout' 'image 4x4 loaded'
+    Assert-LeaferTextAlignment
+    Assert-LeaferAnimationSettled
     Assert-ActiveClass '#mode-compose' $true
     Assert-ActiveClass '#mode-inspect' $false
     Assert-ActiveClass '#mode-motion' $false
@@ -334,6 +415,7 @@ try {
     Assert-InspectContains '#shape-list-readout' 'Layer 1'
     Assert-InspectContains '#selection-readout' 'Layer 1'
     Assert-InspectContains '#last-action-readout' 'added Layer 1'
+    Assert-LeaferTextAlignment
 
     Assert-Click '#shuffle-scene-button'
     Assert-InspectContains '#last-action-readout' 'shuffled scene'
@@ -348,6 +430,7 @@ try {
     Assert-Click '#step-motion-button'
     Assert-InspectContains '#last-action-readout' 'motion step'
     Assert-InspectContains '#leafer-showcase-status' 'motion mode'
+    Assert-LeaferTextAlignment
 
     Assert-Click '#clear-selection-button'
     Assert-InspectContains '#selection-readout' 'none selected'
@@ -385,6 +468,17 @@ try {
     Assert-PixelNear $devRafScreenshot 760 485 249 115 22 55 'dev screenshot RAF frame fill'
     Assert-NoLiveErrors 'RAF frame interaction'
 
+    Assert-Click '#play-animation-button'
+    Wait-InspectContains '#animation-readout' 'complete frame 18'
+    Assert-InspectContains '#last-action-readout' 'animation complete'
+    Assert-LeaferAnimationSettled
+    Assert-CanvasPixelNear 79 250 249 115 22 65 'Leafer animation settled puck repaint'
+    Assert-CanvasPixelNear 543 251 227 237 247 65 'Leafer animation settled without right-edge drift'
+    Capture-DevScreenshot $devAnimationScreenshot 'Leafer animation' | Out-Null
+    Assert-ScreenshotCanvasPixelNear $devAnimationScreenshot 79 250 249 115 22 65 'dev screenshot Leafer animation settled puck'
+    Assert-ScreenshotCanvasPixelNear $devAnimationScreenshot 543 251 227 237 247 65 'dev screenshot Leafer animation no right-edge drift'
+    Assert-NoLiveErrors 'Leafer animation interaction'
+
     Assert-Click '#toggle-visible-button'
     Assert-InspectContains '#last-action-readout' 'visible node on'
     Assert-CanvasPixelNear 456 290 124 58 237 55 'visible toggle immediate repaint'
@@ -413,6 +507,7 @@ try {
         'tap 1 click 1 events 1',
         '1 drags',
         'step 1',
+        'complete frame 18',
         'removed yes',
         'image 4x4 loaded',
         'removed group child'
