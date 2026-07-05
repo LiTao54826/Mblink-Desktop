@@ -20,6 +20,7 @@
 ![MBlink todo_app_js example](assets/todo_app_js.png)
 ![MBlink modern_desktop_demo example](assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](assets/ui_combinations_showcase.png)
+![MBlink leafer_ui_showcase example](assets/leafer_ui_showcase.png)
 ![MBlink html_demo example](assets/html_demo.png)
 
 ## 核心文档

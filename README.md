@@ -107,6 +107,7 @@ Windows.
 ![MBlink todo_app_js example](docs/assets/todo_app_js.png)
 ![MBlink modern_desktop_demo example](docs/assets/modern_desktop_demo.png)
 ![MBlink ui_combinations_showcase example](docs/assets/ui_combinations_showcase.png)
+![MBlink leafer_ui_showcase example](docs/assets/leafer_ui_showcase.png)
 ![MBlink html_demo example](docs/assets/html_demo.png)
 
 ## Quick Start
