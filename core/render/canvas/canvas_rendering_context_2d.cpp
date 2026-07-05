@@ -313,7 +313,9 @@ void CanvasRenderingContext2D::Clip() {
     if (!surface_) return;
     
     SkCanvas* canvas = surface_->getCanvas();
-    canvas->clipPath(current_path_, SkClipOp::kIntersect, true);
+    SkPath transformed_path = current_path_;
+    transformed_path.transform(current_state_.transform);
+    canvas->clipPath(transformed_path, SkClipOp::kIntersect, true);
 }
 
 void CanvasRenderingContext2D::Ellipse(double x, double y, double radiusX, double radiusY, 
