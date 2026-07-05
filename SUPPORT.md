@@ -60,8 +60,6 @@ If MBlink is useful to you, sponsorship helps fund more time for:
 - compatibility fixes / 修复兼容性问题
 - tool and binding maintenance / 维护工具链和各语言绑定
 
-Recommended public asset path for a sponsor QR image:
-建议公开赞助收款码图片使用这个路径：
-
-- `docs/assets/sponsor_qr.png`
+For support or sponsorship inquiries, contact: 1801509469@qq.com.
+如需支持或赞助 MBlink，请联系：1801509469@qq.com。
 

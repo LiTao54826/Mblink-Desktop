@@ -219,6 +219,17 @@ actually been checked.
 If a path is not clearly documented with current verification evidence, treat it
 as experimental rather than promised support.
 
+## Support the Author
+
+If MBlink is useful to you, sponsorship helps fund more time for:
+
+- more example and workflow testing
+- better documentation and onboarding
+- compatibility fixes
+- tool and binding maintenance
+
+For support or sponsorship inquiries, contact: 1801509469@qq.com.
+
 ## Open Source Acknowledgements
 
 MBlink builds on and learns from open-source projects. In particular, thanks to:
