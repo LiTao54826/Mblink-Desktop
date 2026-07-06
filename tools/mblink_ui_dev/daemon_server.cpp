@@ -39,6 +39,8 @@ bool IsProcessRunning(int pid) {
 #ifdef _WIN32
 namespace {
 
+std::filesystem::path g_daemon_runtime_source_dir;
+
 std::filesystem::path GetCurrentExecutablePath() {
     std::wstring buffer(MAX_PATH, L'\0');
     for (;;) {
@@ -899,6 +901,54 @@ bool PrepareDaemonExecutableBundle(const std::filesystem::path& executable_path,
 
     *bundled_executable = target_exe;
     return true;
+}
+
+bool ExistingRegularFile(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::exists(path, ec) && !std::filesystem::is_directory(path, ec);
+}
+
+void AddRuntimeSourceCandidate(std::vector<std::filesystem::path>* candidates,
+                               const std::filesystem::path& source_dir) {
+    if (!candidates || source_dir.empty()) return;
+    candidates->push_back(source_dir);
+}
+
+void AddRepoRuntimeSourceCandidates(std::vector<std::filesystem::path>* candidates,
+                                    const std::filesystem::path& start) {
+    if (!candidates) return;
+    const auto repo_root = FindMblinkRepoRootForTooling(start);
+    if (!repo_root.has_value()) return;
+    candidates->push_back(*repo_root / "build" / "bin" / "Release");
+    candidates->push_back(*repo_root / "build" / "bin" / "RelWithDebInfo");
+    candidates->push_back(*repo_root / "build" / "bin" / "Debug");
+}
+
+std::filesystem::path ResolveRuntimeExecutable(const std::filesystem::path& project_root,
+                                               std::string* error) {
+    const auto runtime_dir = GetCurrentExecutablePath().parent_path();
+    const auto runtime_exe = runtime_dir / "esm_loader.exe";
+
+    std::vector<std::filesystem::path> source_candidates;
+    AddRuntimeSourceCandidate(&source_candidates, g_daemon_runtime_source_dir);
+    if (const char* env_dir = std::getenv("MBLINK_UI_DEV_RUNTIME_DIR"); env_dir && *env_dir) {
+        AddRuntimeSourceCandidate(&source_candidates, std::filesystem::path(env_dir));
+    }
+    AddRepoRuntimeSourceCandidates(&source_candidates, project_root);
+    AddRepoRuntimeSourceCandidates(&source_candidates, std::filesystem::current_path());
+    AddRepoRuntimeSourceCandidates(&source_candidates, runtime_dir);
+
+    for (const auto& source_dir : source_candidates) {
+        const auto source_exe = source_dir / "esm_loader.exe";
+        if (ExistingRegularFile(source_exe)) return source_exe;
+    }
+
+    if (ExistingRegularFile(runtime_exe)) return runtime_exe;
+
+    if (error) {
+        *error = "missing esm_loader.exe next to daemon: " + PathToUtf8(runtime_exe);
+    }
+    return {};
 }
 
 size_t CopyUiStaticAssets(const std::filesystem::path& project_root,
@@ -2561,9 +2611,14 @@ void StopProcess(int pid) {
 
 bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::string* error) {
     if (state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid)) StopProcess(state->runtime_pid);
-    const auto runtime_exe = GetCurrentExecutablePath().parent_path() / "esm_loader.exe";
-    if (!std::filesystem::exists(runtime_exe)) {
-        if (error) *error = "未找到 esm_loader.exe，请先编译 esm_loader";
+    std::string runtime_error;
+    const auto runtime_exe = ResolveRuntimeExecutable(root, &runtime_error);
+    if (runtime_exe.empty()) {
+        if (error && !runtime_error.empty()) {
+            *error = runtime_error;
+        } else if (error) {
+            *error = "missing esm_loader.exe";
+        }
         return false;
     }
     std::filesystem::path entry = std::filesystem::absolute(JoinProjectPath(root, state->project.entry));
@@ -2789,9 +2844,12 @@ bool StartDetachedDaemon(const std::filesystem::path& executable_path,
     if (!PrepareDaemonExecutableBundle(executable_path, project_id, &daemon_executable, error)) {
         return false;
     }
+    const auto source_exe = std::filesystem::absolute(executable_path).lexically_normal();
+    const auto runtime_source_dir = source_exe.parent_path();
     std::string args = "daemon run";
-    if (!project_root.empty()) args += " --project \"" + project_root + "\"";
-    if (!project_id.empty()) args += " --project-id \"" + project_id + "\"";
+    if (!project_root.empty()) args += " --project " + QuoteForCmd(project_root);
+    if (!project_id.empty()) args += " --project-id " + QuoteForCmd(project_id);
+    if (!runtime_source_dir.empty()) args += " --runtime-source-dir " + QuoteForCmd(PathToUtf8(runtime_source_dir));
     return StartDetachedProcess(daemon_executable, args, daemon_executable.parent_path(), nullptr, nullptr, spawned_pid, error);
 #else
     (void)executable_path; (void)project_root; (void)project_id; (void)spawned_pid;
@@ -3134,6 +3192,9 @@ int RunDaemonServer(const std::vector<std::string>& args) {
     for (size_t i = 0; i + 1 < args.size(); ++i) {
         if (args[i] == "--project") project_root = std::filesystem::absolute(PathFromUtf8(args[i + 1])).lexically_normal();
         if (args[i] == "--project-id") state.project_id = args[i + 1];
+        if (args[i] == "--runtime-source-dir") {
+            g_daemon_runtime_source_dir = std::filesystem::absolute(PathFromUtf8(args[i + 1])).lexically_normal();
+        }
     }
     if (!project_root.empty()) {
         ProjectIdentity identity;

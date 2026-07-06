@@ -1048,6 +1048,10 @@ Window::~Window() {
     fbo_manager_.reset();
 
     // 释放Skia资源
+    retained_main_surface_.reset();
+    retained_main_width_px_ = 0;
+    retained_main_height_px_ = 0;
+    retained_main_has_content_ = false;
     surface_.reset();
 
     gr_context_.reset();
