@@ -10,6 +10,7 @@
 #include "render_object.h"
 #include "core/render/painters/box_renderer.h"
 #include "painters/form_element_painter.h"
+#include "core/render/input/textarea_painter.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
@@ -316,6 +317,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
             params.font_size = style.font_size;
             params.text_color = style.color;
             params.has_focus = element->HasPseudoClass("focus");
+            params.cursor_visible = IsCursorVisible();
 
             FormElementPainter painter(canvas);
             painter.PaintInputElement(input_element.get(), form_box, params);
@@ -323,20 +325,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(node);
         if (textarea_element) {
-            Box form_box;
-            form_box.content_x = 0;
-            form_box.content_y = 0;
-            form_box.content_width = layout.width;
-            form_box.content_height = layout.height;
-
-            FormElementPaintParams params;
-            params.font_family = style.font_family;
-            params.font_size = style.font_size;
-            params.text_color = style.color;
-            params.has_focus = element->HasPseudoClass("focus");
-
-            FormElementPainter painter(canvas);
-            painter.PaintTextAreaElement(textarea_element.get(), form_box, params);
+            textarea_painter::Paint(canvas, textarea_element.get(), this, box, IsCursorVisible());
         }
     }
 

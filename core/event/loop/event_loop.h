@@ -409,6 +409,9 @@ private:
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）
 
     // QuickJS 运行时（用于处理 JS 定时器和微任务）
+    Uint64 last_cursor_blink_time_ = 0;
+    std::weak_ptr<Element> last_blink_focus_element_;
+
     QuickJSRuntime* quickjs_runtime_ = nullptr;
 
     // ===== 系统光标管理 =====

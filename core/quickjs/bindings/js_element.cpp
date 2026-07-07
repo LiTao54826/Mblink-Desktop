@@ -26,6 +26,7 @@
 #include "core/event/types/mouse_event.h"
 #include "core/dom/selection/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "core/render/input/textarea_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "js_node.h"
 #include "js_style_declaration.h"
@@ -2268,6 +2269,10 @@ static JSValue JSElement_get_scrollTop(JSContext* ctx, JSValueConst this_val, in
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
 
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        return JS_NewFloat64(ctx, textarea->GetScrollTop());
+    }
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
 
@@ -2281,11 +2286,20 @@ static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JS
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
 
-    auto render_obj = data->element->GetRenderObject();
-    if (!render_obj) return JS_UNDEFINED;
-
     double scroll_top;
     if (JS_ToFloat64(ctx, &scroll_top, val) != 0) return JS_EXCEPTION;
+
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            scroll_top = textarea_metrics::ClampScrollTop(static_cast<float>(scroll_top), metrics);
+        }
+        textarea->SetScrollTop(static_cast<float>(scroll_top));
+        return JS_UNDEFINED;
+    }
+
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_UNDEFINED;
 
     // Clamp 滚动位置到有效范围 [0, maxScrollY]
     if (scroll_top < 0) scroll_top = 0;
@@ -2567,6 +2581,10 @@ static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, i
         return JS_UNDEFINED;
     }
 
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        return JS_NewFloat64(ctx, textarea->GetScrollLeft());
+    }
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
 
@@ -2584,11 +2602,20 @@ static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, J
         return JS_UNDEFINED;
     }
 
-    auto render_obj = data->element->GetRenderObject();
-    if (!render_obj) return JS_UNDEFINED;
-
     double scroll_left;
     if (JS_ToFloat64(ctx, &scroll_left, val) != 0) return JS_EXCEPTION;
+
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            scroll_left = textarea_metrics::ClampScrollLeft(static_cast<float>(scroll_left), metrics);
+        }
+        textarea->SetScrollLeft(static_cast<float>(scroll_left));
+        return JS_UNDEFINED;
+    }
+
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_UNDEFINED;
 
     // Clamp 滚动位置到有效范围 [0, maxScrollX]
     if (scroll_left < 0) scroll_left = 0;
@@ -2607,6 +2634,13 @@ static JSValue JSElement_get_scrollWidth(JSContext* ctx, JSValueConst this_val, 
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
 
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            return JS_NewFloat64(ctx, metrics.scroll_width);
+        }
+    }
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
 
@@ -2620,6 +2654,13 @@ static JSValue JSElement_get_scrollHeight(JSContext* ctx, JSValueConst this_val,
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
 
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            return JS_NewFloat64(ctx, metrics.scroll_height);
+        }
+    }
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
 
@@ -2629,6 +2670,13 @@ static JSValue JSElement_get_scrollHeight(JSContext* ctx, JSValueConst this_val,
 static JSValue JSElement_get_clientWidth(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            return JS_NewFloat64(ctx, metrics.client_width);
+        }
+    }
 
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
@@ -2649,6 +2697,13 @@ static JSValue JSElement_get_clientWidth(JSContext* ctx, JSValueConst this_val, 
 static JSValue JSElement_get_clientHeight(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+
+    if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element)) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), textarea->GetRenderObject().get(), metrics)) {
+            return JS_NewFloat64(ctx, metrics.client_height);
+        }
+    }
 
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);

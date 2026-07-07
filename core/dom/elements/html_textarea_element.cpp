@@ -10,6 +10,7 @@
 #include "../../render/input/text_edit_metrics.h"
 #include "../render/text/text_renderer.h"
 #include "core/editing/textarea_editing_controller.h"
+#include "core/render/input/textarea_metrics.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/window/window.h"
 #include <algorithm>
@@ -364,6 +365,7 @@ void HTMLTextAreaElement::HandleKeyPress(const std::string& key, bool ctrl_key, 
 
     if (edit_state_->caret_position != old_cursor) {
         MarkScrollToCursor();
+        RequestTextAreaRepaint();
     }
 }
 
@@ -397,7 +399,15 @@ void HTMLTextAreaElement::SetCursorPosition(int char_pos) {
     }
     int char_count = static_cast<int>(utf8::CharCount(GetValue()));
     char_pos = std::clamp(char_pos, 0, char_count);
+    const int old_anchor = edit_state_->selection_anchor;
+    const int old_focus = edit_state_->selection_focus;
+    const int old_caret = edit_state_->caret_position;
     edit_state_->SetCaretPosition(char_pos);
+    if (old_anchor != edit_state_->selection_anchor ||
+        old_focus != edit_state_->selection_focus ||
+        old_caret != edit_state_->caret_position) {
+        RequestTextAreaRepaint();
+    }
 }
 
 void HTMLTextAreaElement::SetSelection(int start, int end) {
@@ -405,8 +415,16 @@ void HTMLTextAreaElement::SetSelection(int start, int end) {
         return;
     }
     int char_count = static_cast<int>(utf8::CharCount(GetValue()));
+    const int old_anchor = edit_state_->selection_anchor;
+    const int old_focus = edit_state_->selection_focus;
+    const int old_caret = edit_state_->caret_position;
     edit_state_->SetSelection(std::clamp(start, 0, char_count),
                               std::clamp(end, 0, char_count));
+    if (old_anchor != edit_state_->selection_anchor ||
+        old_focus != edit_state_->selection_focus ||
+        old_caret != edit_state_->caret_position) {
+        RequestTextAreaRepaint();
+    }
 }
 
 void HTMLTextAreaElement::RequestTextAreaRepaint() {
@@ -422,6 +440,21 @@ void HTMLTextAreaElement::RequestTextAreaRepaint() {
 
     SkRect dirty_rect = SkRect::MakeEmpty();
     if (auto render_obj = GetRenderObject()) {
+        textarea_metrics::BoxMetrics metrics;
+        if (textarea_metrics::ResolveBox(this, render_obj.get(), metrics)) {
+            scroll_top_ = textarea_metrics::ClampScrollTop(scroll_top_, metrics);
+            scroll_left_ = textarea_metrics::ClampScrollLeft(scroll_left_, metrics);
+            if (needs_scroll_to_cursor_) {
+                EnsureCursorVisible(metrics.line_height,
+                                    metrics.visible_height,
+                                    metrics.visible_width,
+                                    metrics.font);
+                needs_scroll_to_cursor_ = false;
+                scroll_top_ = textarea_metrics::ClampScrollTop(scroll_top_, metrics);
+                scroll_left_ = textarea_metrics::ClampScrollLeft(scroll_left_, metrics);
+            }
+        }
+
         render_obj->MarkNeedsPaint();
         render_obj->InvalidatePaintCache();
 
@@ -609,7 +642,12 @@ int HTMLTextAreaElement::GetLineCount() const {
 // ========== 滚动相关方法 ==========
 
 void HTMLTextAreaElement::SetScrollTop(float scroll_top) {
-    scroll_top_ = std::max(0.0f, scroll_top);
+    float new_scroll_top = std::max(0.0f, scroll_top);
+    if (new_scroll_top == scroll_top_) {
+        return;
+    }
+    scroll_top_ = new_scroll_top;
+    RequestTextAreaRepaint();
 }
 
 void HTMLTextAreaElement::HandleMouseWheel(float delta_y, float line_height, float visible_height) {
@@ -620,6 +658,9 @@ void HTMLTextAreaElement::HandleMouseWheel(float delta_y, float line_height, flo
 
     float old_scroll_top = scroll_top_;
     scroll_top_ = std::clamp(scroll_top_ + scroll_amount, 0.0f, max_scroll);
+    if (old_scroll_top != scroll_top_) {
+        RequestTextAreaRepaint();
+    }
 
     //           << " line_height=" << line_height
     //           << " visible_height=" << visible_height
@@ -631,14 +672,23 @@ void HTMLTextAreaElement::HandleMouseWheel(float delta_y, float line_height, flo
 }
 
 void HTMLTextAreaElement::SetScrollLeft(float scroll_left) {
-    scroll_left_ = std::max(0.0f, scroll_left);
+    float new_scroll_left = std::max(0.0f, scroll_left);
+    if (new_scroll_left == scroll_left_) {
+        return;
+    }
+    scroll_left_ = new_scroll_left;
+    RequestTextAreaRepaint();
 }
 
 void HTMLTextAreaElement::HandleMouseWheelHorizontal(float delta_x, float visible_width, const SkFont& font) {
     float max_line_width = GetMaxLineWidth(font);
     float max_scroll = std::max(0.0f, max_line_width - visible_width);
     float scroll_amount = delta_x * 30.0f;
+    float old_scroll_left = scroll_left_;
     scroll_left_ = std::clamp(scroll_left_ + scroll_amount, 0.0f, max_scroll);
+    if (old_scroll_left != scroll_left_) {
+        RequestTextAreaRepaint();
+    }
 }
 
 void HTMLTextAreaElement::EnsureCursorVisible(float line_height, float visible_height, float visible_width, const SkFont& font) {
@@ -687,6 +737,19 @@ float HTMLTextAreaElement::GetContentHeight(float line_height) const {
 }
 
 float HTMLTextAreaElement::GetMaxLineWidth(const SkFont& font) const {
+    uint64_t revision = edit_state_ ? edit_state_->revision_id : 0;
+    float font_size = font.getSize();
+    uint32_t typeface_id = font.getTypeface() ? font.getTypeface()->uniqueID() : 0;
+    float scale_x = font.getScaleX();
+    float skew_x = font.getSkewX();
+    if (cached_max_line_width_revision_ == revision &&
+        cached_max_line_width_font_size_ == font_size &&
+        cached_max_line_width_typeface_id_ == typeface_id &&
+        cached_max_line_width_scale_x_ == scale_x &&
+        cached_max_line_width_skew_x_ == skew_x) {
+        return cached_max_line_width_;
+    }
+
     const std::string value = GetValue();
     float max_width = 0.0f;
     std::istringstream stream(value);
@@ -695,7 +758,13 @@ float HTMLTextAreaElement::GetMaxLineWidth(const SkFont& font) const {
         float w = text_edit_metrics::MeasureTextWidth(line, font, false);
         if (w > max_width) max_width = w;
     }
-    return max_width;
+    cached_max_line_width_revision_ = revision;
+    cached_max_line_width_font_size_ = font_size;
+    cached_max_line_width_typeface_id_ = typeface_id;
+    cached_max_line_width_scale_x_ = scale_x;
+    cached_max_line_width_skew_x_ = skew_x;
+    cached_max_line_width_ = max_width;
+    return cached_max_line_width_;
 }
 
 void HTMLTextAreaElement::StartScrollbarDrag(ScrollbarType type, float mouse_pos) {
@@ -731,9 +800,9 @@ void HTMLTextAreaElement::UpdateScrollbarDrag(float mouse_pos, float track_size,
     new_scroll = std::clamp(new_scroll, 0.0f, max_scroll);
 
     if (scrollbar_drag_type_ == ScrollbarType::VERTICAL) {
-        scroll_top_ = new_scroll;
+        SetScrollTop(new_scroll);
     } else {
-        scroll_left_ = new_scroll;
+        SetScrollLeft(new_scroll);
     }
 }
 

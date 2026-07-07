@@ -14,14 +14,11 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/event/input/hit_test_controller.h"
+#include "core/render/input/textarea_metrics.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
-#include "core/render/text/font_manager.h"
 #include "core/window/window.h"
-
-#include "include/core/SkFont.h"
-#include "include/core/SkFontMetrics.h"
 
 #include <algorithm>
 #include <vector>
@@ -314,61 +311,33 @@ bool WheelEventDispatcher::HandleTextAreaWheel(std::shared_ptr<Window> window,
         return false;
     }
 
-    const auto& style = render_object->GetComputedStyle();
-    float padding_top = style.padding.top.ToPx();
-    float padding_bottom = style.padding.bottom.ToPx();
-    float padding_left = style.padding.left.ToPx();
-    float padding_right = style.padding.right.ToPx();
-    const auto& layout = render_object->GetLayoutInfo();
-    float visible_height = layout.height - padding_top - padding_bottom;
-    float visible_width = layout.width - padding_left - padding_right;
-
-    // 计算行高（与渲染保持一致）
-    float font_size = style.font_size > 0 ? style.font_size : 14.0f;
-    FontDescriptor desc;
-    desc.family = style.font_family.empty() ? "sans-serif" : style.font_family;
-    desc.size = font_size;
-    desc.weight = FontWeight::NORMAL;
-    desc.style = FontStyle::NORMAL;
-    SkFont font = FontManager::GetInstance().LoadFont(desc);
-    SkFontMetrics font_metrics;
-    font.getMetrics(&font_metrics);
-    float line_height = -font_metrics.fAscent + font_metrics.fDescent;
-    if (font_metrics.fLeading > 0) {
-        line_height += font_metrics.fLeading;
-    } else {
-        line_height += font_size * 0.2f;
+    textarea_metrics::BoxMetrics metrics;
+    if (!textarea_metrics::ResolveBox(textarea_element.get(), render_object.get(), metrics)) {
+        return false;
     }
 
+    // 计算行高（与渲染保持一致）
     // 检查 textarea 是否真的需要滚动（内容是否超出可见区域）
-    float content_height = textarea_element->GetContentHeight(line_height);
-    float max_scroll = std::max(0.0f, content_height - visible_height);
-    float current_scroll = textarea_element->GetScrollTop();
-    
-    // 判断滚动方向和是否可以滚动
-    bool scrolling_down = wheel_y < 0;
-    bool scrolling_up = wheel_y > 0;
-    bool can_scroll_down = current_scroll < max_scroll - 0.1f;
-    bool can_scroll_up = current_scroll > 0.1f;
-    
-    // 如果 textarea 可以在当前方向滚动，则处理滚动
-    if ((scrolling_down && can_scroll_down) || (scrolling_up && can_scroll_up)) {
-        // 处理滚轮事件
-        if (shift_pressed) {
-            // Shift+滚轮：横向滚动
-            textarea_element->HandleMouseWheelHorizontal(-wheel_y, visible_width, font);
-        } else {
-            // 普通滚轮：垂直滚动
-            textarea_element->HandleMouseWheel(-wheel_y, line_height, visible_height);
-        }
+    const float old_scroll_top = textarea_element->GetScrollTop();
+    const float old_scroll_left = textarea_element->GetScrollLeft();
+    const bool wants_horizontal = (wheel_x != 0.0f) || shift_pressed;
 
-        // 标记窗口需要重绘
+    if (wants_horizontal) {
+        const float delta_x = wheel_x != 0.0f ? -wheel_x : -wheel_y;
+        textarea_element->HandleMouseWheelHorizontal(delta_x, metrics.visible_width, metrics.font);
+    } else {
+        textarea_element->HandleMouseWheel(-wheel_y, metrics.line_height, metrics.visible_height);
+    }
+
+    if (old_scroll_top != textarea_element->GetScrollTop() ||
+        old_scroll_left != textarea_element->GetScrollLeft()) {
         window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
+        if (auto pipeline = window->GetRenderPipeline()) {
+            pipeline->ForceRasterize();
+        }
         return true;
     }
 
-    // textarea 不能滚动
-    (void)wheel_x;  // 未使用
     return false;
 }
 
@@ -380,6 +349,10 @@ bool WheelEventDispatcher::HandleScrollableElementWheel(
     bool shift_pressed) {
     
     if (!render_obj) {
+        return false;
+    }
+
+    if (std::dynamic_pointer_cast<HTMLTextAreaElement>(render_obj->GetNode())) {
         return false;
     }
 

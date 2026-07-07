@@ -39,6 +39,9 @@ class HTMLButtonElement;
 class HTMLFormElement;
 class HTMLSelectElement;
 struct HitTestResult;
+namespace textarea_metrics {
+struct BoxMetrics;
+}
 
 /**
  * @brief 鼠标事件分发器
@@ -147,8 +150,7 @@ public:
                                         float local_x,
                                         float local_y,
                                         Uint32 event_type,
-                                        float font_size,
-                                        const std::string& font_family,
+                                        const textarea_metrics::BoxMetrics& metrics,
                                         bool shift_key = false,
                                         float visible_width = 0.0f,
                                         float visible_height = 0.0f);

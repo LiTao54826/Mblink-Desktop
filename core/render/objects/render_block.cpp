@@ -46,12 +46,14 @@
 #include "core/render/image/image_fit.h"
 #include "core/render/image/image_loader.h"
 #include "core/editing/contenteditable_geometry.h"
-#include "core/utils/utf8_utils.h"
+#include "core/render/input/textarea_painter.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <sstream>
+#include <vector>
 #include "include/core/SkSurface.h"
 
 #ifdef _WIN32
@@ -776,6 +778,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 获取关联的 DOM 节点
     auto node = GetNode();
+    const bool is_textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(node) != nullptr;
     auto paint_canvas_surface = [&]() {
         if (!node || node->GetNodeType() != NodeType::ELEMENT_NODE) {
             return;
@@ -1365,7 +1368,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         return v == "hidden" || v == "scroll" || v == "auto";
     };
 
-    if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
+    if (!is_textarea_element && (isOverflowSet(overflow_x) || isOverflowSet(overflow_y))) {
         needs_clip = true;
 
         // 检测布局宽度是否变化（如滚动条出现/消失导致可用宽度变化）
@@ -1855,6 +1858,7 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
         params.text_color = computed_style_.color;
         auto element = std::static_pointer_cast<Element>(GetNode());
         params.has_focus = element && element->HasPseudoClass("focus");
+        params.cursor_visible = IsCursorVisible();
 
         FormElementPainter painter(canvas);
         painter.PaintTextInput(input, box, params, type == InputType::Password);
@@ -1951,98 +1955,8 @@ void RenderBlock::PaintSelectElement(SkCanvas* canvas, HTMLSelectElement* select
 }
 
 void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box) {
-    if (!textarea) return;
-
-    std::string value = textarea->GetValue();
-
-    if (value.empty()) {
-        // 显示placeholder
-        value = textarea->GetPlaceholder();
-    }
-
-    if (!value.empty()) {
-        // 创建字体
-        FontDescriptor desc;
-        desc.family = computed_style_.font_family;
-        desc.size = computed_style_.font_size;
-        desc.weight = FontWeight::NORMAL;
-        desc.style = FontStyle::NORMAL;
-
-        SkFont font = FontManager::GetInstance().LoadFont(desc);
-
-        // 获取字体度量信息
-        SkFontMetrics font_metrics;
-        font.getMetrics(&font_metrics);
-        float line_height = -font_metrics.fAscent + font_metrics.fDescent + font_metrics.fLeading;
-
-        // 创建文本渲染器
-        TextRenderer text_renderer(canvas);
-
-        // 设置文本颜色
-        mblink::Paint text_paint;
-        if (textarea->GetValue().empty()) {
-            // placeholder使用灰色
-            text_paint.SetColor(SkColorSetRGB(150, 150, 150));
-        } else if (!computed_style_.color.empty()) {
-            text_paint.SetColor(mblink::Color::Parse(computed_style_.color));
-        } else {
-            text_paint.SetColor(SK_ColorBLACK);
-        }
-
-        // 绘制多行文本
-        float text_x = box.content_x;
-        float text_y = box.content_y - font_metrics.fAscent;
-
-        text_renderer.DrawMultilineText(value, text_x, text_y, box.content_width, line_height, font, text_paint);
-
-        // 如果有焦点且不是placeholder，绘制光标
-        if (!textarea->GetValue().empty()) {
-            auto element = std::static_pointer_cast<Element>(GetNode());
-            if (element && element->HasPseudoClass("focus")) {
-                // 简化版本：只在第一行显示光标
-                int cursor_pos = textarea->GetSelectionStart();
-                std::string text_before_cursor = textarea->GetValue().substr(0, cursor_pos);
-
-                // 找到最后一个换行符的位置
-                size_t last_newline = text_before_cursor.rfind('\n');
-                std::string current_line_before_cursor;
-                float cursor_y = text_y;
-
-                if (last_newline != std::string::npos) {
-                    // 光标在某一行中
-                    current_line_before_cursor = text_before_cursor.substr(last_newline + 1);
-                    // 计算光标所在行（简化：每个\n增加一行）
-                    int line_count = std::count(text_before_cursor.begin(), text_before_cursor.end(), '\n');
-                    cursor_y += line_count * line_height;
-                } else {
-                    // 光标在第一行
-                    current_line_before_cursor = text_before_cursor;
-                }
-
-                // 测量光标前的文本宽度
-                float cursor_x = text_x;
-                if (!current_line_before_cursor.empty()) {
-                    cursor_x += font.measureText(
-                        current_line_before_cursor.c_str(),
-                        current_line_before_cursor.length(),
-                        SkTextEncoding::kUTF8
-                    );
-                }
-
-                // 绘制光标
-                SkPaint cursor_paint;
-                cursor_paint.setColor(SK_ColorBLACK);
-                cursor_paint.setStrokeWidth(1);
-                cursor_paint.setAntiAlias(true);
-
-                canvas->drawLine(cursor_x, cursor_y + font_metrics.fAscent,
-                               cursor_x, cursor_y + font_metrics.fDescent, cursor_paint);
-            }
-        }
-    }
+    textarea_painter::Paint(canvas, textarea, this, box, IsCursorVisible());
 }
-
-// ========== contentEditable 光标渲染 ==========
 
 void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, const Box& box) {
     (void)box;
@@ -2063,7 +1977,7 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
         return;
     }
 
-    if (!RenderObject::IsCursorVisible()) {
+    if (!IsCursorVisible()) {
         return;
     }
 

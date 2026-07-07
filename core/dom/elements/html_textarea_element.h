@@ -14,6 +14,7 @@
 #include "../element.h"
 #include <string>
 #include <memory>
+#include <cstdint>
 
 // Forward declaration for Skia SkFont
 class SkFont;
@@ -432,6 +433,12 @@ private:
     ScrollbarType scrollbar_drag_type_ = ScrollbarType::NONE;  // 当前拖动的滚动条类型
     float scrollbar_drag_start_pos_;   // 拖动开始时的鼠标位置
     float scrollbar_drag_start_scroll_; // 拖动开始时的滚动位置
+    mutable uint64_t cached_max_line_width_revision_ = UINT64_MAX;
+    mutable float cached_max_line_width_font_size_ = -1.0f;
+    mutable uint32_t cached_max_line_width_typeface_id_ = 0;
+    mutable float cached_max_line_width_scale_x_ = -1.0f;
+    mutable float cached_max_line_width_skew_x_ = 0.0f;
+    mutable float cached_max_line_width_ = 0.0f;
 };
 
 } // namespace mblink

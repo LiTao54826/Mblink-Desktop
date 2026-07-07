@@ -14,6 +14,7 @@
 #include "core/dom/selection/selection.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
+#include "core/render/input/textarea_metrics.h"
 #include "core/render/input/text_edit_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/text/font_manager.h"
@@ -28,8 +29,22 @@ namespace mblink {
 
 namespace {
 
-float ResolveLineHeight(const ComputedStyle& style) {
-    return std::max(1.0f, style.line_height * style.font_size);
+float ResolveLineHeight(const ComputedStyle& style, const SkFont& font) {
+    SkFontMetrics metrics;
+    font.getMetrics(&metrics);
+
+    const float font_size = style.font_size > 0.0f ? style.font_size : font.getSize();
+    float metric_line_height = std::max(0.0f, -metrics.fAscent + metrics.fDescent);
+    if (metrics.fLeading > 0.0f) {
+        metric_line_height += metrics.fLeading;
+    } else {
+        metric_line_height += font_size * 0.2f;
+    }
+
+    const float css_line_height = style.line_height > 0.0f
+        ? style.line_height * font_size
+        : font_size * 1.2f;
+    return std::max(1.0f, std::max(metric_line_height, css_line_height));
 }
 
 SkFont BuildFont(const RenderObject* render_object) {
@@ -82,7 +97,7 @@ void EditorInputSession::UpdateTextInputArea(Window* window, const std::shared_p
     const auto& layout = render_object->GetLayoutInfo();
     SkFont font = BuildFont(render_object.get());
     SkFontMetrics metrics; font.getMetrics(&metrics);
-    float line_height = ResolveLineHeight(style);
+    float line_height = ResolveLineHeight(style, font);
     float content_x = bounds.x + style.border_left_width + style.padding.left.ToPx(layout.width, style.font_size);
     float content_y = bounds.y + style.border_top_width + style.padding.top.ToPx(layout.height, style.font_size);
     float content_w = std::max(1.0f, bounds.width - style.border_left_width - style.border_right_width - style.padding.left.ToPx(layout.width, style.font_size) - style.padding.right.ToPx(layout.width, style.font_size));
@@ -110,15 +125,25 @@ void EditorInputSession::UpdateTextInputArea(Window* window, const std::shared_p
         area_h = geometry.area_h;
         caret_x = geometry.caret_x;
     } else if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element)) {
+        textarea_metrics::BoxMetrics box_metrics;
+        if (textarea_metrics::ResolveBox(textarea.get(), render_object.get(), box_metrics)) {
+            font = box_metrics.font;
+            line_height = box_metrics.line_height;
+            content_x = bounds.x + box_metrics.content_left;
+            content_y = bounds.y + box_metrics.content_top;
+            content_w = std::max(1.0f, box_metrics.visible_width);
+        }
         std::string value = textarea->GetValue();
         int anchor = textarea->GetSelectionEnd();
         if (auto edit_state = textarea->GetEditState(); edit_state && edit_state->HasActiveComposition()) anchor = edit_state->composition_state.start;
-        std::string before = value.substr(0, utf8::CharPosToBytePos(value, anchor));
-        int line = 0; for (char ch : before) if (ch == '\n') ++line;
-        size_t last_newline = before.rfind('\n');
-        std::string current_line = last_newline != std::string::npos ? before.substr(last_newline + 1) : before;
-        caret_x = content_x + text_edit_metrics::MeasureTextWidth(current_line, font, false) - textarea->GetScrollLeft();
+        const auto lines = textarea_metrics::BuildLineSpans(value);
+        auto [line, col] = textarea_metrics::FindLineColumn(lines, anchor);
+        std::string current_line = lines.empty()
+            ? std::string()
+            : textarea_metrics::LineText(value, lines[std::clamp(line, 0, static_cast<int>(lines.size()) - 1)]);
+        caret_x = content_x + text_edit_metrics::MeasurePrefixWidth(current_line, col, font, false) - textarea->GetScrollLeft();
         area_y = content_y - textarea->GetScrollTop() + line * line_height;
+        area_h = std::max(1.0f, line_height);
     } else if (element->IsContentEditable()) {
         auto document = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
         auto selection = document ? document->GetSelection() : nullptr;

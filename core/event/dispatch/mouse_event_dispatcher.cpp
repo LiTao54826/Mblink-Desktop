@@ -36,6 +36,7 @@
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
 #include "core/render/input/text_edit_metrics.h"
+#include "core/render/input/textarea_metrics.h"
 #include "core/utils/utf8_utils.h"
 #include <include/core/SkFont.h>
 #include <include/core/SkFontMetrics.h>
@@ -228,6 +229,79 @@ bool ComputeInputTextLocalX(const std::shared_ptr<HTMLInputElement>& input_eleme
     const auto& layout = render_object->GetLayoutInfo();
     local_x = viewport_x - bounds.x - InputTextContentLeft(style, layout);
     visible_width = InputTextVisibleWidth(input_element->GetInputType(), style, layout);
+    return true;
+}
+
+bool ComputeTextAreaTextLocalFromViewport(const std::shared_ptr<HTMLTextAreaElement>& textarea_element,
+                                          float viewport_x,
+                                          float viewport_y,
+                                          textarea_metrics::BoxMetrics& metrics,
+                                          float& text_local_x,
+                                          float& text_local_y) {
+    if (!textarea_element) {
+        return false;
+    }
+
+    auto render_object = textarea_element->GetRenderObject();
+    if (!render_object) {
+        return false;
+    }
+    if (!textarea_metrics::ResolveBox(textarea_element.get(), render_object.get(), metrics)) {
+        return false;
+    }
+    if (!render_object->GetViewportBounds().valid) {
+        render_object->UpdateViewportBounds();
+    }
+    const auto& bounds = render_object->GetViewportBounds();
+    if (!bounds.valid) {
+        return false;
+    }
+
+    const SkPoint local = bounds.ToLocalCoordinates(viewport_x, viewport_y);
+    text_local_x = local.x() - metrics.content_left;
+    text_local_y = local.y() - metrics.content_top;
+    return true;
+}
+
+bool HandleTextAreaScrollbarDrag(const std::shared_ptr<Window>& window,
+                                 const std::shared_ptr<HTMLTextAreaElement>& textarea_element,
+                                 const textarea_metrics::BoxMetrics& metrics,
+                                 float text_local_x,
+                                 float text_local_y) {
+    if (!window || !textarea_element || !textarea_element->IsDraggingScrollbar()) {
+        return false;
+    }
+
+    const float old_scroll_top = textarea_element->GetScrollTop();
+    const float old_scroll_left = textarea_element->GetScrollLeft();
+    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+    const float padded_width = metrics.content_width + metrics.padding_left + metrics.padding_right;
+    const float padded_height = metrics.content_height + metrics.padding_top + metrics.padding_bottom;
+
+    if (textarea_element->GetDraggingScrollbarType() == HTMLTextAreaElement::ScrollbarType::VERTICAL) {
+        const float track_height = std::max(0.0f,
+            padded_height - (metrics.need_h_scrollbar ? scrollbar_width : 0.0f));
+        textarea_element->UpdateScrollbarDrag(text_local_y,
+                                              track_height,
+                                              metrics.text_content_height,
+                                              metrics.visible_height);
+    } else if (textarea_element->GetDraggingScrollbarType() == HTMLTextAreaElement::ScrollbarType::HORIZONTAL) {
+        const float track_width = std::max(0.0f,
+            padded_width - (metrics.need_v_scrollbar ? scrollbar_width : 0.0f));
+        textarea_element->UpdateScrollbarDrag(text_local_x,
+                                              track_width,
+                                              metrics.max_line_width,
+                                              metrics.visible_width);
+    }
+
+    if (old_scroll_top != textarea_element->GetScrollTop() ||
+        old_scroll_left != textarea_element->GetScrollLeft()) {
+        window->SetNeedsRepaintFor(RepaintReason::MouseButton);
+        if (auto pipeline = window->GetRenderPipeline()) {
+            pipeline->ForceRasterize();
+        }
+    }
+
     return true;
 }
 
@@ -1598,8 +1672,7 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
     float local_x,
     float local_y,
     Uint32 event_type,
-    float font_size,
-    const std::string& font_family,
+    const textarea_metrics::BoxMetrics& metrics,
     bool shift_key,
     float visible_width,
     float visible_height) {
@@ -1608,46 +1681,48 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
         return;
     }
 
-    FontDescriptor desc;
-    desc.family = font_family.empty() ? "sans-serif" : font_family;
-    desc.size = font_size > 0 ? font_size : 14.0f;
-    desc.weight = FontWeight::NORMAL;
-    desc.style = FontStyle::NORMAL;
-    SkFont font = FontManager::GetInstance().LoadFont(desc);
-
-    SkFontMetrics font_metrics;
-    font.getMetrics(&font_metrics);
-    float line_height = -font_metrics.fAscent + font_metrics.fDescent;
-    if (font_metrics.fLeading > 0) {
-        line_height += font_metrics.fLeading;
-    } else {
-        line_height += font_size * 0.2f;
+    const SkFont& font = metrics.font;
+    const float line_height = metrics.line_height;
+    if (visible_width <= 0.0f) {
+        visible_width = metrics.visible_width;
+    }
+    if (visible_height <= 0.0f) {
+        visible_height = metrics.visible_height;
     }
 
     if (event_type == SDL_EVENT_MOUSE_MOTION && textarea_element->IsDraggingSelection() &&
         visible_width > 0 && visible_height > 0) {
         float scroll_speed = line_height;
-        float scroll_top = textarea_element->GetScrollTop();
-        float scroll_left = textarea_element->GetScrollLeft();
-        float content_height = textarea_element->GetContentHeight(line_height);
-        float max_scroll_y = std::max(0.0f, content_height - visible_height);
-        float max_scroll_x = std::max(0.0f, textarea_element->GetMaxLineWidth(font) - visible_width);
+        float scroll_top = textarea_metrics::ClampScrollTop(textarea_element->GetScrollTop(), metrics);
+        float scroll_left = textarea_metrics::ClampScrollLeft(textarea_element->GetScrollLeft(), metrics);
+        if (scroll_top != textarea_element->GetScrollTop()) {
+            textarea_element->SetScrollTop(scroll_top);
+        }
+        if (scroll_left != textarea_element->GetScrollLeft()) {
+            textarea_element->SetScrollLeft(scroll_left);
+        }
 
         if (local_y < 0) {
             textarea_element->SetScrollTop(std::max(0.0f, scroll_top - scroll_speed));
         } else if (local_y > visible_height) {
-            textarea_element->SetScrollTop(std::min(max_scroll_y, scroll_top + scroll_speed));
+            textarea_element->SetScrollTop(std::min(metrics.max_scroll_y, scroll_top + scroll_speed));
         }
 
         if (local_x < 0) {
             textarea_element->SetScrollLeft(std::max(0.0f, scroll_left - scroll_speed));
         } else if (local_x > visible_width) {
-            textarea_element->SetScrollLeft(std::min(max_scroll_x, scroll_left + scroll_speed));
+            textarea_element->SetScrollLeft(std::min(metrics.max_scroll_x, scroll_left + scroll_speed));
         }
     }
 
-    float scroll_top = textarea_element->GetScrollTop();
-    float scroll_left = textarea_element->GetScrollLeft();
+    float scroll_top = textarea_metrics::ClampScrollTop(textarea_element->GetScrollTop(), metrics);
+    float scroll_left = textarea_metrics::ClampScrollLeft(textarea_element->GetScrollLeft(), metrics);
+    if (scroll_top != textarea_element->GetScrollTop()) {
+        textarea_element->SetScrollTop(scroll_top);
+    }
+    if (scroll_left != textarea_element->GetScrollLeft()) {
+        textarea_element->SetScrollLeft(scroll_left);
+    }
 
     float clamped_local_x = std::max(0.0f, local_x);
     float clamped_local_y = std::max(0.0f, local_y);
@@ -1659,31 +1734,16 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
     int clicked_line = std::max(0, static_cast<int>(actual_y / line_height));
 
     std::string value = textarea_element->GetValue();
-    std::vector<std::string> lines;
-    std::istringstream stream(value);
-    std::string line;
-    while (std::getline(stream, line)) {
-        lines.push_back(line);
-    }
-    if (value.empty() || (!value.empty() && value.back() == '\n')) {
-        lines.push_back("");
-    }
-    if (lines.empty()) {
-        lines.push_back("");
-    }
-
-    clicked_line = std::min(clicked_line, static_cast<int>(lines.size()) - 1);
-
-    int char_offset = 0;
-    for (int i = 0; i < clicked_line; ++i) {
-        char_offset += static_cast<int>(utf8::CharCount(lines[i])) + 1;
-    }
-
-    const std::string& current_line = lines[clicked_line];
+    auto [current_line, char_offset] = textarea_metrics::LineForHitTest(value, clicked_line);
     int char_pos_in_line = text_edit_metrics::HitTestTextPosition(current_line, actual_x, font, false);
     int char_pos = char_offset + char_pos_in_line;
 
     if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (focus_manager_) {
+            focus_manager_->RequestCursorVisible();
+        }
+        const int old_selection_start = textarea_element->GetSelectionStart();
+        const int old_selection_end = textarea_element->GetSelectionEnd();
         if (shift_key) {
             int current_start = textarea_element->GetSelectionStart();
             textarea_element->SetSelection(current_start, char_pos);
@@ -1692,13 +1752,29 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
         }
         textarea_element->SetDragStartPos(char_pos);
         textarea_element->HandleMouseDown(local_x, local_y);
+        if (old_selection_start == textarea_element->GetSelectionStart() &&
+            old_selection_end == textarea_element->GetSelectionEnd()) {
+            textarea_element->RequestTextAreaRepaint();
+        }
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
     } else if (event_type == SDL_EVENT_MOUSE_MOTION) {
         if (textarea_element->IsDraggingSelection()) {
+            if (focus_manager_) {
+                focus_manager_->RequestCursorVisible();
+            }
             int drag_start = textarea_element->GetDragStartPos();
             textarea_element->SetSelection(drag_start, char_pos);
+            if (focus_manager_) {
+                focus_manager_->UpdateTextInputArea();
+            }
         }
     } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
         textarea_element->HandleMouseUp();
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
     }
 }
 
@@ -1970,31 +2046,19 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
 
                 auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
                 if (find_result.render_obj) {
-                    const auto& layout = find_result.render_obj->GetLayoutInfo();
-                    const auto& style = find_result.render_obj->GetComputedStyle();
-                    float padding_left = style.padding.left.ToPx();
-                    float padding_top = style.padding.top.ToPx();
-                    float padding_right = style.padding.right.ToPx();
-                    float padding_bottom = style.padding.bottom.ToPx();
-
-                    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
-                    SkFont font;
-                    font.setSize(style.font_size);
-                    float line_height = style.font_size * 1.2f;
-                    float content_height = textarea_element->GetContentHeight(line_height);
-                    float max_line_width = textarea_element->GetMaxLineWidth(font);
-                    float base_visible_width = layout.width - padding_left - padding_right;
-                    float base_visible_height = layout.height - padding_top - padding_bottom;
-                    bool need_v_scrollbar = content_height > base_visible_height;
-                    bool need_h_scrollbar = max_line_width > base_visible_width;
-                    float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
-                    float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
-
-                    float text_local_x = logical_x - find_result.abs_x - padding_left;
-                    float text_local_y = logical_y - find_result.abs_y - padding_top;
-                    HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
-                                                   style.font_size, style.font_family, false,
-                                                   visible_width, visible_height);
+                    textarea_metrics::BoxMetrics metrics;
+                    float text_local_x = 0.0f;
+                    float text_local_y = 0.0f;
+                    if (ComputeTextAreaTextLocalFromViewport(textarea_element, logical_x, logical_y,
+                                                            metrics, text_local_x, text_local_y)) {
+                        if (textarea_element->IsDraggingScrollbar()) {
+                            HandleTextAreaScrollbarDrag(window, textarea_element, metrics, text_local_x, text_local_y);
+                        } else {
+                            HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
+                                                           metrics, false,
+                                                           metrics.visible_width, metrics.visible_height);
+                        }
+                    }
                 }
             }
         }
@@ -2306,41 +2370,25 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
     else if (tag_name == "textarea") {
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(hit_result.element);
         if (textarea_element && hit_result.render_object) {
-            const auto& style = hit_result.render_object->GetComputedStyle();
-            const auto& layout = hit_result.render_object->GetLayoutInfo();
-            float padding_left = style.padding.left.ToPx();
-            float padding_top = style.padding.top.ToPx();
-            float padding_right = style.padding.right.ToPx();
-            float padding_bottom = style.padding.bottom.ToPx();
+            textarea_metrics::BoxMetrics metrics;
+            float text_local_x = 0.0f;
+            float text_local_y = 0.0f;
+            if (!ComputeTextAreaTextLocalFromViewport(textarea_element, logical_x, logical_y,
+                                                      metrics, text_local_x, text_local_y)) {
+                return;
+            }
 
-            // 检查是否点击了滚动条
-            const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
-            SkFont font;
-            font.setSize(style.font_size);
-            float line_height = style.font_size * 1.2f;
-            float content_height = textarea_element->GetContentHeight(line_height);
-            float max_line_width = textarea_element->GetMaxLineWidth(font);
-            float base_visible_width = layout.width - padding_left - padding_right;
-            float base_visible_height = layout.height - padding_top - padding_bottom;
-            bool need_v_scrollbar = content_height > base_visible_height;
-            bool need_h_scrollbar = max_line_width > base_visible_width;
-            float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
-            float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
-
-            float text_local_x = hit_result.local_x - padding_left;
-            float text_local_y = hit_result.local_y - padding_top;
-
-            // 检查是否点击了滚动条
-            if (need_v_scrollbar && text_local_x > visible_width) {
+            // Check whether the click starts a textarea scrollbar drag.
+            if (metrics.need_v_scrollbar && text_local_x > metrics.visible_width) {
                 textarea_element->StartScrollbarDrag(HTMLTextAreaElement::ScrollbarType::VERTICAL, text_local_y);
-            } else if (need_h_scrollbar && text_local_y > visible_height) {
+            } else if (metrics.need_h_scrollbar && text_local_y > metrics.visible_height) {
                 textarea_element->StartScrollbarDrag(HTMLTextAreaElement::ScrollbarType::HORIZONTAL, text_local_x);
             } else {
                 SDL_Keymod mod_state = SDL_GetModState();
                 bool shift_key = (mod_state & SDL_KMOD_SHIFT) != 0;
                 HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
-                                               style.font_size, style.font_family, shift_key,
-                                               visible_width, visible_height);
+                                               metrics, shift_key,
+                                               metrics.visible_width, metrics.visible_height);
             }
 
             // 设置焦点
@@ -2676,31 +2724,20 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
             auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown);
             if (textarea_element && (textarea_element->IsDraggingSelection() || textarea_element->IsDraggingScrollbar())) {
                 if (hit_result.render_object) {
-                    const auto& style = hit_result.render_object->GetComputedStyle();
-                    const auto& layout = hit_result.render_object->GetLayoutInfo();
-                    float padding_left = style.padding.left.ToPx();
-                    float padding_top = style.padding.top.ToPx();
-                    float padding_right = style.padding.right.ToPx();
-                    float padding_bottom = style.padding.bottom.ToPx();
-
-                    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
-                    SkFont font;
-                    font.setSize(style.font_size);
-                    float line_height = style.font_size * 1.2f;
-                    float content_height = textarea_element->GetContentHeight(line_height);
-                    float max_line_width = textarea_element->GetMaxLineWidth(font);
-                    float base_visible_width = layout.width - padding_left - padding_right;
-                    float base_visible_height = layout.height - padding_top - padding_bottom;
-                    bool need_v_scrollbar = content_height > base_visible_height;
-                    bool need_h_scrollbar = max_line_width > base_visible_width;
-                    float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
-                    float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
-
-                    float text_local_x = hit_result.local_x - padding_left;
-                    float text_local_y = hit_result.local_y - padding_top;
-                    HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, SDL_EVENT_MOUSE_MOTION,
-                                                   style.font_size, style.font_family, false,
-                                                   visible_width, visible_height);
+                    textarea_metrics::BoxMetrics metrics;
+                    float text_local_x = 0.0f;
+                    float text_local_y = 0.0f;
+                    if (ComputeTextAreaTextLocalFromViewport(textarea_element, logical_x, logical_y,
+                                                            metrics, text_local_x, text_local_y)) {
+                        if (textarea_element->IsDraggingScrollbar()) {
+                            HandleTextAreaScrollbarDrag(window, textarea_element, metrics, text_local_x, text_local_y);
+                        } else {
+                            HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y,
+                                                           SDL_EVENT_MOUSE_MOTION,
+                                                           metrics, false,
+                                                           metrics.visible_width, metrics.visible_height);
+                        }
+                    }
                 }
             }
         } else if (tag_name == "terminal") {

@@ -32,7 +32,6 @@ namespace mblink {
 
 // 前向声明
 class HTMLInputElement;
-class HTMLTextAreaElement;
 class HTMLSelectElement;
 class Element;
 struct ComputedStyle;
@@ -53,6 +52,7 @@ struct FormElementPaintParams {
     
     // 是否有焦点
     bool has_focus = false;
+    bool cursor_visible = true;
 };
 
 /**
@@ -109,10 +109,6 @@ public:
      * @param box 盒模型定义
      * @param params 绘制参数
      */
-    void PaintTextAreaElement(HTMLTextAreaElement* textarea, 
-                              const Box& box, 
-                              const FormElementPaintParams& params);
-
     void PaintSelectElement(HTMLSelectElement* select,
                             const Box& box,
                             const FormElementPaintParams& params);
@@ -169,35 +165,6 @@ private:
     float MeasureInputTextWidth(const std::string& text,
                                 const SkFont& font) const;
 
-    /**
-     * @brief 绘制多行文本框光标
-     * @param text_x 文本起始 X 坐标
-     * @param text_y 文本起始 Y 坐标
-     * @param font 字体
-     * @param font_metrics 字体度量
-     * @param line_height 行高
-     * @param value 文本值
-     * @param cursor_pos 光标位置
-     */
-    void PaintTextAreaCursor(float text_x, 
-                             float text_y, 
-                             const SkFont& font,
-                             const SkFontMetrics& font_metrics,
-                             float line_height,
-                             const std::string& value,
-                             int cursor_pos);
-
-    /**
-     * @brief 检查光标是否应该可见（基于闪烁周期）
-     * @return 如果光标应该可见返回 true
-     */
-    bool IsCursorVisible() const;
-
-    /**
-     * @brief 创建字体
-     * @param params 绘制参数
-     * @return Skia 字体对象
-     */
     SkFont CreateFont(const FormElementPaintParams& params);
 
     /**

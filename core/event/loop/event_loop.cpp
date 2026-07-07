@@ -583,9 +583,9 @@ void EventLoop::RunOnceNonBlocking() {
 }
 
 void EventLoop::RunOnceInternal(bool allow_idle_wait) {
-    static Uint64 last_cursor_blink_time = SDL_GetTicks();
-    static Element* last_blink_focus_element = nullptr;
-    static bool cursor_visible = true;
+    if (last_cursor_blink_time_ == 0) {
+        last_cursor_blink_time_ = SDL_GetTicks();
+    }
     auto focus_element = focus_manager_->GetFocusElement();
     bool did_front_idle_wait = false;
 
@@ -596,7 +596,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
             update_callback_needs_frame_cadence_,
             static_cast<bool>(update_callback_),
             focus_element,
-            last_cursor_blink_time);
+            last_cursor_blink_time_);
         TraceIdleWorkState("front-before-wait", idle_state);
         did_front_idle_wait = WaitForIdleWork(idle_state);
         if (did_front_idle_wait) {
@@ -606,7 +606,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
                 update_callback_needs_frame_cadence_,
                 static_cast<bool>(update_callback_),
                 focus_element,
-                last_cursor_blink_time);
+                last_cursor_blink_time_);
             TraceIdleWorkState("front-after-wait", idle_state);
             if (!idle_state.hasImmediateWork() && !idle_state.has_frame_deadline_work) {
                 if (idle_callback_) {
@@ -711,28 +711,40 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
     // 如果这里再对 contenteditable 跑一套全局 blink + repaint，
     // 会把编辑器整块周期性拖入增量重绘链，容易与 gutter/chunk invalidation 打架，
     // 表现为获取焦点后随 caret blink 周期出现闪烁。
+    auto previous_blink_focus_element = last_blink_focus_element_.lock();
+
     if (focus_element) {
         std::string tag_name = focus_element->GetTagName();
         bool uses_native_caret_blink = (tag_name == "input" || tag_name == "textarea");
 
         if (uses_native_caret_blink) {
-            if (last_blink_focus_element != focus_element.get()) {
-                last_blink_focus_element = focus_element.get();
-                cursor_visible = true;
+            const bool force_caret_visible =
+                previous_blink_focus_element != focus_element ||
+                focus_manager_->ConsumeCursorVisibleRequest();
+
+            if (force_caret_visible) {
+                if (previous_blink_focus_element && previous_blink_focus_element != focus_element) {
+                    if (auto previous_render_object = previous_blink_focus_element->GetRenderObject()) {
+                        previous_render_object->SetCursorVisible(true);
+                    }
+                }
+                last_blink_focus_element_ = focus_element;
                 cursor_visible_ = true;
-                RenderObject::SetCursorVisible(true);
-                last_cursor_blink_time = SDL_GetTicks();
+                if (auto render_object = focus_element->GetRenderObject()) {
+                    render_object->SetCursorVisible(true);
+                }
+                last_cursor_blink_time_ = SDL_GetTicks();
             }
 
             // 每500毫秒切换光标显示状态
             Uint64 now = SDL_GetTicks();
-            if (now - last_cursor_blink_time >= 500) {
-                cursor_visible = !cursor_visible;
-                cursor_visible_ = cursor_visible;  // 保存到成员变量供渲染使用
-                last_cursor_blink_time = now;
+            if (now - last_cursor_blink_time_ >= 500) {
+                cursor_visible_ = !cursor_visible_;
+                last_cursor_blink_time_ = now;
 
-                // 设置全局光标可见状态（供 RenderObject 使用）
-                RenderObject::SetCursorVisible(cursor_visible);
+                if (auto render_object = focus_element->GetRenderObject()) {
+                    render_object->SetCursorVisible(cursor_visible_);
+                }
 
                 // 关键修复：标记元素的 RenderObject 需要重绘
                 // 这样增量渲染系统才会重绘光标区域
@@ -753,18 +765,24 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
         } else {
             // 非原生输入控件（如 CodeMirror/contenteditable）不使用引擎侧 blink 定时器。
             // 保持可见，避免全局 cursor_visible 状态干扰其自绘 caret/focus。
-            cursor_visible = true;
+            if (previous_blink_focus_element) {
+                if (auto previous_render_object = previous_blink_focus_element->GetRenderObject()) {
+                    previous_render_object->SetCursorVisible(true);
+                }
+            }
             cursor_visible_ = true;
-            RenderObject::SetCursorVisible(true);
-            last_cursor_blink_time = SDL_GetTicks();
-            last_blink_focus_element = nullptr;
+            last_cursor_blink_time_ = SDL_GetTicks();
+            last_blink_focus_element_.reset();
         }
     } else {
         // 没有聚焦的可编辑元素时，重置光标状态
-        cursor_visible = true;
+        if (previous_blink_focus_element) {
+            if (auto previous_render_object = previous_blink_focus_element->GetRenderObject()) {
+                previous_render_object->SetCursorVisible(true);
+            }
+        }
         cursor_visible_ = true;
-        RenderObject::SetCursorVisible(true);
-        last_blink_focus_element = nullptr;
+        last_blink_focus_element_.reset();
     }
 
     // 5. 先推进动画时间轴（即使当前帧尚未标记重绘）
@@ -872,7 +890,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
             update_callback_needs_frame_cadence_,
             static_cast<bool>(update_callback_),
             focus_element,
-            last_cursor_blink_time);
+            last_cursor_blink_time_);
         TraceIdleWorkState("tail-before-wait", idle_state);
         WaitForIdleWork(CollectIdleWorkState(
             quickjs_runtime_,
@@ -880,7 +898,7 @@ void EventLoop::RunOnceInternal(bool allow_idle_wait) {
             update_callback_needs_frame_cadence_,
             static_cast<bool>(update_callback_),
             focus_element,
-            last_cursor_blink_time));
+            last_cursor_blink_time_));
     }
 
     // 8. 帧率控制

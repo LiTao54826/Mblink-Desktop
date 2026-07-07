@@ -23,6 +23,7 @@ Real runtime screenshots from multiple examples:
 ![MBlink leafer_ui_showcase example](assets/leafer_ui_showcase.png)
 ![MBlink leafer_infinite_canvas example](assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](assets/html_demo.png)
+![MBlink markdown_preview_compat example](assets/markdown_preview_compat.png)
 
 ## Core guides
 

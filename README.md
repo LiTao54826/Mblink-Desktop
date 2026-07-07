@@ -62,11 +62,18 @@ support promises:
 - HTML media element support, starting with `<video>` playback as an optional
   media runtime capability with explicit load, play, pause, seek, sizing,
   frame-present, audio, error, and cleanup verification.
+- PDF document viewing as an optional runtime or plugin-backed capability,
+  covering local file or byte input, page count, page rasterization, zoom,
+  scroll, text/search hooks where feasible, errors, and cleanup.
+- Markdown document rendering as a verified runtime/tooling path, covering
+  headings, lists, links, images, code fences, tables, safe HTML handling,
+  theme styling, and live reload or incremental preview behavior.
 
 Until those features land with runtime tests and `mblink-ui-dev` screenshot or
-pixel evidence, WebGL/WebGPU and audio/video media APIs remain unsupported
-contracts. Projects should not rely on CSS or app-side JavaScript shims to claim
-these features; missing APIs need runtime or optional-plugin implementation.
+pixel evidence, WebGL/WebGPU, audio/video media APIs, PDF viewing, and Markdown
+rendering remain unsupported contracts. Projects should not rely on CSS or
+app-side JavaScript shims to claim these features; missing APIs need runtime,
+tooling, or optional-plugin implementation.
 
 ## Imports and package model
 
@@ -110,6 +117,7 @@ Windows.
 ![MBlink leafer_ui_showcase example](docs/assets/leafer_ui_showcase.png)
 ![MBlink leafer_infinite_canvas example](docs/assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](docs/assets/html_demo.png)
+![MBlink markdown_preview_compat example](docs/assets/markdown_preview_compat.png)
 
 ## Quick Start
 

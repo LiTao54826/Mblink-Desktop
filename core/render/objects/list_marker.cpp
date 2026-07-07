@@ -10,10 +10,55 @@
 #include "text/font_manager.h"
 #include "image/image_loader.h"
 #include "image/image_cache.h"
+#include "include/core/SkFontMetrics.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 namespace mblink {
+
+namespace {
+
+float GetBrowserNormalLineHeight(float font_size) {
+    int font_size_int = static_cast<int>(font_size + 0.5f);
+    switch (font_size_int) {
+        case 10: return 11.5f;
+        case 11: return 13.0f;
+        case 12: return 14.0f;
+        case 13: return 15.0f;
+        case 14: return 16.0f;
+        case 15: return 17.5f;
+        case 16: return 18.5f;
+        case 17: return 19.5f;
+        case 18: return 21.0f;
+        case 19: return 22.0f;
+        case 20: return 23.0f;
+        case 22: return 25.5f;
+        case 24: return 28.0f;
+        case 32: return 37.0f;
+        default: {
+            float line_height = font_size * 1.156f;
+            return std::round(line_height * 2.0f) / 2.0f;
+        }
+    }
+}
+
+FontStyle ParseCSSFontStyle(const std::string& font_style) {
+    if (font_style == "italic") return FontStyle::ITALIC;
+    if (font_style == "oblique") return FontStyle::OBLIQUE;
+    return FontStyle::NORMAL;
+}
+
+SkFont LoadMarkerFont(const ComputedStyle& style) {
+    FontDescriptor desc;
+    desc.family = style.font_family;
+    desc.size = style.font_size;
+    desc.weight = ParseCSSFontWeight(style.font_weight);
+    desc.style = ParseCSSFontStyle(style.font_style);
+    return FontManager::GetInstance().LoadFont(desc);
+}
+
+}  // namespace
 
 ListMarkerType ParseListStyleType(const std::string& type_str) {
     if (type_str == "none") return ListMarkerType::NONE;
@@ -112,6 +157,33 @@ std::string GenerateMarkerText(ListMarkerType type, int index) {
     }
 }
 
+float ResolveListMarkerBaselineOffset(const ComputedStyle& style, const SkFont& font) {
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    const float raw_ascent = -font_metrics.fAscent;
+    const float raw_descent = font_metrics.fDescent;
+    const float skia_text_height = raw_ascent + raw_descent;
+
+    const float css_line_height = std::abs(style.line_height - 1.2f) < 0.001f
+        ? GetBrowserNormalLineHeight(style.font_size)
+        : style.line_height * style.font_size;
+
+    if (skia_text_height <= 0.0f) {
+        return style.font_size * 0.8f;
+    }
+
+    if (css_line_height > skia_text_height) {
+        return ((css_line_height - skia_text_height) / 2.0f) + raw_ascent;
+    }
+
+    if (css_line_height < skia_text_height) {
+        return raw_ascent * (css_line_height / skia_text_height);
+    }
+
+    return raw_ascent;
+}
+
 void PaintListMarker(
     SkCanvas* canvas,
     const ComputedStyle& style,
@@ -148,10 +220,12 @@ void PaintListMarker(
     }
     paint.setAntiAlias(true);
     
-    // Calculate marker position
-    // For "outside" position: marker is outside the content box
-    // For "inside" position: marker is inside the content box
-    float marker_y = box.content_y + style.font_size * 0.8f;  // Baseline position
+    SkFont marker_font = LoadMarkerFont(style);
+
+    // Calculate marker position.
+    // For "outside" position: marker is outside the content box.
+    // For "inside" position: marker is inside the content box.
+    float marker_y = box.content_y + ResolveListMarkerBaselineOffset(style, marker_font);
     
     // Try to render list-style-image first
     if (!style.list_style_image.empty()) {
@@ -238,14 +312,6 @@ void PaintListMarker(
         std::string marker_text = GenerateMarkerText(marker_type, item_index);
         
         if (!marker_text.empty()) {
-            // Set up font
-            FontDescriptor desc;
-            desc.family = style.font_family;
-            desc.size = style.font_size;
-            desc.weight = FontWeight::NORMAL;
-            desc.style = FontStyle::NORMAL;
-            SkFont font = FontManager::GetInstance().LoadFont(desc);
-            
             paint.setStyle(SkPaint::kFill_Style);
             
             float marker_x;
@@ -255,12 +321,12 @@ void PaintListMarker(
                 // Right-align the marker text to the left of content
                 // Measure text width
                 SkRect text_bounds;
-                font.measureText(marker_text.c_str(), marker_text.size(), SkTextEncoding::kUTF8, &text_bounds);
+                marker_font.measureText(marker_text.c_str(), marker_text.size(), SkTextEncoding::kUTF8, &text_bounds);
                 float text_width = text_bounds.width();
                 marker_x = box.content_x - text_width - 5.0f;
             }
             
-            canvas->drawString(marker_text.c_str(), marker_x, marker_y, font, paint);
+            canvas->drawString(marker_text.c_str(), marker_x, marker_y, marker_font, paint);
         }
     }
 }

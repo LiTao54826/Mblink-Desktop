@@ -101,7 +101,6 @@ void RenderObject::MarkNeedsLayout(bool propagate_to_parent) {
 
 
 float RenderObject::viewport_height_ = 0.0f;
-bool RenderObject::cursor_visible_ = true;
 
 // 视口剔除调试统计（用于验证 quickReject 效果）
 std::atomic<int> g_paint_total_calls{0};

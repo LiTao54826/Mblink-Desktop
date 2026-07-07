@@ -14,8 +14,10 @@
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/objects/list_marker.h"
+#include "core/render/text/font_manager.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
+#include "include/core/SkFontMetrics.h"
 #include <random>
 #include <vector>
 #include <string>
@@ -393,6 +395,32 @@ TEST_F(ListStylePropertyTest, DecimalLeadingZero) {
         EXPECT_EQ(marker, expected)
             << "Decimal-leading-zero for " << num << " should be \"" << expected << "\"";
     }
+}
+
+TEST_F(ListStylePropertyTest, MarkerBaselineUsesLineHeightLeading) {
+    ComputedStyle style;
+    style.font_size = 15.0f;
+    style.line_height = 1.58f;
+
+    FontDescriptor desc;
+    desc.size = style.font_size;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    const float raw_ascent = -font_metrics.fAscent;
+    const float raw_descent = font_metrics.fDescent;
+    const float skia_text_height = raw_ascent + raw_descent;
+    const float css_line_height = style.line_height * style.font_size;
+    ASSERT_GT(css_line_height, skia_text_height);
+
+    const float expected_baseline =
+        ((css_line_height - skia_text_height) / 2.0f) + raw_ascent;
+    const float resolved_baseline = ResolveListMarkerBaselineOffset(style, font);
+
+    EXPECT_NEAR(resolved_baseline, expected_baseline, 0.01f);
+    EXPECT_GT(resolved_baseline, style.font_size * 0.8f);
 }
 
 /**

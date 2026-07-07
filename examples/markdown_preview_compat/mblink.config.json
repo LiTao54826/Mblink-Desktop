@@ -1,0 +1,27 @@
+{
+  "build": {
+    "builder": "esbuild",
+    "external": [
+      "preact",
+      "preact/hooks"
+    ],
+    "hide_console": true,
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "minify": false,
+    "sourcemap": true
+  },
+  "entry": "ui/app.js",
+  "name": "markdown_preview_compat",
+  "out_dir": ".dist",
+  "purpose": "desktop-app",
+  "runtime": "tool",
+  "src_dir": "ui",
+  "template": "desktop-app/tool",
+  "window": {
+    "height": 820,
+    "resizable": true,
+    "title": "Markdown Preview Compatibility",
+    "width": 1240
+  }
+}

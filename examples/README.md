@@ -12,6 +12,7 @@ the current build.
 | `modern_desktop_demo` | Desktop-style app shell and layout | `open`, screenshot snapshot |
 | `terminal_logview_demo` | Native terminal/log view elements | `open`, inspect relevant elements |
 | `component_demo` | Smaller UI component combinations | `snapshot` |
+| `markdown_preview_compat` | Markdown preview workflow with safe rendering and chat pressure | `examples\markdown_preview_compat\verify.ps1` |
 | `official_preact_jsx_dev` | Preact ESM path reference | build/open after `esbuild` setup |
 | `leafer_ui_showcase` | Interactive npm `leafer-ui` canvas package check | `tests/regression/test_leafer_ui_showcase.ps1` |
 

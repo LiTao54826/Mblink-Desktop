@@ -1210,12 +1210,12 @@ public:
      * @brief 设置光标可见状态（用于光标闪烁）
      * @param visible 是否可见
      */
-    static void SetCursorVisible(bool visible) { cursor_visible_ = visible; }
+    void SetCursorVisible(bool visible) { cursor_visible_ = visible; }
 
     /**
      * @brief 获取光标可见状态
      */
-    static bool IsCursorVisible() { return cursor_visible_; }
+    bool IsCursorVisible() const { return cursor_visible_; }
 
     /**
      * @brief 重置绘制统计（每帧开始时调用）
@@ -1263,7 +1263,7 @@ protected:
     static float viewport_width_;
     static float viewport_height_;
     // 静态成员：光标可见状态（用于光标闪烁）
-    static bool cursor_visible_;
+    bool cursor_visible_ = true;
 
     RenderObjectType type_;
     std::weak_ptr<Node> node_;

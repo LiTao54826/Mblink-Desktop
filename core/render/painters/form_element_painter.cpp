@@ -8,14 +8,12 @@
 #include "form_element_painter.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_select_element.h"
-#include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
 #include "core/render/input/text_edit_metrics.h"
-#include "core/render/objects/render_object.h"
+
 #include "core/render/utils/color.h"
-#include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
@@ -46,51 +44,6 @@ void FormElementPainter::PaintInputElement(HTMLInputElement* input,
     }
     else if (type == InputType::Radio) {
         PaintRadio(box, input->GetChecked());
-    }
-}
-
-void FormElementPainter::PaintTextAreaElement(HTMLTextAreaElement* textarea, 
-                                              const Box& box, 
-                                              const FormElementPaintParams& params) {
-    if (!textarea) return;
-
-    std::string value = textarea->GetValue();
-    bool is_placeholder = false;
-
-    if (value.empty()) {
-        // 显示 placeholder
-        value = textarea->GetPlaceholder();
-        is_placeholder = true;
-    }
-
-    if (!value.empty()) {
-        // 创建字体
-        SkFont font = CreateFont(params);
-
-        // 获取字体度量信息
-        SkFontMetrics font_metrics;
-        font.getMetrics(&font_metrics);
-        float line_height = -font_metrics.fAscent + font_metrics.fDescent + font_metrics.fLeading;
-
-        // 创建文本渲染器
-        TextRenderer text_renderer(canvas_);
-
-        // 设置文本颜色
-        mblink::Paint text_paint;
-        text_paint.SetColor(GetTextColor(params, is_placeholder));
-
-        // 绘制多行文本
-        float text_x = box.content_x;
-        float text_y = box.content_y - font_metrics.fAscent;
-
-        text_renderer.DrawMultilineText(value, text_x, text_y, box.content_width, line_height, font, text_paint);
-
-        // 如果有焦点且不是 placeholder，绘制光标
-        if (!is_placeholder && params.has_focus) {
-            int cursor_pos = textarea->GetSelectionStart();
-            PaintTextAreaCursor(text_x, text_y, font, font_metrics, line_height, 
-                               textarea->GetValue(), cursor_pos);
-        }
     }
 }
 
@@ -309,7 +262,7 @@ void FormElementPainter::PaintTextInput(HTMLInputElement* input,
         canvas_->drawLine(comp_start_x, underline_y, comp_end_x, underline_y, comp_underline_paint);
     }
 
-    if (IsCursorVisible()) {
+    if (params.cursor_visible) {
         PaintInputCaretLayer(model, text_x, box, font, font_metrics, is_password);
     }
 
@@ -397,52 +350,6 @@ float FormElementPainter::MeasureInputTextWidth(const std::string& text,
 
     TextRenderer text_renderer(nullptr);
     return text_renderer.MeasureTextWidthWithEmoji(text, font);
-}
-
-void FormElementPainter::PaintTextAreaCursor(float text_x,
-                                             float text_y, 
-                                             const SkFont& font,
-                                             const SkFontMetrics& font_metrics,
-                                             float line_height,
-                                             const std::string& value,
-                                             int cursor_pos) {
-    if (!IsCursorVisible()) return;
-
-    std::string text_before_cursor = value.substr(0, cursor_pos);
-
-    // 找到最后一个换行符的位置
-    size_t last_newline = text_before_cursor.rfind('\n');
-    std::string current_line_before_cursor;
-    float cursor_y = text_y;
-
-    if (last_newline != std::string::npos) {
-        // 光标在某一行中
-        current_line_before_cursor = text_before_cursor.substr(last_newline + 1);
-        // 计算光标所在行（简化：每个 \n 增加一行）
-        int line_count = std::count(text_before_cursor.begin(), text_before_cursor.end(), '\n');
-        cursor_y += line_count * line_height;
-    } else {
-        // 光标在第一行
-        current_line_before_cursor = text_before_cursor;
-    }
-
-    // 测量光标前的文本宽度
-    float cursor_x = text_x + MeasureInputTextWidth(current_line_before_cursor, font);
-
-    // 绘制光标
-    SkPaint cursor_paint;
-    cursor_paint.setColor(SK_ColorBLACK);
-    cursor_paint.setStrokeWidth(1);
-    cursor_paint.setAntiAlias(true);
-
-    canvas_->drawLine(cursor_x, cursor_y + font_metrics.fAscent,
-                     cursor_x, cursor_y + font_metrics.fDescent, cursor_paint);
-}
-
-bool FormElementPainter::IsCursorVisible() const {
-    // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
-    // 光标闪烁由 EventLoop 统一管理，每 500ms 切换一次
-    return RenderObject::IsCursorVisible();
 }
 
 SkFont FormElementPainter::CreateFont(const FormElementPaintParams& params) {

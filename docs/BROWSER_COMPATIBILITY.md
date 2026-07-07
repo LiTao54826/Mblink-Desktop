@@ -149,9 +149,23 @@ compatibility guarantees:
   plugin-backed media element, not as a CSS/app shim. The first acceptance target
   should cover load, metadata, play, pause, seek, frame presentation, sizing,
   audio behavior where supported, errors, and cleanup.
+- Optional PDF document runtime: PDF viewing should be introduced as a real
+  runtime or plugin-backed document capability, not as a placeholder image or
+  browser-shell claim. The first acceptance target should cover local file or
+  byte input, page count, page rasterization, zoom, scroll, text/search hooks
+  where feasible, errors, and cleanup.
+- Optional Markdown rendering path: Markdown should be introduced as a verified
+  runtime/tooling document path. The first acceptance target should cover
+  headings, lists, links, images, code fences, tables, safe HTML handling, theme
+  styling, and live reload or incremental preview behavior.
+- App-level Markdown preview evidence: `examples/markdown_preview_compat`
+  verifies this preview workflow with a local safe renderer adapter. This is
+  evidence for DOM/CSS preview compatibility, not a built-in runtime Markdown
+  parser contract.
 
 Until these land with runtime implementation and tests, WebGL, WebGPU, and
-audio/video media APIs remain unsupported.
+audio/video media APIs, PDF viewing, and Markdown rendering remain unsupported
+contracts.
 
 ## Unsupported / Not Implemented Yet | 明确不支持或尚未实现
 

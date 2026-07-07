@@ -42,6 +42,18 @@ MBlink 目前的 JS UI 兼容主线，是围绕轻量化的官方 Preact ESM 模
 
 其他框架层就算局部能跑，也不应当视为当前已支持的兼容目标。除非仓库后续给出新的验证证据，否则不要默认它已经完整支持 React，或已经兼容大型、偏浏览器生态的现成脚手架。
 
+## 计划中的可选运行时能力
+
+下面这些能力属于计划中的可选运行时或工具链工作，不是当前支持承诺：
+
+- 通过可选原生插件支持 WebGL canvas，Windows 上倾向于基于 ANGLE，使插件存在并初始化后 `canvas.getContext('webgl')` 可以返回真实的 `WebGLRenderingContext`。
+- 在 WebGL 路径之上补充基础 3D canvas 验证，先覆盖 shader、buffer、texture、resize、repaint、`readPixels`、截图/像素采样和最小 three.js 场景。
+- HTML 媒体元素支持，先从可选 `<video>` 播放能力开始，覆盖加载、播放、暂停、seek、尺寸、帧呈现、音频、错误和清理验证。
+- PDF 文档查看能力，作为可选运行时或插件能力推进，覆盖本地文件或字节输入、页数、页面栅格化、缩放、滚动、可行范围内的文本/搜索钩子、错误和清理。
+- Markdown 文档渲染能力，作为经过验证的运行时或工具链路径推进，覆盖标题、列表、链接、图片、代码块、表格、安全 HTML 处理、主题样式和实时刷新或增量预览。
+
+在这些能力具备运行时测试和 `mblink-ui-dev` 截图或像素证据之前，WebGL/WebGPU、音视频媒体 API、PDF 查看和 Markdown 渲染都仍然不能视为已支持契约。项目不应依靠 CSS 或示例侧 JavaScript shim 来宣称这些能力；缺失 API 需要在运行时、工具链或可选插件中实现。
+
 ## import 与包模型
 
 MBlink 支持真实的 ESM `import` 风格 UI 代码。当前运行时和工具链可以处理：
@@ -76,6 +88,7 @@ MBlink 支持真实的 ESM `import` 风格 UI 代码。当前运行时和工具�
 ![MBlink leafer_ui_showcase example](docs/assets/leafer_ui_showcase.png)
 ![MBlink leafer_infinite_canvas example](docs/assets/leafer_infinite_canvas.png)
 ![MBlink html_demo example](docs/assets/html_demo.png)
+![MBlink markdown_preview_compat example](docs/assets/markdown_preview_compat.png)
 
 ## 快速开始
 

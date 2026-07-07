@@ -54,6 +54,12 @@ public:
      * 使平台输入法候选窗能够贴近当前光标显示。
      */
     void UpdateTextInputArea();
+    void RequestCursorVisible() { cursor_visible_request_pending_ = true; }
+    bool ConsumeCursorVisibleRequest() {
+        bool requested = cursor_visible_request_pending_;
+        cursor_visible_request_pending_ = false;
+        return requested;
+    }
 
     /**
      * @brief 设置焦点到指定元素
@@ -171,6 +177,7 @@ private:
     std::weak_ptr<Element> focus_element_;
 
     uint64_t focus_change_serial_ = 0;
+    bool cursor_visible_request_pending_ = false;
 
     // 窗口指针（用于SDL文本输入）
     Window* window_ = nullptr;

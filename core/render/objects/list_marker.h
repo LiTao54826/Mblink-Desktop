@@ -82,6 +82,14 @@ std::string ToUpperAlpha(int num);
 std::string GenerateMarkerText(ListMarkerType type, int index);
 
 /**
+ * @brief Resolve the marker text baseline offset inside the list item's line box.
+ *
+ * List markers need to use the same font metrics and line-height centering as
+ * ordinary text so their prefix aligns with the first line of item content.
+ */
+float ResolveListMarkerBaselineOffset(const ComputedStyle& style, const SkFont& font);
+
+/**
  * @brief Paint a list marker for an <li> element
  * 
  * This function handles all list marker rendering including:
